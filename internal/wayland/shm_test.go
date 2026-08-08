@@ -7,11 +7,24 @@ package wayland
 import (
 	"encoding/binary"
 	"errors"
+	"syscall"
 	"testing"
 )
 
 func TestCreateAnonFile(t *testing.T) {
+	// With XDG_RUNTIME_DIR unset, the backing file lands in os.TempDir()
+	// (this branch is taken on macOS but not Linux, so force it here for a
+	// deterministic 100% regardless of the host environment).
+	t.Setenv("XDG_RUNTIME_DIR", "")
 	fd, err := createAnonFile(4096)
+	if err != nil {
+		t.Fatalf("createAnonFile (TempDir fallback): %v", err)
+	}
+	_ = syscall.Close(fd)
+
+	// With XDG_RUNTIME_DIR set to a real directory, the file lands there.
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	fd, err = createAnonFile(4096)
 	if err != nil {
 		t.Fatalf("createAnonFile: %v", err)
 	}
