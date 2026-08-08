@@ -29,8 +29,28 @@ import (
 	"github.com/go-widgets/window/internal/x11"
 )
 
-// ErrUnsupported is returned by Open on platforms with no X11 backend.
-var ErrUnsupported = errors.New("window: X11 backend is only supported on Linux")
+// ErrUnsupported is returned by Open on platforms with no windowing
+// backend (non-Linux).
+var ErrUnsupported = errors.New("window: a native windowing backend is only supported on Linux")
+
+// Backend is an open, backend-specific window bound to a go-widgets scene.
+// Both the X11 (*Window) and the Wayland backend satisfy it, so Open can
+// return whichever the environment selects and a go-widgets application is
+// backend-agnostic: it just calls Run, Size, String and Close.
+type Backend interface {
+	// Run binds root, performs the initial layout+present, then dispatches
+	// server/compositor events into the widget tree until the window closes.
+	Run(root toolkit.Widget) error
+	// Close releases the window and its connection.
+	Close() error
+	// Size returns the current client size in pixels.
+	Size() (int, int)
+	// String identifies the window for debugging.
+	String() string
+}
+
+// Compile-time assurance that the X11 window satisfies Backend.
+var _ Backend = (*Window)(nil)
 
 // Config parametrises a window.
 type Config struct {

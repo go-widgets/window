@@ -33,6 +33,19 @@ func TestNewConnBasics(t *testing.T) {
 	}
 }
 
+func TestNewOverSocket(t *testing.T) {
+	cli, srv := socketPair(t)
+	defer srv.Close()
+	c := New(cli)
+	defer c.Close()
+	if c.order != NativeOrder {
+		t.Error("New should use the native byte order")
+	}
+	if c.Display() == nil {
+		t.Error("New should install wl_display")
+	}
+}
+
 // TestRegistryHandshake drives the real socket path end to end: get the
 // registry, receive two globals, round-trip to the sync callback, and
 // verify Find/Globals.

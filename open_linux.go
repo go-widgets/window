@@ -11,20 +11,73 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 
+	"github.com/go-widgets/window/internal/wayland"
 	"github.com/go-widgets/window/internal/x11"
 )
 
-// Open connects to the X11 server named by cfg.Display (or $DISPLAY),
+// Open connects to the running display server and returns a window ready for
+// Run. It auto-selects the backend: Wayland when $WAYLAND_DISPLAY is set
+// (the modern default on contemporary Linux desktops), otherwise the X11
+// backend driven by $DISPLAY. Both are sovereign, pure-Go, CGO-free
+// implementations of their wire protocols.
+func Open(cfg Config) (Backend, error) {
+	if name := os.Getenv("WAYLAND_DISPLAY"); name != "" {
+		return openWayland(cfg, name)
+	}
+	return openX11(cfg)
+}
+
+// openWayland dials the compositor socket named by $WAYLAND_DISPLAY (resolved
+// against $XDG_RUNTIME_DIR) and brings up an xdg-shell toplevel.
+func openWayland(cfg Config, name string) (Backend, error) {
+	path, err := waylandSocketPath(name)
+	if err != nil {
+		return nil, err
+	}
+	nc, err := net.Dial("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("window: cannot connect to Wayland compositor: %w", err)
+	}
+	uc, ok := nc.(*net.UnixConn)
+	if !ok { // net.Dial("unix", ...) always yields *net.UnixConn
+		nc.Close()
+		return nil, fmt.Errorf("window: Wayland dial returned %T, want *net.UnixConn", nc)
+	}
+	conn := wayland.New(uc)
+	w, err := newWaylandWindow(conn, cfg)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return w, nil
+}
+
+// waylandSocketPath resolves the compositor socket path. An absolute
+// $WAYLAND_DISPLAY is used verbatim; a bare name is joined onto
+// $XDG_RUNTIME_DIR.
+func waylandSocketPath(name string) (string, error) {
+	if filepath.IsAbs(name) {
+		return name, nil
+	}
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		return "", fmt.Errorf("window: XDG_RUNTIME_DIR is not set (needed for WAYLAND_DISPLAY=%q)", name)
+	}
+	return filepath.Join(dir, name), nil
+}
+
+// openX11 connects to the X11 server named by cfg.Display (or $DISPLAY),
 // authenticates with the matching MIT-MAGIC-COOKIE-1 from the Xauthority
 // file, creates and maps a window and returns it ready for Run.
-func Open(cfg Config) (*Window, error) {
+func openX11(cfg Config) (Backend, error) {
 	disp := cfg.Display
 	if disp == "" {
 		disp = os.Getenv("DISPLAY")
 	}
 	if disp == "" {
-		return nil, fmt.Errorf("window: DISPLAY is not set")
+		return nil, fmt.Errorf("window: neither WAYLAND_DISPLAY nor DISPLAY is set")
 	}
 	d, err := parseDisplay(disp)
 	if err != nil {
