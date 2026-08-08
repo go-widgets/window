@@ -35,19 +35,22 @@ jobs:
       - run: CGO_ENABLED=0 go build ./...
       - name: Test (whole module)
         run: CGO_ENABLED=0 go test ./...
-      - name: 100% coverage gate (internal/x11)
+      - name: 100% coverage gate (internal/x11 + internal/wayland)
         shell: bash
-        # -race needs cgo, so this step (and only this step) enables it. The
-        # library stays CGO-free, proven by the CGO=0 arch matrix below.
+        # -race needs cgo, so this step (and only this step) enables it. Both
+        # sovereign protocol layers stay CGO-free, proven by the CGO=0 arch
+        # matrix below.
         env:
           CGO_ENABLED: "1"
         run: |
-          go test -race -timeout 300s -coverprofile=cover.out ./internal/x11/
-          go tool cover -func=cover.out | tail -n 40
-          cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
-          echo "internal/x11 coverage: ${cov}%"
-          awk -v t="$cov" 'BEGIN { exit !(t+0 >= 100.0) }' || {
-            echo "::error::internal/x11 coverage ${cov}% < 100%"; exit 1; }
+          for pkg in internal/x11 internal/wayland; do
+            go test -race -timeout 300s -coverprofile=cover.out "./$pkg/"
+            go tool cover -func=cover.out | tail -n 60
+            cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
+            echo "$pkg coverage: ${cov}%"
+            awk -v t="$cov" 'BEGIN { exit !(t+0 >= 100.0) }' || {
+              echo "::error::$pkg coverage ${cov}% < 100%"; exit 1; }
+          done
 
   # The macOS lane above also proves the non-Linux stub (Open -> ErrUnsupported)
   # builds and passes. Named here for clarity of intent.
@@ -117,11 +120,64 @@ jobs:
       - name: Run live integration test under Xvfb
         env:
           WINDOW_X11_INTEGRATION: "1"
-        run: xvfb-run -s "-screen 0 1024x768x24" go test -tags=integration -run TestLive -v ./...
+        run: xvfb-run -s "-screen 0 1024x768x24" go test -tags=integration -run TestLiveX11 -v ./...
       - name: Upload the captured window as a build artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: live-capture
           path: live-capture.png
+          if-no-files-found: warn
+
+  # Live Wayland proof: open a real xdg-shell toplevel on a headless wlroots
+  # compositor (sway), present a known test pattern through a wl_shm buffer,
+  # capture the output with grim and assert sampled pixels. Input is attempted
+  # via wtype (virtual-keyboard) and asserted when the headless seat exposes a
+  # keyboard; otherwise it is proven by the in-process fake-compositor test.
+  live-wayland:
+    name: live Wayland (sway headless)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Install a headless Wayland compositor + capture/input tools
+        run: sudo apt-get update && sudo apt-get install -y sway grim wtype dbus
+      - name: Run live integration test under sway (headless)
+        shell: bash
+        run: |
+          set -x
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          cat > sway.conf <<'CONF'
+          output HEADLESS-1 resolution 800x600
+          default_border none
+          default_floating_border none
+          gaps inner 0
+          gaps outer 0
+          CONF
+          export WLR_BACKENDS=headless
+          export WLR_RENDERER=pixman
+          export WLR_LIBINPUT_NO_DEVICES=1
+          export LIBSEAT_BACKEND=noop
+          export WLR_HEADLESS_OUTPUTS=1
+          dbus-run-session -- sway -c sway.conf &
+          # Wait for sway to create its Wayland socket.
+          sock=""
+          for i in $(seq 1 60); do
+            sock=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock' | head -1 || true)
+            [ -n "$sock" ] && break
+            sleep 0.5
+          done
+          if [ -z "$sock" ]; then echo "::error::sway Wayland socket never appeared"; exit 1; fi
+          export WAYLAND_DISPLAY="$(basename "$sock")"
+          echo "using WAYLAND_DISPLAY=$WAYLAND_DISPLAY in $XDG_RUNTIME_DIR"
+          WINDOW_WAYLAND_INTEGRATION=1 go test -tags=integration -run TestLiveWayland -v ./...
+      - name: Upload the captured window as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-wayland-capture
+          path: live-wayland-capture.png
           if-no-files-found: warn
