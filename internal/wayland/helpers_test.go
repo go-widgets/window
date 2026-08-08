@@ -140,6 +140,24 @@ func bothOrders(t *testing.T, fn func(t *testing.T, order ByteOrder)) {
 	}
 }
 
+// decodeWrite parses a captured raw request (header + body) into its object
+// id, opcode and a decoder positioned at the body.
+func decodeWrite(order ByteOrder, msg []byte) (uint32, uint16, *decoder) {
+	d := newDecoder(order, msg)
+	obj := d.getU32()
+	word := d.getU32()
+	return obj, uint16(word & 0xffff), d
+}
+
+// lastWrite returns the decoded most-recent captured request on st.
+func lastWrite(t *testing.T, st *stubTransport, order ByteOrder) (uint32, uint16, *decoder) {
+	t.Helper()
+	if len(st.writes) == 0 {
+		t.Fatal("no request captured")
+	}
+	return decodeWrite(order, st.writes[len(st.writes)-1])
+}
+
 // newTestConn wires a client Conn to a fake server over a socket pair.
 func newTestConn(t *testing.T, order ByteOrder) (*Conn, *fakeServer) {
 	t.Helper()
