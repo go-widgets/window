@@ -6,6 +6,7 @@ package wayland
 
 import (
 	"fmt"
+	"net"
 	"sync"
 )
 
@@ -50,6 +51,12 @@ func NewConn(t transport, order ByteOrder) *Conn {
 	return c
 }
 
+// New builds a connection over a dialed UNIX-domain socket using the host's
+// native wire byte order — the production entry point for the window layer.
+func New(c *net.UnixConn) *Conn {
+	return NewConn(newUnixTransport(c, NativeOrder), NativeOrder)
+}
+
 // Display returns the wl_display singleton.
 func (c *Conn) Display() *Display { return c.display }
 
@@ -86,6 +93,11 @@ func (c *Conn) send(objID uint32, opcode uint16, body []byte, fds []int) error {
 	defer c.wmu.Unlock()
 	return c.t.write(e.buf, fds)
 }
+
+// recvFD returns the next file descriptor the compositor passed over
+// SCM_RIGHTS, oldest first. Handlers for events carrying an fd (e.g.
+// wl_keyboard.keymap) call it in argument order.
+func (c *Conn) recvFD() (int, bool) { return c.t.popFD() }
 
 // Dispatch reads and delivers exactly one event. Events for objects with
 // no handler (e.g. an object destroyed after the compositor queued an

@@ -6,12 +6,13 @@
 
 package window
 
-// Open is unavailable off Linux: there is no X11 server to dial, so it
-// returns ErrUnsupported. The window-construction, presentation and
-// event-translation logic remains compiled and unit-tested on every
-// platform via the transport-agnostic internal/x11 connection; only this
-// environment-driven entry point is gated, keeping cross-builds green.
-func Open(cfg Config) (*Window, error) {
+// Open is unavailable off Linux: there is no X11 server or Wayland
+// compositor socket to dial, so it returns ErrUnsupported. The
+// window-construction, presentation and event-translation logic of both
+// backends remains compiled and unit-tested on every platform via the
+// transport-agnostic internal/x11 and internal/wayland connections; only
+// this environment-driven entry point is gated, keeping cross-builds green.
+func Open(cfg Config) (Backend, error) {
 	_ = cfg
 	return nil, ErrUnsupported
 }
