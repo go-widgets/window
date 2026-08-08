@@ -118,3 +118,10 @@ jobs:
         env:
           WINDOW_X11_INTEGRATION: "1"
         run: xvfb-run -s "-screen 0 1024x768x24" go test -tags=integration -run TestLive -v ./...
+      - name: Upload the captured window as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-capture
+          path: live-capture.png
+          if-no-files-found: warn
