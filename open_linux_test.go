@@ -11,6 +11,8 @@ import (
 )
 
 func TestOpenErrors(t *testing.T) {
+	// With WAYLAND_DISPLAY unset, Open falls through to the X11 backend.
+	t.Setenv("WAYLAND_DISPLAY", "")
 	// DISPLAY unset (and none supplied) errors.
 	t.Setenv("DISPLAY", "")
 	if _, err := Open(Config{}); err == nil {
@@ -27,6 +29,41 @@ func TestOpenErrors(t *testing.T) {
 	// A local display whose socket does not exist fails to connect.
 	if _, err := Open(Config{Display: ":987"}); err == nil {
 		t.Fatal("Open with nonexistent server should error")
+	}
+}
+
+func TestOpenSelectsWayland(t *testing.T) {
+	// When WAYLAND_DISPLAY is set, Open takes the Wayland path. Pointing it
+	// at a nonexistent socket makes the dial fail (proving selection).
+	t.Setenv("WAYLAND_DISPLAY", "gw-nonexistent-wl-0")
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	if _, err := Open(Config{}); err == nil {
+		t.Fatal("Open with a dead Wayland socket should error")
+	}
+}
+
+func TestWaylandSocketPath(t *testing.T) {
+	// An absolute name is used verbatim.
+	if p, err := waylandSocketPath("/run/user/1000/wayland-0"); err != nil || p != "/run/user/1000/wayland-0" {
+		t.Fatalf("absolute path = %q err=%v", p, err)
+	}
+	// A bare name is joined onto XDG_RUNTIME_DIR.
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	if p, err := waylandSocketPath("wayland-1"); err != nil || p != "/run/user/1000/wayland-1" {
+		t.Fatalf("joined path = %q err=%v", p, err)
+	}
+	// A bare name with no XDG_RUNTIME_DIR errors.
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	if _, err := waylandSocketPath("wayland-0"); err == nil {
+		t.Fatal("bare name with no XDG_RUNTIME_DIR should error")
+	}
+}
+
+func TestOpenWaylandNoRuntimeDir(t *testing.T) {
+	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	if _, err := Open(Config{}); err == nil {
+		t.Fatal("Open with WAYLAND_DISPLAY but no XDG_RUNTIME_DIR should error")
 	}
 }
 
