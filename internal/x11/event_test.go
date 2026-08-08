@@ -14,13 +14,13 @@ func pointerEvent(order ByteOrder, code, detail byte, win uint32, ex, ey int16, 
 	pkt := make([]byte, 32)
 	pkt[0] = code
 	pkt[1] = detail
-	order.PutUint16(pkt[2:4], 1)       // seq
-	order.PutUint32(pkt[4:8], 42)      // time
-	order.PutUint32(pkt[8:12], 0)      // root
-	order.PutUint32(pkt[12:16], win)   // event window
-	order.PutUint32(pkt[16:20], 0)     // child
-	order.PutUint16(pkt[20:22], 100)   // root-x
-	order.PutUint16(pkt[22:24], 200)   // root-y
+	order.PutUint16(pkt[2:4], 1)     // seq
+	order.PutUint32(pkt[4:8], 42)    // time
+	order.PutUint32(pkt[8:12], 0)    // root
+	order.PutUint32(pkt[12:16], win) // event window
+	order.PutUint32(pkt[16:20], 0)   // child
+	order.PutUint16(pkt[20:22], 100) // root-x
+	order.PutUint16(pkt[22:24], 200) // root-y
 	order.PutUint16(pkt[24:26], uint16(ex))
 	order.PutUint16(pkt[26:28], uint16(ey))
 	order.PutUint16(pkt[28:30], state) // state
@@ -96,10 +96,10 @@ func TestDecodeEventClientMessage(t *testing.T) {
 	order := binary.LittleEndian
 	pkt := make([]byte, 32)
 	pkt[0] = evClientMessage
-	pkt[1] = 32                              // format
-	order.PutUint32(pkt[4:8], testRootWin)   // window
-	order.PutUint32(pkt[8:12], 0x77)         // message type atom
-	order.PutUint32(pkt[12:16], 0x88)        // data[0]
+	pkt[1] = 32                            // format
+	order.PutUint32(pkt[4:8], testRootWin) // window
+	order.PutUint32(pkt[8:12], 0x77)       // message type atom
+	order.PutUint32(pkt[12:16], 0x88)      // data[0]
 	ev := decodeEvent(order, pkt)
 	if ev.Code != evClientMessage || ev.Format != 32 || ev.Atom != 0x77 || ev.Data32 != 0x88 {
 		t.Fatalf("client message decode wrong: %+v", ev)

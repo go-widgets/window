@@ -100,11 +100,11 @@ func TestKeysymRune(t *testing.T) {
 		r    rune
 		want bool
 	}{
-		{0x61, 'a', true},        // ascii lower
-		{0x41, 'A', true},        // ascii upper
-		{0x7e, '~', true},        // ascii high
-		{0x20, 0, false},         // space excluded (named)
-		{0xe9, 'é', true},        // latin-1
+		{0x61, 'a', true},       // ascii lower
+		{0x41, 'A', true},       // ascii upper
+		{0x7e, '~', true},       // ascii high
+		{0x20, 0, false},        // space excluded (named)
+		{0xe9, 'é', true},       // latin-1
 		{0x01000041, 'A', true}, // unicode-flagged
 		{0x02000041, 0, false},  // top byte not 0x01 -> not matched
 		{ksReturn, 0, false},    // control keysym, no rune

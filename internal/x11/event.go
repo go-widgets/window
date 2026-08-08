@@ -17,36 +17,36 @@ const (
 
 // Pointer button numbers as reported in a Button event's detail byte.
 const (
-	Button1     = 1 // left
-	Button2     = 2 // middle
-	Button3     = 3 // right
-	ButtonWheelUp    = 4
-	ButtonWheelDown  = 5
+	Button1         = 1 // left
+	Button2         = 2 // middle
+	Button3         = 3 // right
+	ButtonWheelUp   = 4
+	ButtonWheelDown = 5
 )
 
 // Event is a decoded X11 event in a flat, protocol-level form. The host
 // layer maps it to a toolkit.Event; keeping this struct free of toolkit
 // types lets the whole decoder be unit-tested with no UI dependency.
 type Event struct {
-	Code     byte   // event type with the SendEvent bit stripped
-	Synth    bool   // set if the SendEvent bit was present
-	Detail   byte   // keycode (key events) or button number (button events)
-	Seq      uint16 // low 16 bits of the sequence number
-	Time     uint32
-	Window   uint32 // event window
-	RootX    int16
-	RootY    int16
-	EventX   int16
-	EventY   int16
-	State    uint16 // modifier + button mask
-	X        int16  // Expose/ConfigureNotify origin
-	Y        int16
-	Width    uint16 // Expose/ConfigureNotify extent
-	Height   uint16
-	Count    uint16 // Expose: remaining rectangles
-	Atom     uint32 // ClientMessage: message type
-	Format   byte   // ClientMessage: data format
-	Data32   uint32 // ClientMessage: first 32-bit data word (WM_DELETE_WINDOW)
+	Code   byte   // event type with the SendEvent bit stripped
+	Synth  bool   // set if the SendEvent bit was present
+	Detail byte   // keycode (key events) or button number (button events)
+	Seq    uint16 // low 16 bits of the sequence number
+	Time   uint32
+	Window uint32 // event window
+	RootX  int16
+	RootY  int16
+	EventX int16
+	EventY int16
+	State  uint16 // modifier + button mask
+	X      int16  // Expose/ConfigureNotify origin
+	Y      int16
+	Width  uint16 // Expose/ConfigureNotify extent
+	Height uint16
+	Count  uint16 // Expose: remaining rectangles
+	Atom   uint32 // ClientMessage: message type
+	Format byte   // ClientMessage: data format
+	Data32 uint32 // ClientMessage: first 32-bit data word (WM_DELETE_WINDOW)
 }
 
 // decodeEvent parses a 32-byte X11 event packet. The layout of the shared

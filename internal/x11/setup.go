@@ -19,13 +19,13 @@ type Format struct {
 // TrueColor/DirectColor visual packs a pixel with. The masks drive the
 // RGBA→wire byte conversion in PutImage.
 type VisualType struct {
-	ID            uint32
-	Class         uint8
-	BitsPerRGB    uint8
-	ColormapEnt   uint16
-	RedMask       uint32
-	GreenMask     uint32
-	BlueMask      uint32
+	ID          uint32
+	Class       uint8
+	BitsPerRGB  uint8
+	ColormapEnt uint16
+	RedMask     uint32
+	GreenMask   uint32
+	BlueMask    uint32
 }
 
 // TrueColor and DirectColor are the visual classes whose pixels are

@@ -100,16 +100,16 @@ func TestParseSetupReplyErrors(t *testing.T) {
 	order := binary.LittleEndian
 	// No screens: numScreens = 0, numFormats = 0.
 	e := newEncoder(order)
-	e.put32(0)  // release
-	e.put32(0)  // base
-	e.put32(0)  // mask
-	e.put32(0)  // motion
-	e.put16(0)  // vendor len
-	e.put16(0)  // max req
-	e.put8(0)   // screens
-	e.put8(0)   // formats
-	e.skip(6)   // image order..max keycode (6 bytes: image,bit,unit,pad,min,max)
-	e.skip(4)   // unused
+	e.put32(0) // release
+	e.put32(0) // base
+	e.put32(0) // mask
+	e.put32(0) // motion
+	e.put16(0) // vendor len
+	e.put16(0) // max req
+	e.put8(0)  // screens
+	e.put8(0)  // formats
+	e.skip(6)  // image order..max keycode (6 bytes: image,bit,unit,pad,min,max)
+	e.skip(4)  // unused
 	if _, err := parseSetupReply(order, e.buf); err == nil {
 		t.Fatal("no-screens should error")
 	}

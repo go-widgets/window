@@ -29,9 +29,9 @@ func TestEncoderRoundTripBothOrders(t *testing.T) {
 		e.put16(0x1234)
 		e.put32(0xDEADBEEF)
 		e.putBytes([]byte{1, 2})
-		e.putString("hi")   // 2 bytes + 2 pad
-		e.skip(1)           // one zero
-		e.pad(1)            // 3 pad after 1 written byte -> here uses len arg
+		e.putString("hi") // 2 bytes + 2 pad
+		e.skip(1)         // one zero
+		e.pad(1)          // 3 pad after 1 written byte -> here uses len arg
 		d := newDecoder(order, e.buf)
 		if d.get8() != 0xAB {
 			t.Fatal("get8")
