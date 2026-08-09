@@ -139,15 +139,7 @@ func (p *Presenter) EncodeRectInto(seg []byte, totalW int, src []byte, srcStride
 	if len(seg) < need {
 		return fmt.Errorf("x11: shm segment too small: have %d, need %d", len(seg), need)
 	}
-	for row := 0; row < h; row++ {
-		srcRow := (sy+row)*srcStride + sx*4
-		dstRow := (sy+row)*line + sx*bpx
-		for col := 0; col < w; col++ {
-			so := srcRow + col*4
-			p.putValue(seg[dstRow+col*bpx:dstRow+col*bpx+bpx],
-				p.pixel(src[so], src[so+1], src[so+2]))
-		}
-	}
+	p.packRect(seg, sy*line+sx*bpx, line, src, srcStride, sx, sy, w, h)
 	return nil
 }
 
