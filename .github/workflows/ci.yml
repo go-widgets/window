@@ -106,9 +106,14 @@ jobs:
 
   # Live X11 proof: open a real window under Xvfb, present a known test
   # pattern, capture it and assert sampled pixels; synthesise a key + click
-  # via xdotool and assert the dispatched toolkit.Event. Gated on Linux.
+  # via xdotool and assert the dispatched toolkit.Event. This lane also proves
+  # the MIT-SHM present path: TestLiveX11SHMActive asserts Open() is presenting
+  # through ShmPutImage (so the pixels asserted above are drawn via shared
+  # memory, not PutImage), and TestLiveX11SHMMeasure records, on this runner,
+  # present latency and bytes-over-socket for ShmPutImage vs plain PutImage
+  # (uploaded as shm-measure.txt). Gated on Linux.
   live-xvfb:
-    name: live X11 (Xvfb)
+    name: live X11 (Xvfb, +MIT-SHM)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -121,12 +126,14 @@ jobs:
         env:
           WINDOW_X11_INTEGRATION: "1"
         run: xvfb-run -s "-screen 0 1024x768x24" go test -tags=integration -run TestLiveX11 -v ./...
-      - name: Upload the captured window as a build artifact
+      - name: Upload the captured window + SHM measurement as build artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: live-capture
-          path: live-capture.png
+          path: |
+            live-capture.png
+            shm-measure.txt
           if-no-files-found: warn
 
   # Live Wayland proof (present + input): open a real xdg-shell toplevel on a

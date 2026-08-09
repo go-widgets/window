@@ -21,6 +21,7 @@ via the core-protocol `PutImage`, and routes X input into `toolkit.Event`.
 │    · MIT-MAGIC-COOKIE-1 Xauthority  · keycode→keysym mapping   │
 │    · request/reply/error/event demux                           │
 │    · PutImage (RGBA→visual pixel packing, max-request tiling)  │
+│    · MIT-SHM 1.2 fast path (shm fd over SCM_RIGHTS, ShmPutImage)│
 ├──────────────────────────────────────────────────────────────┤
 │  unix socket  /tmp/.X11-unix/X<n>   →  X server                │
 └──────────────────────────────────────────────────────────────┘
