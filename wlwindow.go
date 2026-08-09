@@ -46,6 +46,16 @@ type wlWindow struct {
 	buf   []byte // RGBA framebuffer, 4*w*h bytes
 	theme *toolkit.Theme
 	root  toolkit.Widget
+	dmg   DamageRenderer // non-nil when root opts into incremental present
+
+	// bufDamage[i] is the region pool buffer i still owes relative to the live
+	// framebuffer — the pixels changed while it was NOT the attached buffer,
+	// plus this frame's damage. Because the two pool buffers alternate, a buffer
+	// is up to a frame stale when re-chosen; packing its owed region (not just
+	// this frame's) keeps every attached buffer fully correct, so a wl_shm
+	// buffer the compositor may sample outside the surface-damage rect never
+	// shows a stale pixel. Seeded to the whole surface on (re)creation.
+	bufDamage [2][]toolkit.Rect
 
 	ptrX, ptrY int
 	buttons    int // bitmask of pressed pointer buttons (for drag detection)
@@ -413,6 +423,11 @@ func (w *wlWindow) ensureBuffers() error {
 	w.stride = stride
 	w.bufW, w.bufH = w.w, w.h
 	w.cur = 0
+	// Both buffers are freshly allocated (uninitialised): each owes the whole
+	// surface, so the first pack into either fills it completely.
+	full := toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h}
+	w.bufDamage[0] = append(w.bufDamage[0][:0], full)
+	w.bufDamage[1] = append(w.bufDamage[1][:0], full)
 	return nil
 }
 
@@ -437,6 +452,74 @@ func (w *wlWindow) present() error {
 	}
 	if err := w.surface.DamageBuffer(0, 0, w.w, w.h); err != nil {
 		return err
+	}
+	if _, err := w.surface.Frame(); err != nil {
+		return err
+	}
+	if err := w.surface.Commit(); err != nil {
+		return err
+	}
+	w.cur = 1 - idx
+	return nil
+}
+
+// drawIncremental lays the root out to the full surface and repaints ONLY the
+// damage the root reports, returning the repainted rectangles. Used only when
+// the root opts into incremental present (w.dmg != nil). The framebuffer
+// persists across frames, so pixels outside the damage stay correct.
+func (w *wlWindow) drawIncremental() []toolkit.Rect {
+	p := painter.NewPixelPainter(w.buf, w.w, w.h)
+	w.root.SetBounds(toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h})
+	return w.dmg.RenderDamaged(p, w.theme)
+}
+
+// presentDamaged packs and commits only the damaged region. It packs into the
+// chosen buffer every rectangle that buffer owes (this frame's damage plus any
+// it missed while unattached — see bufDamage), so the buffer is fully correct,
+// but marks as surface damage only this frame's rectangles (the pixels that
+// differ from what is currently on screen). frame must be non-empty.
+func (w *wlWindow) presentDamaged(frame []toolkit.Rect) error {
+	if !w.configured {
+		return nil
+	}
+	if err := w.ensureBuffers(); err != nil {
+		return err
+	}
+	// Record this frame's damage against both buffers.
+	for _, r := range frame {
+		w.bufDamage[0] = addDamage(w.bufDamage[0], r)
+		w.bufDamage[1] = addDamage(w.bufDamage[1], r)
+	}
+	idx := w.cur
+	if !w.buffers[idx].Released() && w.buffers[1-idx].Released() {
+		idx = 1 - idx
+	}
+	off := idx * w.stride * w.h
+	dst := w.poolData[off:]
+	// Pack every rectangle this buffer owes so it holds the full correct image.
+	for _, r := range w.bufDamage[idx] {
+		c := clampRect(r, w.w, w.h)
+		if c.W <= 0 || c.H <= 0 {
+			continue
+		}
+		dOff := c.Y*w.stride + c.X*4
+		sOff := c.Y*w.w*4 + c.X*4
+		wayland.PackARGB8888(dst[dOff:], w.stride, w.buf[sOff:], w.w*4, c.W, c.H)
+	}
+	w.bufDamage[idx] = w.bufDamage[idx][:0] // now fully current
+	if err := w.surface.Attach(w.buffers[idx], 0, 0); err != nil {
+		return err
+	}
+	// Surface damage: only this frame's rectangles differ from the previously
+	// committed (on-screen) buffer.
+	for _, r := range frame {
+		c := clampRect(r, w.w, w.h)
+		if c.W <= 0 || c.H <= 0 {
+			continue
+		}
+		if err := w.surface.DamageBuffer(c.X, c.Y, c.W, c.H); err != nil {
+			return err
+		}
 	}
 	if _, err := w.surface.Frame(); err != nil {
 		return err
@@ -477,8 +560,8 @@ func (w *wlWindow) applyResize() {
 // the X11 host loop and the wasm compositor host loop.
 func (w *wlWindow) Run(root toolkit.Widget) error {
 	w.root = root
-	w.draw()
-	if err := w.present(); err != nil {
+	w.dmg, _ = root.(DamageRenderer)
+	if err := w.paintInitial(); err != nil {
 		return err
 	}
 	for !w.quit {
@@ -500,8 +583,7 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 			}
 		}
 		if w.repaint || len(w.pending) > 0 {
-			w.draw()
-			if err := w.present(); err != nil {
+			if err := w.paintFrame(); err != nil {
 				return err
 			}
 		}
@@ -509,6 +591,35 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 		w.repaint = false
 	}
 	return nil
+}
+
+// paintInitial paints and presents the window's first frame: whole surface,
+// either through the incremental root (consuming its full-surface seed damage so
+// the first interaction is already incremental) or a plain full repaint.
+func (w *wlWindow) paintInitial() error {
+	if w.dmg != nil {
+		rects := w.drawIncremental()
+		return w.presentDamaged(rects)
+	}
+	w.draw()
+	return w.present()
+}
+
+// paintFrame renders and presents one frame. A plain root repaints+commits the
+// whole surface; an incremental root repaints+commits only its damage (nothing
+// when it reports none). A resize routes through the incremental path too: the
+// root reports whole-surface damage and the recreated pool buffers each owe the
+// whole surface, so the frame is packed and committed in full.
+func (w *wlWindow) paintFrame() error {
+	if w.dmg == nil {
+		w.draw()
+		return w.present()
+	}
+	rects := w.drawIncremental()
+	if len(rects) == 0 {
+		return nil // nothing changed this frame
+	}
+	return w.presentDamaged(rects)
 }
 
 // Size returns the current client size in pixels.
