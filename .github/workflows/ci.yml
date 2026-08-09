@@ -35,15 +35,17 @@ jobs:
       - run: CGO_ENABLED=0 go build ./...
       - name: Test (whole module)
         run: CGO_ENABLED=0 go test ./...
-      - name: 100% coverage gate (internal/x11 + internal/wayland)
+      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox)
         shell: bash
-        # -race needs cgo, so this step (and only this step) enables it. Both
-        # sovereign protocol layers stay CGO-free, proven by the CGO=0 arch
-        # matrix below.
+        # -race needs cgo, so this step (and only this step) enables it. All
+        # three sovereign protocol layers stay CGO-free, proven by the CGO=0 arch
+        # matrix below. internal/wasmbox's syscall/js transport (client_js.go) is
+        # excluded here by build tag on the Linux host, so the gate measures its
+        # pure, transport-agnostic codec (protocol.go) — 100% by construction.
         env:
           CGO_ENABLED: "1"
         run: |
-          for pkg in internal/x11 internal/wayland; do
+          for pkg in internal/x11 internal/wayland internal/wasmbox; do
             go test -race -timeout 300s -coverprofile=cover.out "./$pkg/"
             go tool cover -func=cover.out | tail -n 60
             cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
@@ -69,10 +71,12 @@ jobs:
       - run: CGO_ENABLED=0 go test ./...
 
   # Cross-build regression guard: the whole module MUST compile CGO-free for
-  # every non-native target, including windows/amd64 and darwin — this is what
+  # every non-native target, including windows/amd64, darwin and js/wasm — this
   # keeps the Linux-only X11/Wayland backends from leaking unix-only syscalls
-  # back into the windows (or any non-unix) build. Pure-Go cross-compilation
-  # needs no target runner, so all targets build from a single Linux host.
+  # back into the windows (or any non-unix) build, AND proves the js/wasm
+  # (wasmbox external-client) backend + its cmd/gowidgetsclient example compile
+  # under GOOS=js GOARCH=wasm. Pure-Go cross-compilation needs no target runner,
+  # so all targets build (and vet) from a single Linux host.
   cross-build:
     name: cross-build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
@@ -81,6 +85,7 @@ jobs:
       matrix:
         include:
           - { goos: windows, goarch: amd64 }
+          - { goos: js,      goarch: wasm }
           - { goos: darwin,  goarch: arm64 }
           - { goos: darwin,  goarch: amd64 }
           - { goos: linux,   goarch: amd64 }
