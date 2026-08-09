@@ -96,8 +96,26 @@ clients/gowidgets/build.sh          # → clients/gowidgets/{gowidgets.wasm,wasm
 ```
 
 The live browser proof (headless Chromium via Playwright, served by wasmbox's
-own COOP/COEP `cmd/serve`) lives in `test/` — see `test/probe-wasmbox.mjs` and
-the captured `test/wasmbox-live-proof-2026-08-09.png`.
+own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
+
+- **Real desktop** (`test/probe-wasmbox-real.mjs`) — drives the **actual
+  wasmdesk/wasmbox Ruby compositor** (`compositor/*.rb` on the pure-Go rbgo
+  interpreter, baked into `wasmbox.wasm`). It boots the real desktop, spawns
+  this client with the documented
+  `globalThis.wasmboxSpawnExternal("clients/gowidgets/worker.js")` hook (a real
+  external Worker + wasm instance over the step-C.1 `MessagePort` + SAB), reads
+  the compositor's own composited pixels (`__wasmboxReadRegion`) to assert the
+  VBox+Label+Button rendered at the window's live focused rect, and injects a
+  **real** `page.mouse.click` that the compositor routes to the focused window —
+  asserting the counter goes `0→1` (input → `toolkit.Event` through the real
+  input routing). Captured: `test/wasmbox-live-proof-real-desktop-2026-08-09.png`
+  (the go-widgets window composited on the rbgo desktop, reading "Clicks: 1").
+  The wasmbox repo is **unmodified**; the client is served same-origin via a
+  symlink overlay — see [`test/README-real-desktop.md`](test/README-real-desktop.md).
+- **Deterministic floor** (`test/probe-wasmbox.mjs`) — the same assertions
+  against `test/harness.html`, a protocol-faithful compositor stand-in, so the
+  wire + SAB + input round-trip are exercised even without building the ~80 MB
+  Ruby compositor. Captured: `test/wasmbox-live-proof-2026-08-09.png`.
 
 ## Public API
 
