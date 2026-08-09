@@ -6,7 +6,6 @@ package wayland
 
 import (
 	"fmt"
-	"net"
 	"sync"
 )
 
@@ -49,12 +48,6 @@ func NewConn(t transport, order ByteOrder) *Conn {
 	}
 	c.display = newDisplay(c)
 	return c
-}
-
-// New builds a connection over a dialed UNIX-domain socket using the host's
-// native wire byte order — the production entry point for the window layer.
-func New(c *net.UnixConn) *Conn {
-	return NewConn(newUnixTransport(c, NativeOrder), NativeOrder)
 }
 
 // Display returns the wl_display singleton.

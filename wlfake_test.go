@@ -11,6 +11,9 @@
 // the input path (a click and a key press synthesised by the compositor and
 // asserted as dispatched toolkit events), with no display server involved —
 // the runtime analogue proven live by the CI headless-compositor lane.
+
+//go:build linux
+
 package window
 
 import (

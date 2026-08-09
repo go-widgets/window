@@ -12,19 +12,19 @@ permissions:
 
 # Track the latest stable Go (org convention). go.mod floor is 1.26.4.
 jobs:
-  # Build + vet the whole module CGO-free on Linux and macOS, then enforce a
-  # 100% statement-coverage gate on the sovereign X11 protocol layer
-  # (internal/x11: wire codec, setup, Xauthority, keysym mapping,
-  # request/reply/event demux, PutImage). The live-window layer is proven by
-  # the Xvfb integration test (gated behind WINDOW_X11_INTEGRATION); its
-  # transport-agnostic logic is additionally exercised in-process here.
+  # Build + vet + test the whole module CGO-free on Linux, then enforce a
+  # 100% statement-coverage gate on the sovereign X11 and Wayland protocol
+  # layers (wire codec, setup, Xauthority, keysym/xkb mapping,
+  # request/reply/event demux, PutImage, wl_shm/xdg-shell). The backends'
+  # OS-specific syscalls (SCM_RIGHTS transport, mmap-backed shm) are Linux-only
+  # by build tag, so the coverage gate runs on Linux only; the macOS lane
+  # (darwin-stub) proves the transport-agnostic codec and the ErrUnsupported
+  # stub still build and pass off Linux, and the cross-build lane proves the
+  # module compiles for windows/amd64, darwin and every supported arch. The
+  # live-window layer is proven by the Xvfb/sway integration lanes below.
   test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: test (linux)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
@@ -52,17 +52,52 @@ jobs:
               echo "::error::$pkg coverage ${cov}% < 100%"; exit 1; }
           done
 
-  # The macOS lane above also proves the non-Linux stub (Open -> ErrUnsupported)
-  # builds and passes. Named here for clarity of intent.
+  # macOS lane: prove the non-Linux stub (Open -> ErrUnsupported) plus the
+  # transport-agnostic protocol codec build, vet and pass off Linux. The
+  # Linux-only syscall backends (SCM_RIGHTS transport, mmap shm) are excluded
+  # by build tag here; the cross-platform codec/protocol tests still run.
   darwin-stub:
-    name: darwin stub build
+    name: darwin stub (build + test)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - run: CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go test ./...
+      - run: CGO_ENABLED=0 go vet ./...
+      - run: CGO_ENABLED=0 go build ./...
+      - run: CGO_ENABLED=0 go test ./...
+
+  # Cross-build regression guard: the whole module MUST compile CGO-free for
+  # every non-native target, including windows/amd64 and darwin — this is what
+  # keeps the Linux-only X11/Wayland backends from leaking unix-only syscalls
+  # back into the windows (or any non-unix) build. Pure-Go cross-compilation
+  # needs no target runner, so all targets build from a single Linux host.
+  cross-build:
+    name: cross-build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: linux,   goarch: riscv64 }
+          - { goos: linux,   goarch: loong64 }
+          - { goos: linux,   goarch: ppc64le }
+          - { goos: linux,   goarch: s390x }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+        run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+      - name: Vet (${{ matrix.goos }}/${{ matrix.goarch }})
+        run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go vet ./...
 
   # Validate the module on the six supported 64-bit targets, strictly CGO=0.
   # amd64/arm64 run natively; the rest run under qemu-user. This is where the

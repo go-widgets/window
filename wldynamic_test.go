@@ -10,6 +10,9 @@
 // subsequently injected key and click — the same sequence the live sway lane
 // exercises with the sovereign virtual-input injector, proven here with no
 // display server.
+
+//go:build linux
+
 package window
 
 import (
