@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/toolkit/scene"
 	"github.com/go-widgets/window/internal/wayland"
@@ -46,25 +47,47 @@ var (
 	}
 )
 
-// buildQuadApp builds a four-quadrant toggle pattern over a WxH surface and its
-// scene-backed root. cells are indexed TL, TR, BL, BR.
-func buildQuadApp(W, H int) (*scene.HostRoot, []*toggleCell) {
-	hw, hh := W/2, H/2
-	rects := [4]toolkit.Rect{
-		{X: 0, Y: 0, W: hw, H: hh},
-		{X: hw, Y: 0, W: W - hw, H: hh},
-		{X: 0, Y: hh, W: hw, H: H - hh},
-		{X: hw, Y: hh, W: W - hw, H: H - hh},
+// quadBox lays its four children (TL, TR, BL, BR) into the quadrants of its
+// bounds on every SetBounds, so the pattern fills whatever size the compositor
+// configures the toplevel to (headless sway resizes it to the 800x600 output).
+type quadBox struct {
+	toolkit.Base
+	kids []toolkit.Widget
+}
+
+func (b *quadBox) Children() []toolkit.Widget { return b.kids }
+func (b *quadBox) Draw(p painter.Painter, th *toolkit.Theme) {
+	for _, k := range b.kids {
+		k.Draw(p, th)
 	}
+}
+func (b *quadBox) OnEvent(ev toolkit.Event) {
+	for _, k := range b.kids {
+		if k.HitTest(ev.X, ev.Y) {
+			k.OnEvent(ev)
+		}
+	}
+}
+func (b *quadBox) SetBounds(r toolkit.Rect) {
+	b.Base.SetBounds(r)
+	hw, hh := r.W/2, r.H/2
+	b.kids[0].SetBounds(toolkit.Rect{X: r.X, Y: r.Y, W: hw, H: hh})
+	b.kids[1].SetBounds(toolkit.Rect{X: r.X + hw, Y: r.Y, W: r.W - hw, H: hh})
+	b.kids[2].SetBounds(toolkit.Rect{X: r.X, Y: r.Y + hh, W: hw, H: r.H - hh})
+	b.kids[3].SetBounds(toolkit.Rect{X: r.X + hw, Y: r.Y + hh, W: r.W - hw, H: r.H - hh})
+}
+
+// buildQuadApp builds a four-quadrant toggle pattern over a WxH surface and its
+// scene-backed root. cells are indexed TL, TR, BL, BR and re-flow on resize.
+func buildQuadApp(W, H int) (*scene.HostRoot, []*toggleCell) {
 	var cells []*toggleCell
 	var kids []toolkit.Widget
 	for i := 0; i < 4; i++ {
 		c := &toggleCell{col: quadCol[i], alt: quadAlt[i]}
-		c.SetBounds(rects[i])
 		cells = append(cells, c)
 		kids = append(kids, c)
 	}
-	app := &wholeBox{kids: kids}
+	app := &quadBox{kids: kids}
 	app.SetBounds(toolkit.Rect{X: 0, Y: 0, W: W, H: H})
 	hr := scene.NewHostRoot(app)
 	for _, c := range cells {
