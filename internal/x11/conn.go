@@ -8,9 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"net"
 	"sync"
-	"syscall"
 )
 
 // Conn is a connection to an X11 server speaking the core protocol over an
@@ -211,27 +209,6 @@ func (c *Conn) QueryExtension(name string) (present bool, major, firstEvent, fir
 		return false, 0, 0, 0, err
 	}
 	return reply[8] != 0, reply[9], reply[10], reply[11], nil
-}
-
-// unixRW adapts a *net.UnixConn to the Conn transport, adding fd passing over
-// SCM_RIGHTS. It is what lets the production connection attach a shared-memory
-// descriptor to a MIT-SHM AttachFd request while every other request still
-// travels as an ordinary socket write.
-type unixRW struct{ c *net.UnixConn }
-
-// WrapUnix wraps a dialed *net.UnixConn as an fd-passing transport for
-// Handshake. A connection built over it reports SupportsFDPassing() == true.
-func WrapUnix(c *net.UnixConn) io.ReadWriteCloser { return &unixRW{c: c} }
-
-func (u *unixRW) Read(b []byte) (int, error)  { return u.c.Read(b) }
-func (u *unixRW) Write(b []byte) (int, error) { return u.c.Write(b) }
-func (u *unixRW) Close() error                { return u.c.Close() }
-
-// SendFD writes msg with fd attached as a single SCM_RIGHTS control message.
-func (u *unixRW) SendFD(msg []byte, fd int) error {
-	oob := syscall.UnixRights(fd)
-	_, _, err := u.c.WriteMsgUnix(msg, oob, nil)
-	return err
 }
 
 // readPacket reads one server packet: a fixed 32-byte error/event, or a
