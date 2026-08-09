@@ -1,3 +1,12 @@
 /cover.out
 /go.work
 /go.work.sum
+
+# Generated wasm client artifacts (built by clients/gowidgets/build.sh).
+/clients/gowidgets/gowidgets.wasm
+/clients/gowidgets/wasm_exec.js
+
+# Live browser proof: local tooling + the undated scratch capture (the dated
+# proof screenshot is committed as reviewable evidence).
+/test/node_modules
+/test/wasmbox-live-proof.png

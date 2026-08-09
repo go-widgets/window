@@ -1,7 +1,12 @@
 # go-widgets/window
 
-A **pure-Go, CGO-free, zero-non-stdlib-dependency** X11 windowing backend for the
-[go-widgets](https://github.com/go-widgets) toolkit.
+A **pure-Go, CGO-free, zero-non-stdlib-dependency** windowing backend for the
+[go-widgets](https://github.com/go-widgets) toolkit, with three interchangeable
+backends behind one `Open`/`Run` API — **X11**, **Wayland** and **wasmbox** (the
+[wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox) browser compositor).
+`Open` auto-selects per environment: a real X11/Wayland window on Linux, and —
+when built for `js/wasm` — a wasmbox external client. **One go-widgets
+application runs unchanged natively AND inside wasmdesk.**
 
 It implements the **X11 core protocol (v11.0) from scratch over the unix
 socket** — no Xlib, no XCB, no cgo — the same sovereign transport + wire-codec
@@ -53,6 +58,46 @@ func main() {
 ```
 
 Run the bundled example: `go run ./cmd/windowdemo`.
+
+## Backends
+
+`Open` returns a `Backend` (`Run`/`Close`/`Size`/`String`); the application is
+backend-agnostic. The environment selects the implementation:
+
+| GOOS/env | Backend | Transport |
+| --- | --- | --- |
+| Linux, `$WAYLAND_DISPLAY` set | Wayland (`internal/wayland`) | xdg-shell over the compositor unix socket |
+| Linux, else `$DISPLAY` | X11 (`internal/x11`) | X11 core protocol over the unix socket (+ MIT-SHM) |
+| `js/wasm` | **wasmbox** (`internal/wasmbox`) | wasmbox client protocol over a `MessagePort` + a `SharedArrayBuffer` surface |
+| other non-Linux | stub → `ErrUnsupported` | — |
+
+### wasmbox client backend (`js/wasm`)
+
+On `js/wasm` the environment *is* the [wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox)
+browser compositor, so instead of dialling a display server the backend runs as
+an **external client** of the compositor: it allocates the surface
+`SharedArrayBuffer`, posts `hello` over its per-client `MessagePort`, awaits
+`welcome`, paints the widget tree into the SAB and posts `commit` — whole-surface,
+or (when the root implements `DamageRenderer`, e.g. `toolkit/scene.HostRoot`)
+just the damaged rectangles. Incoming `input` messages map to `toolkit.Event`
+exactly as the X11/Wayland backends do. The wire protocol
+([wasmbox `docs/protocol.md`](https://github.com/wasmdesk/wasmbox/blob/main/docs/protocol.md))
+is implemented in a sovereign, transport-agnostic codec (`internal/wasmbox/protocol.go`,
+unit-tested to 100% on every GOOS); the `syscall/js` glue (`client_js.go`) only
+carries the live JS handles. **The wasmbox repository is not modified** — this is
+purely a client-side backend plus a worker shim.
+
+Build the client and run it inside a compositor:
+
+```sh
+clients/gowidgets/build.sh          # → clients/gowidgets/{gowidgets.wasm,wasm_exec.js}
+# a wasmbox compositor spawns it via:
+#   wasmboxSpawnExternal("<origin>/clients/gowidgets/worker.js")
+```
+
+The live browser proof (headless Chromium via Playwright, served by wasmbox's
+own COOP/COEP `cmd/serve`) lives in `test/` — see `test/probe-wasmbox.mjs` and
+the captured `test/wasmbox-live-proof-2026-08-09.png`.
 
 ## Public API
 

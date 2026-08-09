@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>go-widgets wasmbox backend — live proof harness</title>
+<style>
+  body { background: #202020; color: #ddd; font-family: sans-serif; }
+  #screen { border: 1px solid #444; image-rendering: pixelated; }
+</style>
+<h1>go-widgets wasmbox client — live proof</h1>
+<canvas id="screen" width="260" height="160"></canvas>
+<script>
+// This page is a PROTOCOL-FAITHFUL wasmbox compositor stand-in. It is NOT the
+// full wasmdesk/wasmbox Ruby desktop; it implements exactly the client-facing
+// wire (docs/protocol.md) needed to host one external client: the port handoff,
+// hello→welcome, reading the client's SharedArrayBuffer on each commit and
+// blitting the damage onto a real <canvas> (the same copy-out-of-SAB dance
+// wasmbox's wasmboxBlitFromSAB performs), plus injecting input. It lets a
+// headless browser prove the go-widgets `window` wasmbox backend end to end:
+// real SAB paint + real input round-trip → toolkit.Event → repaint. Served with
+// COOP/COEP by wasmbox's own (unmodified) cmd/serve so SharedArrayBuffer works.
+"use strict";
+
+const W = 260, H = 160;
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+ctx.fillStyle = "#000000";       // known background so widget pixels are detectable
+ctx.fillRect(0, 0, W, H);
+
+const state = { welcomed: false, rendered: false, commits: 0, title: null, isolated: self.crossOriginIsolated === true };
+window.__state = state;
+
+const chan = new MessageChannel();
+const port = chan.port1;
+let sabView = null, stride = 4 * W, winW = W, winH = H;
+
+port.onmessage = (e) => {
+  const m = e.data;
+  if (!m || typeof m.type !== "string") return;
+  switch (m.type) {
+    case "hello":
+      winW = m.w | 0; winH = m.h | 0;
+      stride = (m.stride | 0) || 4 * winW;
+      sabView = new Uint8ClampedArray(m.sab);   // shared surface, read-only for us
+      state.title = m.title;
+      port.postMessage({ type: "welcome", window_id: 1, granted_w: winW, granted_h: winH });
+      state.welcomed = true;
+      break;
+    case "commit":
+      blit(m.damage);
+      state.commits++;
+      break;
+    case "set_title":
+      state.title = m.title;
+      break;
+    case "request_close":
+      port.postMessage({ type: "closed", window_id: 1, reason: "user" });
+      break;
+  }
+};
+port.start();
+
+// blit copies the committed damage sub-rectangle out of the shared surface into
+// a private ImageData (Chromium refuses an ImageData over a SharedArrayBuffer),
+// then putImageData onto the canvas — mirroring wasmbox's compositor blit.
+function blit(d) {
+  if (!sabView || !d) return;
+  const x = d.x | 0, y = d.y | 0, w = d.w | 0, h = d.h | 0;
+  if (w <= 0 || h <= 0) return;
+  const img = ctx.createImageData(w, h);
+  for (let row = 0; row < h; row++) {
+    const src = (y + row) * stride + x * 4;
+    img.data.set(sabView.subarray(src, src + w * 4), row * w * 4);
+  }
+  ctx.putImageData(img, x, y);
+  state.rendered = true;
+}
+
+// Spawn the go-widgets client worker and hand it its private MessagePort,
+// exactly as the wasmbox compositor does at spawn (step C.1).
+const worker = new Worker("/clients/gowidgets/worker.js");
+worker.addEventListener("error", (e) => { state.workerError = String(e.message || e); });
+worker.postMessage({ type: "__wasmbox_port", port: chan.port2 }, [chan.port2]);
+
+// Injectors for the headless probe.
+window.injectClick = (x, y) => {
+  port.postMessage({ type: "input", window_id: 1, event: { kind: "mousedown", x, y, button: 0 } });
+  port.postMessage({ type: "input", window_id: 1, event: { kind: "mouseup", x, y, button: 0 } });
+};
+window.sampleRegion = (x, y, w, h) => Array.from(ctx.getImageData(x, y, w, h).data);
+</script>
