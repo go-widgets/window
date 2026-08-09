@@ -5,6 +5,7 @@
 package x11
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math/bits"
 )
@@ -28,6 +29,19 @@ type Presenter struct {
 	rShift, rWidth uint
 	gShift, gWidth uint
 	bShift, bWidth uint
+
+	// fast is set when the visual is the ubiquitous 32-bpp TrueColor layout
+	// with 8:8:8 direct channel masks (red 0xff0000, green 0x00ff00, blue
+	// 0x0000ff): the wire word is then r<<16|g<<8|b written whole, with no
+	// per-channel scale/mask arithmetic. is32 is set for any 32-bpp visual
+	// (word-at-a-time writes, generic shifts).
+	fast bool
+	is32 bool
+
+	// scratch is the reused wire buffer for the non-SHM PutImage fallback, so
+	// that path allocates only when the frame grows. Not safe for concurrent
+	// use; present is single-threaded per window.
+	scratch []byte
 }
 
 // putImageFixedBytes is the fixed portion of a PutImage request preceding
@@ -65,6 +79,11 @@ func NewPresenter(setup *Setup, vis VisualType, depth uint8) (*Presenter, error)
 		bShift:      uint(bits.TrailingZeros32(vis.BlueMask)),
 		bWidth:      uint(bits.OnesCount32(vis.BlueMask)),
 	}
+	p.is32 = p.bpp == 32
+	p.fast = p.is32 &&
+		p.rShift == 16 && p.rWidth == 8 &&
+		p.gShift == 8 && p.gWidth == 8 &&
+		p.bShift == 0 && p.bWidth == 8
 	return p, nil
 }
 
@@ -112,21 +131,71 @@ func (p *Presenter) putValue(dst []byte, v uint32) {
 	}
 }
 
-// encodeRegion converts the w×h rectangle at (sx, sy) of an RGBA source
-// buffer (srcStride bytes per row) into padded ZPixmap wire bytes.
-func (p *Presenter) encodeRegion(src []byte, srcStride, sx, sy, w, h int) []byte {
-	line := p.scanlineBytes(w)
+// packRect packs the w×h rectangle at (sx, sy) of an RGBA source buffer
+// (srcStride bytes per row) into dst as padded ZPixmap wire bytes: row r's
+// bytes land at dstOff + r*dstLine. It dispatches to the specialised
+// zero-arithmetic path for the standard 32-bpp 8:8:8 visual, a word-wise
+// generic-shift path for other 32-bpp visuals, and the fully generic
+// per-channel path for any other depth. All three are byte-for-byte
+// identical in output.
+func (p *Presenter) packRect(dst []byte, dstOff, dstLine int, src []byte, srcStride, sx, sy, w, h int) {
+	if p.is32 {
+		msb := p.imageOrder == imageOrderMSB
+		for row := 0; row < h; row++ {
+			srow := src[(sy+row)*srcStride+sx*4:]
+			drow := dst[dstOff+row*dstLine:]
+			if p.fast {
+				for col := 0; col < w; col++ {
+					s := srow[col*4 : col*4+4 : col*4+4]
+					v := uint32(s[0])<<16 | uint32(s[1])<<8 | uint32(s[2])
+					putWord(drow[col*4:col*4+4:col*4+4], v, msb)
+				}
+				continue
+			}
+			for col := 0; col < w; col++ {
+				s := srow[col*4 : col*4+4 : col*4+4]
+				v := scale(s[0], p.rWidth)<<p.rShift |
+					scale(s[1], p.gWidth)<<p.gShift |
+					scale(s[2], p.bWidth)<<p.bShift
+				putWord(drow[col*4:col*4+4:col*4+4], v, msb)
+			}
+		}
+		return
+	}
 	bpx := p.bpp / 8
-	out := make([]byte, line*h)
 	for row := 0; row < h; row++ {
 		srcRow := (sy+row)*srcStride + sx*4
-		dstRow := row * line
+		dstRow := dstOff + row*dstLine
 		for col := 0; col < w; col++ {
 			so := srcRow + col*4
-			p.putValue(out[dstRow+col*bpx:dstRow+col*bpx+bpx],
+			p.putValue(dst[dstRow+col*bpx:dstRow+col*bpx+bpx],
 				p.pixel(src[so], src[so+1], src[so+2]))
 		}
 	}
+}
+
+// putWord writes a 32-bit pixel value into a 4-byte destination in the
+// server's image byte order.
+func putWord(d []byte, v uint32, msb bool) {
+	if msb {
+		binary.BigEndian.PutUint32(d, v)
+		return
+	}
+	binary.LittleEndian.PutUint32(d, v)
+}
+
+// encodeRegion converts the w×h rectangle at (sx, sy) of an RGBA source
+// buffer (srcStride bytes per row) into padded ZPixmap wire bytes. The
+// scratch buffer is reused across calls so the non-SHM present path does not
+// allocate per frame; the returned slice is valid until the next call.
+func (p *Presenter) encodeRegion(src []byte, srcStride, sx, sy, w, h int) []byte {
+	line := p.scanlineBytes(w)
+	need := line * h
+	if cap(p.scratch) < need {
+		p.scratch = make([]byte, need)
+	}
+	out := p.scratch[:need]
+	p.packRect(out, 0, line, src, srcStride, sx, sy, w, h)
 	return out
 }
 

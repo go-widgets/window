@@ -119,6 +119,80 @@ func TestScaleAndPixel16bpp(t *testing.T) {
 	}
 }
 
+func TestEncodeRegionGeneric32bppBGR(t *testing.T) {
+	// A 32-bpp TrueColor visual with non-standard (BGR) masks: exercises the
+	// word-wise generic-shift path (is32 && !fast) rather than the fast path.
+	s := &Setup{
+		MaxRequestLen:  0xffff,
+		ImageByteOrder: imageOrderLSB,
+		Formats:        []Format{{Depth: 24, BitsPerPix: 32, ScanlinePad: 32}},
+	}
+	v := VisualType{ID: 1, Class: VisualTrueColor,
+		RedMask: 0x000000ff, GreenMask: 0x0000ff00, BlueMask: 0x00ff0000}
+	p, err := NewPresenter(s, v, 24)
+	if err != nil {
+		t.Fatalf("presenter: %v", err)
+	}
+	if p.fast {
+		t.Fatalf("BGR visual must not take the fast path")
+	}
+	// R=0x11 G=0x22 B=0x33 -> value 0x00332211 -> LSB bytes 11 22 33 00.
+	src := []byte{0x11, 0x22, 0x33, 0xff}
+	out := p.encodeRegion(src, 4, 0, 0, 1, 1)
+	want := []byte{0x11, 0x22, 0x33, 0x00}
+	if !bytes.Equal(out, want) {
+		t.Fatalf("generic BGR encode = % x want % x", out, want)
+	}
+}
+
+func TestEncodeRegion16bpp(t *testing.T) {
+	// A 16-bpp RGB565 visual exercises the non-32-bpp packRect branch that
+	// falls back to per-channel putValue.
+	s := &Setup{
+		MaxRequestLen:  0xffff,
+		ImageByteOrder: imageOrderLSB,
+		Formats:        []Format{{Depth: 16, BitsPerPix: 16, ScanlinePad: 16}},
+	}
+	v := VisualType{ID: 1, Class: VisualTrueColor,
+		RedMask: 0xf800, GreenMask: 0x07e0, BlueMask: 0x001f}
+	p, err := NewPresenter(s, v, 16)
+	if err != nil {
+		t.Fatalf("presenter: %v", err)
+	}
+	if p.is32 {
+		t.Fatalf("16-bpp visual must not take a 32-bpp path")
+	}
+	// White saturates all channels -> 0xFFFF -> LSB bytes FF FF.
+	src := []byte{0xff, 0xff, 0xff, 0xff}
+	out := p.encodeRegion(src, 4, 0, 0, 1, 1)
+	want := []byte{0xff, 0xff}
+	if !bytes.Equal(out, want) {
+		t.Fatalf("16bpp encode = % x want % x", out, want)
+	}
+}
+
+func TestEncodeRegionScratchReuse(t *testing.T) {
+	// The scratch buffer must be reused (no re-alloc) when the frame does not
+	// grow, and grow when it does.
+	s, v := trueColorSetup(0xffff, imageOrderLSB)
+	p, _ := NewPresenter(s, v, 24)
+	src := make([]byte, 4*4*4)
+	first := p.encodeRegion(src, 4*4, 0, 0, 2, 2)
+	firstCap := cap(p.scratch)
+	second := p.encodeRegion(src, 4*4, 0, 0, 2, 2)
+	if cap(p.scratch) != firstCap {
+		t.Fatalf("scratch re-allocated for same-size frame")
+	}
+	if &first[0] != &second[0] {
+		t.Fatalf("scratch buffer not reused")
+	}
+	// A larger frame grows the scratch.
+	_ = p.encodeRegion(src, 4*4, 0, 0, 4, 4)
+	if cap(p.scratch) <= firstCap {
+		t.Fatalf("scratch did not grow for larger frame")
+	}
+}
+
 func TestScanlineBytesPadFallback(t *testing.T) {
 	p := &Presenter{bpp: 32, scanlinePad: 0}
 	// padBytes<=0 falls back to a 4-byte boundary.

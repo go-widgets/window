@@ -4,7 +4,10 @@
 
 package wayland
 
-import "fmt"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 // PackARGB8888 converts a w×h RGBA source (4 bytes per pixel, R,G,B,A byte
 // order, srcStride bytes per row) into WL_SHM_FORMAT_ARGB8888 pixels in dst
@@ -12,18 +15,19 @@ import "fmt"
 // 0xAARRGGBB written in the machine's native byte order — exactly what a
 // compositor on the same machine reads back — so the packing is correct on
 // little- and big-endian hosts alike.
+// The 32-bit word is assembled and stored via the concrete
+// binary.NativeEndian (not the ByteOrder interface) so the compiler inlines
+// it to a single word store instead of a per-pixel interface method call;
+// rows are resliced so the inner loop's indices are provably in range.
 func PackARGB8888(dst []byte, dstStride int, src []byte, srcStride, w, h int) {
+	n := w * 4
 	for y := 0; y < h; y++ {
-		so := y * srcStride
-		do := y * dstStride
-		for x := 0; x < w; x++ {
-			r := uint32(src[so])
-			g := uint32(src[so+1])
-			b := uint32(src[so+2])
-			a := uint32(src[so+3])
-			NativeOrder.PutUint32(dst[do:do+4], a<<24|r<<16|g<<8|b)
-			so += 4
-			do += 4
+		srow := src[y*srcStride : y*srcStride+n]
+		drow := dst[y*dstStride : y*dstStride+n]
+		for x := 0; x < n; x += 4 {
+			s := srow[x : x+4 : x+4]
+			v := uint32(s[3])<<24 | uint32(s[0])<<16 | uint32(s[1])<<8 | uint32(s[2])
+			binary.NativeEndian.PutUint32(drow[x:x+4:x+4], v)
 		}
 	}
 }
