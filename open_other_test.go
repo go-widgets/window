@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-//go:build !linux
+//go:build !linux && !(js && wasm)
 
 package window
 
