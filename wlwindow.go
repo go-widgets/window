@@ -593,27 +593,31 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 	return nil
 }
 
-// paintInitial paints and presents the window's first frame: whole surface,
-// either through the incremental root (consuming its full-surface seed damage so
-// the first interaction is already incremental) or a plain full repaint.
-func (w *wlWindow) paintInitial() error {
-	if w.dmg != nil {
-		rects := w.drawIncremental()
-		return w.presentDamaged(rects)
-	}
-	w.draw()
-	return w.present()
-}
+// paintInitial paints and presents the window's first frame. It just defers to
+// paintFrame: the surface is typically not configured yet (the first xdg
+// configure arrives during the run loop, not at bring-up), so the incremental
+// path must NOT render-and-consume its damage before it can present — see
+// paintFrame.
+func (w *wlWindow) paintInitial() error { return w.paintFrame() }
 
 // paintFrame renders and presents one frame. A plain root repaints+commits the
-// whole surface; an incremental root repaints+commits only its damage (nothing
-// when it reports none). A resize routes through the incremental path too: the
-// root reports whole-surface damage and the recreated pool buffers each owe the
-// whole surface, so the frame is packed and committed in full.
+// whole surface every call (present() itself no-ops until the surface is
+// configured; the immediate-mode redraw is idempotent, so nothing is lost by
+// re-running it once configured). An incremental root instead repaints+commits
+// only its damage — but ONLY once configured: RenderDamaged consumes the scene's
+// accumulated damage, so rendering before we can present would silently drop the
+// first (full-surface seed) frame and leave later frames with nothing to show.
+// Gating on w.configured keeps the pending damage intact until the first
+// configure, after which the full seed is drawn and presented. A resize routes
+// through the same path: the root reports whole-surface damage and the recreated
+// pool buffers each owe the whole surface, so the frame is packed in full.
 func (w *wlWindow) paintFrame() error {
 	if w.dmg == nil {
 		w.draw()
 		return w.present()
+	}
+	if !w.configured {
+		return nil // cannot present yet; keep the pending damage for later
 	}
 	rects := w.drawIncremental()
 	if len(rects) == 0 {
