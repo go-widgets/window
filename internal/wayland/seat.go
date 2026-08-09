@@ -4,10 +4,7 @@
 
 package wayland
 
-import (
-	"fmt"
-	"syscall"
-)
+import "fmt"
 
 // Seat capability bits (wl_seat.capability).
 const (
@@ -291,15 +288,6 @@ const (
 // wl_keyboard request opcode.
 const keyboardReqRelease = 0
 
-// mapReadOnly and unmapReadOnly wrap the keymap-fd mmap syscalls behind
-// package variables so a test can exercise the failure path.
-var (
-	mapReadOnly = func(fd, size int) ([]byte, error) {
-		return syscall.Mmap(fd, 0, size, syscall.PROT_READ, syscall.MAP_PRIVATE)
-	}
-	unmapReadOnly = syscall.Munmap
-)
-
 // handle decodes a keyboard event.
 func (k *Keyboard) handle(opcode uint16, d *decoder) error {
 	switch opcode {
@@ -372,7 +360,7 @@ func (k *Keyboard) handleKeymap(d *decoder) error {
 	if !ok {
 		return fmt.Errorf("wayland: wl_keyboard.keymap missing fd")
 	}
-	defer syscall.Close(fd)
+	defer closeFD(fd)
 	if format != KeymapFormatXkbV1 {
 		return nil
 	}
