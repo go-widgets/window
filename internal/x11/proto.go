@@ -15,6 +15,7 @@ const (
 	opFreeGC                 = 60
 	opPutImage               = 72
 	opGetKeyboardMapping     = 101
+	opQueryExtension         = 98
 )
 
 // Window class values for CreateWindow.

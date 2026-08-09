@@ -81,6 +81,13 @@ type Window struct {
 	gc    uint32
 	depth uint8
 
+	// MIT-SHM present path (nil when the server lacks the extension or
+	// fd-passing): shm is the queried extension, seg the shared segment that
+	// mirrors the framebuffer as a ZPixmap image. present falls back to plain
+	// PutImage whenever seg is nil.
+	shm *x11.Shm
+	seg *x11.Segment
+
 	w, h  int
 	buf   []byte // RGBA framebuffer, 4*w*h bytes
 	theme *toolkit.Theme
@@ -172,7 +179,48 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 	if w.keymap, err = conn.FetchKeymap(); err != nil {
 		return nil, err
 	}
+	// Best-effort MIT-SHM: a failure to set it up is never fatal — the window
+	// simply keeps the plain PutImage path.
+	w.setupSHM()
 	return w, nil
+}
+
+// setupSHM queries MIT-SHM and, when the server supports the 1.2 fd-passing
+// path, allocates and attaches a shared segment sized to the framebuffer. Any
+// failure leaves seg nil so present() falls back to PutImage.
+func (w *Window) setupSHM() {
+	shm, err := w.conn.QueryShm()
+	if err != nil || shm == nil || !shm.FDCapable {
+		return
+	}
+	w.shm = shm
+	w.ensureSegment()
+}
+
+// ensureSegment (re)allocates the shared segment to match the current
+// framebuffer size, detaching any previous one. On any failure it disables the
+// SHM path (seg stays/reverts to nil) rather than erroring.
+func (w *Window) ensureSegment() {
+	if w.shm == nil {
+		return
+	}
+	if w.seg != nil {
+		_ = w.shm.Detach(w.seg.Seg)
+		_ = w.seg.Close()
+		w.seg = nil
+	}
+	size := w.pres.SegmentSize(w.w, w.h)
+	seg, err := x11.NewSegment(w.conn.NewID(), size)
+	if err != nil {
+		w.shm = nil // give up on SHM for this window
+		return
+	}
+	if err := w.shm.AttachFd(seg.Seg, seg.FD, false); err != nil {
+		_ = seg.Close()
+		w.shm = nil
+		return
+	}
+	w.seg = seg
 }
 
 // Size returns the current client size in pixels.
@@ -184,6 +232,11 @@ func (w *Window) Close() error {
 		return nil
 	}
 	w.closed = true
+	if w.seg != nil {
+		_ = w.shm.Detach(w.seg.Seg)
+		_ = w.seg.Close()
+		w.seg = nil
+	}
 	return w.conn.Close()
 }
 
@@ -227,6 +280,14 @@ func (w *Window) presentRect(x, y, rw, rh int) error {
 	if rw <= 0 || rh <= 0 {
 		return nil
 	}
+	if w.seg != nil {
+		// SHM path: mirror the damaged rect into the shared segment, then blit
+		// it from shared memory with one tiny request (no pixels on the wire).
+		if err := w.pres.EncodeRectInto(w.seg.Data, w.w, w.buf, w.w*4, x, y, rw, rh); err != nil {
+			return err
+		}
+		return w.shm.PutImage(w.pres, w.win, w.gc, w.seg.Seg, 0, w.w, w.h, x, y, rw, rh, x, y)
+	}
 	return w.conn.PutImage(w.pres, w.win, w.gc, w.buf, w.w*4, x, y, rw, rh, x, y)
 }
 
@@ -237,6 +298,8 @@ func (w *Window) resize(nw, nh int) {
 	}
 	w.w, w.h = nw, nh
 	w.buf = make([]byte, 4*nw*nh)
+	// Grow the shared segment to match, if the SHM path is active.
+	w.ensureSegment()
 }
 
 // Run binds root to the window, performs the initial layout+draw+present,
