@@ -129,21 +129,26 @@ jobs:
           path: live-capture.png
           if-no-files-found: warn
 
-  # Live Wayland proof: open a real xdg-shell toplevel on a headless wlroots
-  # compositor (sway), present a known test pattern through a wl_shm buffer,
-  # capture the output with grim and assert sampled pixels. Input is attempted
-  # via wtype (virtual-keyboard) and asserted when the headless seat exposes a
-  # keyboard; otherwise it is proven by the in-process fake-compositor test.
+  # Live Wayland proof (present + input): open a real xdg-shell toplevel on a
+  # headless wlroots compositor (sway), present a known test pattern through a
+  # wl_shm buffer, capture the output with grim and assert sampled pixels; then
+  # drive real input over a SECOND connection using the sovereign
+  # zwp_virtual_keyboard_v1 / zwlr_virtual_pointer_v1 client bindings (no
+  # external injector command) and assert the exact dispatched toolkit.Event
+  # (char 'a' and a click at the injected coordinate). Attaching the virtual
+  # devices makes the device-less headless seat advertise keyboard+pointer,
+  # which the window picks up via dynamic hot-plug. xkbcli (libxkbcommon)
+  # compiles the us keymap the virtual keyboard uploads.
   live-wayland:
-    name: live Wayland (sway headless)
+    name: live Wayland (input)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - name: Install a headless Wayland compositor + capture/input tools
-        run: sudo apt-get update && sudo apt-get install -y sway grim wtype dbus
+      - name: Install a headless Wayland compositor + capture/keymap tools
+        run: sudo apt-get update && sudo apt-get install -y sway grim libxkbcommon-tools dbus
       - name: Run live integration test under sway (headless)
         shell: bash
         run: |

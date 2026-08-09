@@ -28,8 +28,10 @@ type wlWindow struct {
 	xdgSurf  *wayland.XdgSurface
 	toplevel *wayland.XdgToplevel
 	shm      *wayland.Shm
+	seat     *wayland.Seat
 	pointer  *wayland.Pointer
 	keyboard *wayland.Keyboard
+	inputErr error // latched error from dynamic input hot-plug
 
 	pool     *wayland.ShmPool
 	buffers  [2]*wayland.Buffer
@@ -123,8 +125,15 @@ func newWaylandWindow(conn *wayland.Conn, cfg Config) (*wlWindow, error) {
 	if err := conn.Roundtrip(); err != nil {
 		return nil, err
 	}
+	w.seat = seat
 	if err := w.bindInput(seat); err != nil {
 		return nil, err
+	}
+	// Track later capability changes: a device (e.g. a keyboard or pointer)
+	// that appears after bring-up — as happens when a virtual input device is
+	// attached to an otherwise device-less headless seat — is obtained then.
+	if seat != nil {
+		seat.OnCapabilities = func(caps uint32) { w.onSeatCaps(caps) }
 	}
 
 	if w.surface, err = comp.CreateSurface(); err != nil {
@@ -166,29 +175,43 @@ func newWaylandWindow(conn *wayland.Conn, cfg Config) (*wlWindow, error) {
 	return w, nil
 }
 
-// bindInput obtains the pointer and keyboard from the seat (when present and
-// advertised) and wires their event callbacks.
+// bindInput obtains the pointer and keyboard advertised by the seat at
+// bring-up (when any). Devices that appear later are picked up by
+// onSeatCaps via the seat's capability callback.
 func (w *wlWindow) bindInput(seat *wayland.Seat) error {
 	if seat == nil {
 		return nil
 	}
-	if seat.HasPointer() {
-		p, err := seat.GetPointer()
+	w.onSeatCaps(seat.Capabilities())
+	return w.inputErr
+}
+
+// onSeatCaps reacts to a capability update by obtaining any newly present
+// device it has not already bound. It is idempotent (a device is bound at
+// most once) so it is safe to call for both the initial and later
+// capability events. A bind failure is latched and surfaced by the run loop.
+func (w *wlWindow) onSeatCaps(caps uint32) {
+	if w.seat == nil {
+		return
+	}
+	if caps&wayland.SeatCapabilityPointer != 0 && w.pointer == nil {
+		p, err := w.seat.GetPointer()
 		if err != nil {
-			return err
+			w.inputErr = err
+			return
 		}
 		w.pointer = p
 		w.wirePointer()
 	}
-	if seat.HasKeyboard() {
-		k, err := seat.GetKeyboard()
+	if caps&wayland.SeatCapabilityKeyboard != 0 && w.keyboard == nil {
+		k, err := w.seat.GetKeyboard()
 		if err != nil {
-			return err
+			w.inputErr = err
+			return
 		}
 		w.keyboard = k
 		w.wireKeyboard()
 	}
-	return nil
 }
 
 // wireShell installs the xdg_surface / xdg_toplevel configure + close
@@ -461,6 +484,9 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 	for !w.quit {
 		if err := w.conn.Dispatch(); err != nil {
 			return err
+		}
+		if w.inputErr != nil {
+			return w.inputErr
 		}
 		if err := w.flushAck(); err != nil {
 			return err
