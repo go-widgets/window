@@ -24,6 +24,13 @@ type Seat struct {
 	id   uint32
 	caps uint32
 	name string
+
+	// OnCapabilities, if set, is invoked every time the compositor updates
+	// the seat's capability mask — including after bring-up, so a device
+	// that appears later (e.g. a keyboard hot-plugged, or a virtual keyboard
+	// attached to the seat) can be obtained then. It enables dynamic input
+	// hot-plug rather than a one-shot read at connection time.
+	OnCapabilities func(caps uint32)
 }
 
 const seatIfaceVersion = 5
@@ -66,6 +73,9 @@ func (s *Seat) handle(opcode uint16, d *decoder) error {
 			return fmt.Errorf("wayland: truncated wl_seat.capabilities")
 		}
 		s.caps = caps
+		if s.OnCapabilities != nil {
+			s.OnCapabilities(caps)
+		}
 		return nil
 	case seatEvtName:
 		name := d.getString()
