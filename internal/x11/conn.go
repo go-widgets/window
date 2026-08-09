@@ -8,7 +8,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"net"
 	"sync"
+	"syscall"
 )
 
 // Conn is a connection to an X11 server speaking the core protocol over an
@@ -151,6 +153,86 @@ func (c *Conn) sendRequest(opcode, data byte, body []byte) error {
 
 // Seq returns the sequence number of the most recently sent request.
 func (c *Conn) Seq() uint16 { return c.seq }
+
+// FDSender is implemented by a transport that can pass a file descriptor
+// alongside a request over the same socket (a UNIX-domain stream, via
+// SCM_RIGHTS). The production connection's transport (see WrapUnix)
+// implements it; the in-process net.Pipe transport used by most tests does
+// not, so the MIT-SHM fd-passing path degrades to plain PutImage when it is
+// absent. The method is exported so an alternative transport (a measurement
+// or test harness) can provide it too.
+type FDSender interface {
+	// SendFD writes one already-framed request with fd attached as a single
+	// SCM_RIGHTS control message.
+	SendFD(msg []byte, fd int) error
+}
+
+// SupportsFDPassing reports whether the connection's transport can pass a
+// file descriptor to the server (required for MIT-SHM AttachFd).
+func (c *Conn) SupportsFDPassing() bool {
+	_, ok := c.rw.(FDSender)
+	return ok
+}
+
+// sendRequestFD frames body with the 4-byte request header and writes it in a
+// single sendmsg carrying fd as SCM_RIGHTS ancillary data. It errors if the
+// transport cannot pass descriptors.
+func (c *Conn) sendRequestFD(opcode, data byte, body []byte, fd int) error {
+	fw, ok := c.rw.(FDSender)
+	if !ok {
+		return fmt.Errorf("x11: transport does not support fd passing")
+	}
+	total := 4 + len(body)
+	e := newEncoder(c.order)
+	e.put8(opcode)
+	e.put8(data)
+	e.put16(uint16(total / 4))
+	e.putBytes(body)
+
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	if err := fw.SendFD(e.buf, fd); err != nil {
+		return err
+	}
+	c.seq++
+	return nil
+}
+
+// QueryExtension resolves an extension by name, returning whether the server
+// implements it and, if so, its major opcode plus its first event and error
+// codes. It is the standard gate before using any extension's requests.
+func (c *Conn) QueryExtension(name string) (present bool, major, firstEvent, firstError byte, err error) {
+	e := newEncoder(c.order)
+	e.put16(uint16(len(name)))
+	e.skip(2) // unused
+	e.putString(name)
+	reply, err := c.roundTrip(opQueryExtension, 0, e.buf)
+	if err != nil {
+		return false, 0, 0, 0, err
+	}
+	return reply[8] != 0, reply[9], reply[10], reply[11], nil
+}
+
+// unixRW adapts a *net.UnixConn to the Conn transport, adding fd passing over
+// SCM_RIGHTS. It is what lets the production connection attach a shared-memory
+// descriptor to a MIT-SHM AttachFd request while every other request still
+// travels as an ordinary socket write.
+type unixRW struct{ c *net.UnixConn }
+
+// WrapUnix wraps a dialed *net.UnixConn as an fd-passing transport for
+// Handshake. A connection built over it reports SupportsFDPassing() == true.
+func WrapUnix(c *net.UnixConn) io.ReadWriteCloser { return &unixRW{c: c} }
+
+func (u *unixRW) Read(b []byte) (int, error)  { return u.c.Read(b) }
+func (u *unixRW) Write(b []byte) (int, error) { return u.c.Write(b) }
+func (u *unixRW) Close() error                { return u.c.Close() }
+
+// SendFD writes msg with fd attached as a single SCM_RIGHTS control message.
+func (u *unixRW) SendFD(msg []byte, fd int) error {
+	oob := syscall.UnixRights(fd)
+	_, _, err := u.c.WriteMsgUnix(msg, oob, nil)
+	return err
+}
 
 // readPacket reads one server packet: a fixed 32-byte error/event, or a
 // reply (32-byte header plus its additional 4-byte-unit data block).

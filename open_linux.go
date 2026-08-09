@@ -9,6 +9,7 @@ package window
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -93,7 +94,14 @@ func openX11(cfg Config) (Backend, error) {
 		nc.Close()
 		return nil, err
 	}
-	conn, err := x11.Handshake(nc, binary.LittleEndian, authName, authData)
+	// Wrap a local unix socket so the connection can pass a shared-memory
+	// descriptor to the server (MIT-SHM AttachFd) over SCM_RIGHTS; every other
+	// request still travels as an ordinary socket write.
+	var rw io.ReadWriteCloser = nc
+	if uc, ok := nc.(*net.UnixConn); ok {
+		rw = x11.WrapUnix(uc)
+	}
+	conn, err := x11.Handshake(rw, binary.LittleEndian, authName, authData)
 	if err != nil {
 		nc.Close()
 		return nil, err
