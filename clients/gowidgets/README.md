@@ -32,12 +32,22 @@ clients/gowidgets/build.sh
 
 ## Live browser proof (reproduce)
 
-`test/probe-wasmbox.mjs` drives a headless Chromium against
-`test/harness.html` — a protocol-faithful wasmbox compositor stand-in — served
-with the COOP/COEP headers `SharedArrayBuffer` needs by wasmbox's **unmodified**
-`cmd/serve`. It asserts the go-widgets tree rendered (sampled canvas pixels) and
-that an injected click round-tripped to a `toolkit.Event` (counter 0→1), then
-saves a screenshot.
+Two tiers, both headless Chromium via Playwright, both served with the COOP/COEP
+headers `SharedArrayBuffer` needs by wasmbox's **unmodified** `cmd/serve`.
+
+**Real desktop** — `test/probe-wasmbox-real.mjs` boots the actual
+wasmdesk/wasmbox Ruby compositor, spawns this client through
+`wasmboxSpawnExternal("clients/gowidgets/worker.js")`, asserts the widget tree
+rendered (compositor pixels via `__wasmboxReadRegion` at the window's live
+focused rect) and that a real `page.mouse.click` round-tripped to a
+`toolkit.Event` (counter 0→1), then saves
+`test/wasmbox-live-proof-real-desktop-2026-08-09.png`. The wasmbox repo stays
+unmodified; the client is served same-origin via a symlink overlay. Full recipe:
+[`test/README-real-desktop.md`](../../test/README-real-desktop.md).
+
+**Deterministic floor** — `test/probe-wasmbox.mjs` runs the same assertions
+against `test/harness.html`, a protocol-faithful compositor stand-in (no ~80 MB
+Ruby compositor build needed):
 
 ```sh
 clients/gowidgets/build.sh
