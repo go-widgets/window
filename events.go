@@ -15,6 +15,7 @@ type outcome struct {
 	events  []toolkit.Event
 	repaint bool
 	resize  bool
+	expose  bool
 	rw, rh  int
 	quit    bool
 }
@@ -47,8 +48,10 @@ func (w *Window) mapEvent(xe x11.Event) outcome {
 		}
 		return outcome{}
 	case xcodeExpose:
-		// Repaint once the final expose rectangle in a burst arrives.
-		return outcome{repaint: true}
+		// The server discarded the window's contents; re-present the whole
+		// surface (the framebuffer is intact, so no redraw is needed — the
+		// incremental path re-blits, the full path repaints+blits).
+		return outcome{repaint: true, expose: true}
 	case xcodeClientMessage:
 		if xe.Format == 32 && xe.Atom == w.wmProtocols && xe.Data32 == w.wmDeleteWindow {
 			return outcome{quit: true}

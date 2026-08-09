@@ -98,6 +98,7 @@ type Window struct {
 	wmDeleteWindow uint32
 
 	root   toolkit.Widget
+	dmg    DamageRenderer // non-nil when root opts into incremental present
 	closed bool
 }
 
@@ -252,6 +253,17 @@ func (w *Window) draw() {
 	}
 }
 
+// drawIncremental lays the root out to the full client area and repaints ONLY
+// the damage the root reports, returning the repainted rectangles for the
+// caller to present. It is used exclusively when the root opts into incremental
+// present (w.dmg != nil). The framebuffer persists across frames, so the pixels
+// outside the damage are already correct from the previous frame.
+func (w *Window) drawIncremental() []toolkit.Rect {
+	p := painter.NewPixelPainter(w.buf, w.w, w.h)
+	w.root.SetBounds(toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h})
+	return w.dmg.RenderDamaged(p, w.theme)
+}
+
 // present blits the whole framebuffer to the server.
 func (w *Window) present() error {
 	return w.presentRect(0, 0, w.w, w.h)
@@ -308,7 +320,16 @@ func (w *Window) resize(nw, nh int) {
 // analogue of the wasm compositor host loop.
 func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
-	w.draw()
+	w.dmg, _ = root.(DamageRenderer)
+	// Initial frame: paint the whole framebuffer, then present the full surface
+	// for the window's first map. When the root is incremental, draw through it
+	// so its full-surface seed damage is consumed here — the first interaction
+	// is then already a purely incremental frame.
+	if w.dmg != nil {
+		w.drawIncremental()
+	} else {
+		w.draw()
+	}
 	if err := w.present(); err != nil {
 		return err
 	}
@@ -330,12 +351,37 @@ func (w *Window) Run(root toolkit.Widget) error {
 			}
 		}
 		if out.repaint || out.resize || len(out.events) > 0 {
-			w.draw()
-			if err := w.present(); err != nil {
+			if err := w.paintFrame(out.resize, out.expose); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+// paintFrame renders and presents one frame. With a plain root it repaints and
+// blits the whole surface. With an incremental root it presents only the damaged
+// rectangles — except after a resize (the framebuffer was reallocated, so the
+// root reports whole-surface damage, which drawIncremental repaints, then the
+// full surface is blitted) or an Expose (the framebuffer is intact, so the whole
+// surface is re-blitted with no redraw).
+func (w *Window) paintFrame(resize, expose bool) error {
+	if w.dmg == nil {
+		w.draw()
+		return w.present()
+	}
+	if expose {
+		return w.present() // contents intact; re-blit whole surface
+	}
+	rects := w.drawIncremental()
+	if resize {
+		return w.present() // reallocated framebuffer: blit the whole surface
+	}
+	for _, r := range rects {
+		if err := w.presentRect(r.X, r.Y, r.W, r.H); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // String identifies the window for debugging.
