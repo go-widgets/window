@@ -84,7 +84,8 @@ var (
 	selActivateIgnoring     = objc.RegisterName("activateIgnoringOtherApps:")
 	selNextEvent            = objc.RegisterName("nextEventMatchingMask:untilDate:inMode:dequeue:")
 	selSendEvent            = objc.RegisterName("sendEvent:")
-	selFinishLaunching      = objc.RegisterName("finishLaunching")
+	selRun                  = objc.RegisterName("run")
+	selStop                 = objc.RegisterName("stop:")
 	selPostEvent            = objc.RegisterName("postEvent:atStart:")
 	selUpdateWindows        = objc.RegisterName("updateWindows")
 	selInitContentRect      = objc.RegisterName("initWithContentRect:styleMask:backing:defer:")
@@ -364,6 +365,10 @@ func windowShouldClose(_ objc.ID, _ objc.SEL, _ objc.ID) bool {
 	if active != nil {
 		active.closed = true
 	}
+	// -stop: is honoured at the END of the current event cycle, and this runs
+	// inside one, so no synthetic wake-up event is needed: Run returns to its
+	// caller as soon as this handler does.
+	objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication).Send(selStop, objc.ID(0))
 	return true
 }
 
@@ -457,14 +462,6 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 
 	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
 	app.Send(selSetActivationPolicy, activationPolicyReg)
-	// Finish launching explicitly. This backend pumps its own event loop
-	// (nextEventMatchingMask/sendEvent) rather than calling -[NSApplication
-	// run], which is what normally performs this step — and an application
-	// that never finishes launching is never registered with the
-	// ACCESSIBILITY system: AXUIElementCreateApplication finds it, and reports
-	// that it has no windows at all, however many are on screen. Measured
-	// against a control that does call -run and does expose its window.
-	app.Send(selFinishLaunching)
 
 	rect := nsRect{Size: nsSize{W: float64(width), H: float64(height)}}
 	style := uint(styleTitled | styleClosable | styleMiniaturizable | styleResizable)
@@ -515,18 +512,24 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 // Run binds root, performs the initial layout+present, then pumps NSEvents into
 // the widget tree until the window is closed. It is the macOS analogue of the
 // X11 backend's event loop.
+// Run binds root and hands control to AppKit's own run loop.
+//
+// It used to pump events by hand — nextEventMatchingMask + sendEvent +
+// updateWindows in a loop — which delivers input and repaints correctly and is
+// NOT enough: an application that never goes through -[NSApplication run]
+// never completes its launch, and is therefore never registered with the
+// ACCESSIBILITY system. Measured: AXUIElementCreateApplication reported the
+// process as having no windows at all, however many were on screen, while a
+// control that does call -run exposed its window and its whole tree.
+//
+// Nothing else changes. Presentation already happens in -drawRect: and input
+// already arrives through the NSView methods, so -run drives exactly the same
+// code the manual pump did — it simply also performs the launch handshake, the
+// window-server registration and the per-cycle housekeeping that AppKit
+// expects and that no application can usefully reimplement.
 func (w *Window) Run(root toolkit.Widget) error {
 	w.bindAndSeed(root)
-	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
-	future := objc.ID(objc.GetClass("NSDate")).Send(selDistantFuture)
-	mode := objc.NSString(defaultRunLoopModeName)
-	for !w.closed {
-		ev := app.Send(selNextEvent, uint64(eventMaskAny), future, mode, true)
-		if ev != 0 {
-			app.Send(selSendEvent, ev)
-		}
-		app.Send(selUpdateWindows)
-	}
+	objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication).Send(selRun)
 	return nil
 }
 
