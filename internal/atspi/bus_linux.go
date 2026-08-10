@@ -164,6 +164,51 @@ func Publish(root toolkit.Widget, title string, originX, originY int, activate f
 		b.mu.Unlock()
 		b.announceNew(have, need)
 	}
+	b.publishProps()
+}
+
+// publishProps registers the properties a client reads an element through.
+//
+// The D-Bus library serves org.freedesktop.DBus.Properties ITSELF and never
+// dispatches to an exported Get method, so answering there is not enough: the
+// values have to be registered. Measured, before this: the cache returned the
+// whole correct tree while every Name lookup failed with "no property Name on
+// interface org.a11y.atspi.Accessible", and a client showed the application
+// unnamed.
+//
+// Fresh *Prop values are published on every change rather than mutated in
+// place. The library hands a *Prop out under its own lock and then reads the
+// value outside it, so mutating one that is already published is a data race;
+// replacing the whole set through ExportProperties, which takes that same lock,
+// is not.
+func (b *Bridge) publishProps() {
+	b.mu.Lock()
+	title, nodes, parent := b.title, b.nodes, b.parent
+	b.mu.Unlock()
+
+	if err := b.conn.ExportProperties(rootPath, ifaceAccessible, map[string]*dbus.Prop{
+		"Name":        {Value: title},
+		"Description": {Value: ""},
+		"ChildCount":  {Value: int32(len(nodes))},
+		"Parent":      {Value: parent},
+	}); err != nil {
+		println("atspi: ExportProperties root:", err.Error())
+	}
+	_ = b.conn.ExportProperties(rootPath, ifaceApplication, map[string]*dbus.Prop{
+		"ToolkitName":  {Value: "go-widgets"},
+		"Version":      {Value: "2.1"},
+		"AtspiVersion": {Value: "2.1"},
+		"Id":           {Value: int32(0)},
+	})
+	root := b.ref(rootPath)
+	for i, n := range nodes {
+		_ = b.conn.ExportProperties(childPath(i), ifaceAccessible, map[string]*dbus.Prop{
+			"Name":        {Value: n.Name},
+			"Description": {Value: ""},
+			"ChildCount":  {Value: int32(0)},
+			"Parent":      {Value: root},
+		})
+	}
 }
 
 // exportChild publishes one element's object under its own path. Paths are
@@ -251,6 +296,7 @@ func start(nodes []toolkit.A11yNode, title string, originX, originY int, activat
 		}
 	}
 	b.exported = len(nodes)
+	b.publishProps()
 
 	// Embed hands the registry our root and returns the parent to report. An
 	// application that exports its objects but skips this is reachable on the

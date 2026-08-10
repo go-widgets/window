@@ -49,30 +49,6 @@ func (r *accRoot) GetState() ([]uint32, *dbus.Error)      { return stateSet(), n
 
 func (r *accRoot) GetApplicationBusAddress() (string, *dbus.Error) { return "", nil }
 
-// Get answers org.freedesktop.DBus.Properties for the root. A client reads the
-// name, role and child count this way rather than by calling the methods.
-func (r *accRoot) Get(iface, prop string) (dbus.Variant, *dbus.Error) {
-	r.b.mu.Lock()
-	title, n, parent := r.b.title, len(r.b.nodes), r.b.parent
-	r.b.mu.Unlock()
-	switch prop {
-	case "Name", "Description":
-		if prop == "Description" {
-			return dbus.MakeVariant(""), nil
-		}
-		return dbus.MakeVariant(title), nil
-	case "ChildCount":
-		return dbus.MakeVariant(int32(n)), nil
-	case "Parent":
-		return dbus.MakeVariant(parent), nil
-	case "ToolkitName":
-		return dbus.MakeVariant("go-widgets"), nil
-	case "Version", "AtspiVersion":
-		return dbus.MakeVariant("2.1"), nil
-	}
-	return dbus.MakeVariant(""), nil
-}
-
 // accChild is one element of the published tree.
 type accChild struct {
 	b   *Bridge
@@ -122,25 +98,6 @@ func (c *accChild) GetChildAtIndex(int32) (Ref, *dbus.Error) { return nullRef, n
 func (c *accChild) GetChildren() ([]Ref, *dbus.Error)        { return nil, nil }
 func (c *accChild) GetIndexInParent() (int32, *dbus.Error)   { return int32(c.idx), nil }
 func (c *accChild) GetState() ([]uint32, *dbus.Error)        { return stateSet(), nil }
-
-// Get answers the Properties interface for one element.
-func (c *accChild) Get(iface, prop string) (dbus.Variant, *dbus.Error) {
-	n, ok := c.node()
-	if !ok {
-		return dbus.MakeVariant(""), nil
-	}
-	switch prop {
-	case "Name":
-		return dbus.MakeVariant(n.name), nil
-	case "Description":
-		return dbus.MakeVariant(""), nil
-	case "ChildCount":
-		return dbus.MakeVariant(int32(0)), nil
-	case "Parent":
-		return dbus.MakeVariant(c.b.ref(rootPath)), nil
-	}
-	return dbus.MakeVariant(""), nil
-}
 
 // GetExtents reports where the element is. coordType 0 is screen coordinates
 // and 1 is window-relative; AT-SPI asks for both on the same method, and a
