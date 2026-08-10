@@ -1,17 +1,20 @@
 # go-widgets/window
 
 A **pure-Go, CGO-free** windowing backend for the
-[go-widgets](https://github.com/go-widgets) toolkit, with four interchangeable
+[go-widgets](https://github.com/go-widgets) toolkit, with five interchangeable
 backends behind one `Open`/`Run` API — **X11**, **Wayland**, **macOS
-Cocoa/AppKit** and **wasmbox** (the
+Cocoa/AppKit**, **Windows Win32/GDI** and **wasmbox** (the
 [wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox) browser compositor).
 `Open` auto-selects per environment: a real X11/Wayland window on Linux, a real
-NSWindow on macOS, and — when built for `js/wasm` — a wasmbox external client.
+NSWindow on macOS, a real Win32 window on Windows, and — when built for
+`js/wasm` — a wasmbox external client.
 **One go-widgets application runs unchanged natively AND inside wasmdesk.**
 
 The macOS backend reaches AppKit through the fleet's shared purego Objective-C
-bridge [`go-macos/objc`](https://github.com/go-macos/objc) — no cgo — so it too
-links with `CGO_ENABLED=0`.
+bridge [`go-macos/objc`](https://github.com/go-macos/objc) — no cgo; the Windows
+backend reaches Win32/GDI through the process' own user32/gdi32/kernel32 DLLs via
+`syscall.NewLazyDLL` and a `syscall.NewCallback` WNDPROC — no cgo — so both link
+with `CGO_ENABLED=0`.
 
 It implements the **X11 core protocol (v11.0) from scratch over the unix
 socket** — no Xlib, no XCB, no cgo — the same sovereign transport + wire-codec
@@ -74,8 +77,9 @@ backend-agnostic. The environment selects the implementation:
 | Linux, `$WAYLAND_DISPLAY` set | Wayland (`internal/wayland`) | xdg-shell over the compositor unix socket |
 | Linux, else `$DISPLAY` | X11 (`internal/x11`) | X11 core protocol over the unix socket (+ MIT-SHM) |
 | macOS (`darwin`) | **Cocoa/AppKit** (`internal/cocoa`) | NSWindow + NSView via `go-macos/objc` (purego), NSBitmapImageRep present |
+| Windows (`windows`) | **Win32/GDI** (`internal/win32`) | top-level HWND via user32/gdi32 syscalls + `NewCallback` WNDPROC, StretchDIBits BGRA present |
 | `js/wasm` | **wasmbox** (`internal/wasmbox`) | wasmbox client protocol over a `MessagePort` + a `SharedArrayBuffer` surface |
-| other (Windows, …) | stub → `ErrUnsupported` | — |
+| other (BSD, …) | stub → `ErrUnsupported` | — |
 
 ### macOS Cocoa/AppKit backend (`darwin`)
 
@@ -93,6 +97,29 @@ damage→dirty-rect conversion live in a sovereign, 100%-covered codec
 (`internal/cocoa/cocoa_darwin.go`) is proven live on-device by the
 `darwin (cocoa)` CI lane (open a window, render it, assert sampled pixels,
 synthesise a click + key and assert the dispatched event + the button counter).
+
+### Windows Win32/GDI backend (`windows`)
+
+On Windows `Open` declares **Per-Monitor-V2 DPI awareness**, registers a window
+class and creates a real **titled, resizable top-level HWND**, presents the
+toolkit's RGBA framebuffer by packing it **BGRA** into a top-down 32bpp DIB and
+blitting it with **`StretchDIBits`** on `WM_PAINT`, and decodes native `WM_*`
+mouse/wheel/key messages into `toolkit.Event`. It honours the opt-in
+`DamageRenderer` (only damaged rectangles are re-packed and `InvalidateRect`'d,
+so `WM_PAINT`'s update region blits just those). To stay readable on HiDPI it
+renders the toolkit at **logical size** and lets the OS up-sample to the physical
+client area (scale = `GetDpiForWindow`/96), rather than rendering at device
+pixels and presenting into a smaller area. The whole path reaches Win32 through
+the process' own **user32/gdi32/kernel32** DLLs via `syscall.NewLazyDLL` and a
+`syscall.NewCallback` WNDPROC — **no cgo**. The OS-independent `WM_*`→
+`toolkit.Event` mapping, RGBA→BGRA DIB packing, DPI/size maths and
+damage→`InvalidateRect` conversion live in a sovereign, 100%-covered codec
+(`internal/win32/mapping.go`); the windows-only Win32 glue
+(`internal/win32/win32_windows.go`) is proven live **on-device** on a Windows 11
+**arm64** QEMU VM — a real Win32 window rendering a `VBox`+`Label`+`Button`
+([capture](internal/win32/win32-capture-2026-08-10.png)), with three injected
+`WM_LBUTTONDOWN`/`UP` messages driving the button's counter `0 → 3` end to end
+through the WNDPROC ([after](internal/win32/win32-input-2026-08-10.png)).
 
 ### wasmbox client backend (`js/wasm`)
 

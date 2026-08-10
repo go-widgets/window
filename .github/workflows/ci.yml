@@ -35,19 +35,21 @@ jobs:
       - run: CGO_ENABLED=0 go build ./...
       - name: Test (whole module)
         run: CGO_ENABLED=0 go test ./...
-      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa)
+      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa + internal/win32)
         shell: bash
-        # -race needs cgo, so this step (and only this step) enables it. All four
+        # -race needs cgo, so this step (and only this step) enables it. All five
         # sovereign layers stay CGO-free, proven by the CGO=0 arch matrix below.
-        # internal/wasmbox's syscall/js transport (client_js.go) and
-        # internal/cocoa's AppKit glue (cocoa_darwin.go) are excluded here by
-        # build tag on the Linux host, so the gate measures their pure,
-        # OS-independent codecs (protocol.go / mapping.go) — 100% by construction.
-        # The cocoa AppKit glue is proven live on the darwin lane below.
+        # internal/wasmbox's syscall/js transport (client_js.go), internal/cocoa's
+        # AppKit glue (cocoa_darwin.go) and internal/win32's Win32/GDI glue
+        # (win32_windows.go) are excluded here by build tag on the Linux host, so
+        # the gate measures their pure, OS-independent codecs (protocol.go /
+        # mapping.go) — 100% by construction. The cocoa AppKit glue is proven live
+        # on the darwin lane below; the Win32 glue is proven live on a Windows 11
+        # arm64 VM (internal/win32/win32-capture-2026-08-10.png).
         env:
           CGO_ENABLED: "1"
         run: |
-          for pkg in internal/x11 internal/wayland internal/wasmbox internal/cocoa; do
+          for pkg in internal/x11 internal/wayland internal/wasmbox internal/cocoa internal/win32; do
             go test -race -timeout 300s -coverprofile=cover.out "./$pkg/"
             go tool cover -func=cover.out | tail -n 60
             cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
@@ -93,12 +95,16 @@ jobs:
           if-no-files-found: warn
 
   # Cross-build regression guard: the whole module MUST compile CGO-free for
-  # every non-native target, including windows/amd64, darwin and js/wasm — this
-  # keeps the Linux-only X11/Wayland backends from leaking unix-only syscalls
-  # back into the windows (or any non-unix) build, AND proves the js/wasm
-  # (wasmbox external-client) backend + its cmd/gowidgetsclient example compile
-  # under GOOS=js GOARCH=wasm. Pure-Go cross-compilation needs no target runner,
-  # so all targets build (and vet) from a single Linux host.
+  # every non-native target. windows/{amd64,arm64} now compile the REAL native
+  # Win32/GDI backend (internal/win32, pure-Go via syscall.NewLazyDLL + a
+  # syscall.NewCallback WNDPROC — no cgo) that Open returns on GOOS=windows,
+  # proving it links CGO-free on both Windows arches and that the Linux-only
+  # X11/Wayland backends do not leak unix-only syscalls into the windows (or any
+  # non-unix) build. It also proves the js/wasm (wasmbox external-client) backend
+  # + its cmd/gowidgetsclient example compile under GOOS=js GOARCH=wasm. Pure-Go
+  # cross-compilation needs no target runner, so all targets build (and vet) from
+  # a single Linux host. (The live Win32 window is proven on-device on a Windows
+  # 11 arm64 VM; see internal/win32/win32-capture-2026-08-10.png.)
   cross-build:
     name: cross-build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
@@ -107,6 +113,7 @@ jobs:
       matrix:
         include:
           - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
           - { goos: js,      goarch: wasm }
           - { goos: darwin,  goarch: arm64 }
           - { goos: darwin,  goarch: amd64 }
