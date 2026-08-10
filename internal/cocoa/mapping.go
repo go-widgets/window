@@ -56,6 +56,58 @@ const (
 	keyUpArrow     = 126
 )
 
+// Default window sizing. When a caller opens a window without an explicit size
+// the backend picks a readable default from the main screen's visible frame: a
+// fraction of the usable area, clamped to a comfortable band on each axis and
+// never larger than the screen itself. All values are LOGICAL points (the unit
+// the toolkit lays out and the user reads in), never device pixels.
+const (
+	// defaultFallbackW/H is used when the screen size is unknown (no AppKit
+	// screen, e.g. a headless build) — a plainly readable desktop-window size.
+	defaultFallbackW = 1280
+	defaultFallbackH = 800
+	// defaultScreenFraction is the share of the visible frame a defaulted window
+	// occupies on each axis.
+	defaultScreenFraction = 0.85
+	// The clamp band keeps the default comfortably readable on a small display
+	// yet never sprawling on a very large one.
+	minContentW = 960
+	minContentH = 600
+	maxContentW = 1600
+	maxContentH = 1000
+)
+
+// DefaultContentSize picks a readable default window content size, in LOGICAL
+// points, from the main screen's visible frame (visW×visH, also in points). It
+// takes defaultScreenFraction of the visible area and clamps each axis to the
+// [min,max] readability band, then to the visible extent so the window never
+// exceeds the usable screen. When the screen size is unknown (visW or visH ≤ 0)
+// it returns the fixed fallback. The result is always ≥ 1×1 and ≤ the visible
+// frame, so a defaulted window is legible without manual sizing.
+func DefaultContentSize(visW, visH float64) (w, h int) {
+	if visW <= 0 || visH <= 0 {
+		return defaultFallbackW, defaultFallbackH
+	}
+	return clampContent(visW*defaultScreenFraction, minContentW, maxContentW, visW),
+		clampContent(visH*defaultScreenFraction, minContentH, maxContentH, visH)
+}
+
+// clampContent rounds want down to whole points, clamps it into [lo,hi] and then
+// caps it at the available extent avail so the window never exceeds the screen.
+func clampContent(want float64, lo, hi int, avail float64) int {
+	v := int(want)
+	if v < lo {
+		v = lo
+	}
+	if v > hi {
+		v = hi
+	}
+	if float64(v) > avail {
+		v = int(avail)
+	}
+	return v
+}
+
 // DecodeMods splits an NSEvent modifierFlags mask into the toolkit's Shift/Ctrl
 // booleans. Shift maps from NSEventModifierFlagShift; Ctrl maps from EITHER
 // Control OR Command, so a ⌘-based macOS shortcut reaches a widget with the

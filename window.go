@@ -61,7 +61,11 @@ type Config struct {
 	// empty they default to Title (Instance) and Title (Class).
 	Instance string
 	Class    string
-	// Width and Height are the initial client size in pixels.
+	// Width and Height are the initial client size in LOGICAL points (the unit
+	// the toolkit lays out and the user reads in — not device pixels). A value ≤ 0
+	// asks the backend for a readable default: the macOS (Cocoa) backend derives
+	// it from the main screen's visible frame; the X11/Wayland backends use their
+	// standard 640×480. A desktop shell should pass its own point size here.
 	Width  int
 	Height int
 	// Display overrides $DISPLAY (e.g. ":0"). Empty uses the environment.
