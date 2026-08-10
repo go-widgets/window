@@ -303,6 +303,156 @@ func TestLiveCocoaWindow(t *testing.T) {
 	callOnMain(func() { _ = win.Close() })
 }
 
+// TestCocoaLegibilityBeforeAfter is the on-device proof that the HiDPI fix makes
+// content READABLE. It renders the SAME widget scene in the SAME window at the
+// SAME logical point size twice, changing only the framebuffer render scale:
+//
+//   - BEFORE: render scale = the display backing factor (the pre-fix
+//     device-pixel path). The UI is laid out at logical×backing pixels and
+//     presented at half its logical size — text is tiny.
+//   - AFTER: render scale = 1 (the fix). The UI is laid out at its logical point
+//     size and up-sampled to the backing resolution by AppKit — text is at its
+//     readable logical size.
+//
+// Both are captured on-device via the permission-free cacheDisplayInRect: render
+// (so both captures share the SAME physical pixel dimensions — the view's point
+// bounds × backing), the first label's glyph ink height is measured in each, and
+// the test ASSERTS the after height is materially larger than the before height.
+// Both captures are saved as dated artifacts.
+func TestCocoaLegibilityBeforeAfter(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the on-device legibility proof")
+	}
+	theme := toolkit.DefaultDark()
+	const ptW, ptH = 640, 420
+
+	// render captures the scene at the given render-scale override and returns the
+	// PNG, the first label's measured glyph ink height (physical px), the window's
+	// logical point size, the framebuffer (render) size and the backing factor.
+	render := func(override float64) (png []byte, glyphPx, logW, logH, bufW, bufH int, backing, scale float64) {
+		var setupErr error
+		callOnMain(func() {
+			renderScaleOverride = override
+			win, err := New("go-widgets/window legibility", ptW, ptH, theme)
+			renderScaleOverride = 0 // never leak the override past construction
+			if err != nil {
+				setupErr = err
+				return
+			}
+			defer func() { _ = win.Close() }()
+			vbox := toolkit.NewVBox()
+			vbox.Append(toolkit.NewLabel("LEGIBILITY PROOF Ag"))
+			vbox.Append(toolkit.NewLabel("second row — pure-Go macOS backend"))
+			win.bindAndSeed(&recordingRoot{inner: vbox})
+			spin(0.3)
+			win.presentFull()
+			png, setupErr = renderViewPNG(win.view)
+			bufW, bufH = win.w, win.h
+			scale, backing = win.scale, win.backing
+			logW, logH = int(float64(win.w)/win.scale), int(float64(win.h)/win.scale)
+		})
+		if setupErr != nil {
+			t.Fatalf("render(override=%v) failed: %v", override, setupErr)
+		}
+		img, err := png2img(png)
+		if err != nil {
+			t.Fatalf("decode capture: %v", err)
+		}
+		glyphPx = firstLabelInkHeight(img, theme.Background)
+		return png, glyphPx, logW, logH, bufW, bufH, backing, scale
+	}
+
+	// BEFORE: reproduce the pre-fix device-pixel path (render scale = backing).
+	// Probe the live backing factor first so the override matches this display.
+	var backing float64
+	callOnMain(func() {
+		w, err := New("probe", 64, 64, theme)
+		if err == nil {
+			backing = w.backing
+			_ = w.Close()
+		}
+	})
+	if backing <= 0 {
+		backing = 1
+	}
+	beforePNG, beforeGlyph, bLogW, bLogH, bBufW, bBufH, bBack, bScale := render(backing)
+	afterPNG, afterGlyph, aLogW, aLogH, aBufW, aBufH, aBack, aScale := render(0)
+
+	// Save both captures as dated artifacts.
+	writeArtifact(t, "cocoa-legibility-before-2026-08-10.png", beforePNG)
+	writeArtifact(t, "cocoa-legibility-after-2026-08-10.png", afterPNG)
+
+	t.Logf("BEFORE (device-pixel path): window %dx%d pt, framebuffer %dx%d px, backing %.0f, render scale %.0f, first-label glyph ink = %d physical px",
+		bLogW, bLogH, bBufW, bBufH, bBack, bScale, beforeGlyph)
+	t.Logf("AFTER  (logical fix)      : window %dx%d pt, framebuffer %dx%d px, backing %.0f, render scale %.0f, first-label glyph ink = %d physical px",
+		aLogW, aLogH, aBufW, aBufH, aBack, aScale, afterGlyph)
+
+	// Both renders describe the same logical window.
+	if bLogW != ptW || bLogH != ptH || aLogW != ptW || aLogH != ptH {
+		t.Fatalf("logical point size drifted: before %dx%d after %dx%d, want %dx%d",
+			bLogW, bLogH, aLogW, aLogH, ptW, ptH)
+	}
+	if beforeGlyph <= 0 || afterGlyph <= 0 {
+		t.Fatalf("failed to measure glyph ink (before=%d after=%d)", beforeGlyph, afterGlyph)
+	}
+	// The fix must make the glyph MATERIALLY larger. On a Retina (backing 2)
+	// display the logical path roughly doubles the on-screen glyph height; require
+	// at least a 1.5× gain to have generous headroom while still proving the win.
+	// On a non-Retina display (backing 1) the two paths coincide, so only require
+	// the gain when the display actually up-samples (backing > 1).
+	if bBack > 1 {
+		if float64(afterGlyph) < 1.5*float64(beforeGlyph) {
+			t.Fatalf("fix did not materially enlarge text: after glyph ink %d px is not ≥ 1.5× before %d px",
+				afterGlyph, beforeGlyph)
+		}
+	}
+	// Regardless of display, the presented glyph must clear a readable floor: the
+	// 5×7 body font up-sampled to the backing resolution is ≥ 10 physical px tall.
+	if afterGlyph < 10 {
+		t.Fatalf("after glyph ink %d physical px is below the 10 px readability floor", afterGlyph)
+	}
+}
+
+// png2img decodes PNG bytes into an image.
+func png2img(b []byte) (image.Image, error) { return png.Decode(bytes.NewReader(b)) }
+
+// writeArtifact saves a capture, logging (not failing) on write error.
+func writeArtifact(t *testing.T, name string, data []byte) {
+	if err := os.WriteFile(name, data, 0o644); err != nil {
+		t.Logf("could not save %s: %v", name, err)
+		return
+	}
+	t.Logf("saved %s (%d bytes)", name, len(data))
+}
+
+// firstLabelInkHeight measures the vertical pixel extent of the topmost text
+// label's ink in a capture. It scans the top 40% of the image (which, for a
+// two-slot VBox, holds the first label — centred near 25% — while excluding the
+// second) for pixels that differ materially from the theme background and
+// returns (maxRow-minRow+1) — the glyph ink height in physical pixels — or 0 if
+// no ink was found.
+func firstLabelInkHeight(img image.Image, bg toolkit.RGBA) int {
+	b := img.Bounds()
+	bandBottom := b.Min.Y + b.Dy()*2/5
+	minY, maxY := -1, -1
+	for y := b.Min.Y; y < bandBottom; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			if !near(uint8(r>>8), bg.R) || !near(uint8(g>>8), bg.G) || !near(uint8(bl>>8), bg.B) {
+				if minY < 0 {
+					minY = y
+				}
+				maxY = y
+				break
+			}
+		}
+	}
+	if minY < 0 {
+		return 0
+	}
+	return maxY - minY + 1
+}
+
 // trySystemScreencapture attempts a real window-server screenshot of the window
 // and saves it; failures (missing permission / headless) are non-fatal.
 func trySystemScreencapture(w *Window) {
