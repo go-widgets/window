@@ -84,6 +84,7 @@ var (
 	selActivateIgnoring     = objc.RegisterName("activateIgnoringOtherApps:")
 	selNextEvent            = objc.RegisterName("nextEventMatchingMask:untilDate:inMode:dequeue:")
 	selSendEvent            = objc.RegisterName("sendEvent:")
+	selFinishLaunching      = objc.RegisterName("finishLaunching")
 	selPostEvent            = objc.RegisterName("postEvent:atStart:")
 	selUpdateWindows        = objc.RegisterName("updateWindows")
 	selInitContentRect      = objc.RegisterName("initWithContentRect:styleMask:backing:defer:")
@@ -201,7 +202,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 	classesOnce.Do(func() {
 		viewClass, classesErr = objc.RegisterClass(
 			"GoWidgetsWindowView", objc.GetClass("NSView"),
-			[]objc.MethodDef{
+			append([]objc.MethodDef{
 				{Cmd: objc.RegisterName("isFlipped"), Fn: viewIsFlipped},
 				{Cmd: objc.RegisterName("acceptsFirstResponder"), Fn: viewAcceptsFirstResponder},
 				{Cmd: objc.RegisterName("drawRect:"), Fn: viewDrawRect},
@@ -213,7 +214,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 				{Cmd: objc.RegisterName("keyDown:"), Fn: viewKeyDown},
 				{Cmd: objc.RegisterName("keyUp:"), Fn: viewKeyUp},
 				{Cmd: objc.RegisterName("viewDidChangeBackingProperties"), Fn: viewDidChangeBackingProperties},
-			})
+			}, a11yMethods()...))
 		if classesErr != nil {
 			return
 		}
@@ -456,6 +457,14 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 
 	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
 	app.Send(selSetActivationPolicy, activationPolicyReg)
+	// Finish launching explicitly. This backend pumps its own event loop
+	// (nextEventMatchingMask/sendEvent) rather than calling -[NSApplication
+	// run], which is what normally performs this step — and an application
+	// that never finishes launching is never registered with the
+	// ACCESSIBILITY system: AXUIElementCreateApplication finds it, and reports
+	// that it has no windows at all, however many are on screen. Measured
+	// against a control that does call -run and does expose its window.
+	app.Send(selFinishLaunching)
 
 	rect := nsRect{Size: nsSize{W: float64(width), H: float64(height)}}
 	style := uint(styleTitled | styleClosable | styleMiniaturizable | styleResizable)
@@ -566,6 +575,10 @@ func (w *Window) drawIncremental() []toolkit.Rect {
 // framebuffer was reallocated (whole-surface damage) and the full surface is
 // presented.
 func (w *Window) paintFrame(resize bool) {
+	// The frame about to be shown and the tree a screen reader reads are
+	// published from the same place, so the description can never lag the
+	// pixels a sighted user already sees.
+	w.refreshA11y()
 	if w.dmg == nil {
 		w.draw()
 		w.presentFull()
