@@ -35,17 +35,19 @@ jobs:
       - run: CGO_ENABLED=0 go build ./...
       - name: Test (whole module)
         run: CGO_ENABLED=0 go test ./...
-      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox)
+      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa)
         shell: bash
-        # -race needs cgo, so this step (and only this step) enables it. All
-        # three sovereign protocol layers stay CGO-free, proven by the CGO=0 arch
-        # matrix below. internal/wasmbox's syscall/js transport (client_js.go) is
-        # excluded here by build tag on the Linux host, so the gate measures its
-        # pure, transport-agnostic codec (protocol.go) — 100% by construction.
+        # -race needs cgo, so this step (and only this step) enables it. All four
+        # sovereign layers stay CGO-free, proven by the CGO=0 arch matrix below.
+        # internal/wasmbox's syscall/js transport (client_js.go) and
+        # internal/cocoa's AppKit glue (cocoa_darwin.go) are excluded here by
+        # build tag on the Linux host, so the gate measures their pure,
+        # OS-independent codecs (protocol.go / mapping.go) — 100% by construction.
+        # The cocoa AppKit glue is proven live on the darwin lane below.
         env:
           CGO_ENABLED: "1"
         run: |
-          for pkg in internal/x11 internal/wayland internal/wasmbox; do
+          for pkg in internal/x11 internal/wayland internal/wasmbox internal/cocoa; do
             go test -race -timeout 300s -coverprofile=cover.out "./$pkg/"
             go tool cover -func=cover.out | tail -n 60
             cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
@@ -54,12 +56,19 @@ jobs:
               echo "::error::$pkg coverage ${cov}% < 100%"; exit 1; }
           done
 
-  # macOS lane: prove the non-Linux stub (Open -> ErrUnsupported) plus the
-  # transport-agnostic protocol codec build, vet and pass off Linux. The
-  # Linux-only syscall backends (SCM_RIGHTS transport, mmap shm) are excluded
-  # by build tag here; the cross-platform codec/protocol tests still run.
-  darwin-stub:
-    name: darwin stub (build + test)
+  # macOS (Cocoa/AppKit) lane: build + vet + test the whole module CGO-free on
+  # darwin — where Open now returns the REAL native NSWindow backend
+  # (internal/cocoa over github.com/go-macos/objc, pure-Go via purego) rather
+  # than ErrUnsupported — then run the live on-device window proof: open a real
+  # NSWindow showing go-widgets widgets, render it on-device, assert sampled
+  # pixels, synthesise a click + key and assert the dispatched toolkit.Event and
+  # the button's OnClick counter. The Cocoa AppKit glue is darwin-only by build
+  # tag; the OS-independent NSEvent→toolkit.Event mapping it uses is the same
+  # internal/cocoa/mapping.go the Linux coverage gate proves to 100%. The
+  # Linux-only X11/Wayland syscall backends are excluded here by build tag; their
+  # transport-agnostic codec tests still run.
+  darwin-cocoa:
+    name: darwin (cocoa)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -69,6 +78,19 @@ jobs:
       - run: CGO_ENABLED=0 go vet ./...
       - run: CGO_ENABLED=0 go build ./...
       - run: CGO_ENABLED=0 go test ./...
+      - name: Live Cocoa window proof (on-device NSWindow + input round-trip)
+        env:
+          WINDOW_COCOA_INTEGRATION: "1"
+        run: CGO_ENABLED=0 go test -tags=integration -run TestLiveCocoaWindow -v ./internal/cocoa/
+      - name: Upload the on-device window render as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocoa-capture
+          path: |
+            internal/cocoa/cocoa-capture-2026-08-10.png
+            internal/cocoa/cocoa-screencapture-2026-08-10.png
+          if-no-files-found: warn
 
   # Cross-build regression guard: the whole module MUST compile CGO-free for
   # every non-native target, including windows/amd64, darwin and js/wasm — this

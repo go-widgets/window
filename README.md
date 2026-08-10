@@ -1,12 +1,17 @@
 # go-widgets/window
 
-A **pure-Go, CGO-free, zero-non-stdlib-dependency** windowing backend for the
-[go-widgets](https://github.com/go-widgets) toolkit, with three interchangeable
-backends behind one `Open`/`Run` API — **X11**, **Wayland** and **wasmbox** (the
+A **pure-Go, CGO-free** windowing backend for the
+[go-widgets](https://github.com/go-widgets) toolkit, with four interchangeable
+backends behind one `Open`/`Run` API — **X11**, **Wayland**, **macOS
+Cocoa/AppKit** and **wasmbox** (the
 [wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox) browser compositor).
-`Open` auto-selects per environment: a real X11/Wayland window on Linux, and —
-when built for `js/wasm` — a wasmbox external client. **One go-widgets
-application runs unchanged natively AND inside wasmdesk.**
+`Open` auto-selects per environment: a real X11/Wayland window on Linux, a real
+NSWindow on macOS, and — when built for `js/wasm` — a wasmbox external client.
+**One go-widgets application runs unchanged natively AND inside wasmdesk.**
+
+The macOS backend reaches AppKit through the fleet's shared purego Objective-C
+bridge [`go-macos/objc`](https://github.com/go-macos/objc) — no cgo — so it too
+links with `CGO_ENABLED=0`.
 
 It implements the **X11 core protocol (v11.0) from scratch over the unix
 socket** — no Xlib, no XCB, no cgo — the same sovereign transport + wire-codec
@@ -68,8 +73,26 @@ backend-agnostic. The environment selects the implementation:
 | --- | --- | --- |
 | Linux, `$WAYLAND_DISPLAY` set | Wayland (`internal/wayland`) | xdg-shell over the compositor unix socket |
 | Linux, else `$DISPLAY` | X11 (`internal/x11`) | X11 core protocol over the unix socket (+ MIT-SHM) |
+| macOS (`darwin`) | **Cocoa/AppKit** (`internal/cocoa`) | NSWindow + NSView via `go-macos/objc` (purego), NSBitmapImageRep present |
 | `js/wasm` | **wasmbox** (`internal/wasmbox`) | wasmbox client protocol over a `MessagePort` + a `SharedArrayBuffer` surface |
-| other non-Linux | stub → `ErrUnsupported` | — |
+| other (Windows, …) | stub → `ErrUnsupported` | — |
+
+### macOS Cocoa/AppKit backend (`darwin`)
+
+On macOS `Open` creates a real **NSWindow** with a flipped content **NSView**,
+presents the toolkit's RGBA framebuffer by wrapping it in an
+**NSBitmapImageRep** drawn in `-drawRect:`, and decodes native
+`NSEvent` mouse/scroll/key input into `toolkit.Event`. It honours the opt-in
+`DamageRenderer` (only damaged rectangles are invalidated via
+`-setNeedsDisplayInRect:` and re-blitted). Everything runs through
+[`go-macos/objc`](https://github.com/go-macos/objc) over
+[purego](https://github.com/ebitengine/purego) — **no cgo**. The OS-independent
+`NSEvent`→`toolkit.Event` mapping, flipped-view coordinate maths and
+damage→dirty-rect conversion live in a sovereign, 100%-covered codec
+(`internal/cocoa/mapping.go`); the darwin-only AppKit glue
+(`internal/cocoa/cocoa_darwin.go`) is proven live on-device by the
+`darwin (cocoa)` CI lane (open a window, render it, assert sampled pixels,
+synthesise a click + key and assert the dispatched event + the button counter).
 
 ### wasmbox client backend (`js/wasm`)
 

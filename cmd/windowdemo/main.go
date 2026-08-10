@@ -2,10 +2,11 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-// Command windowdemo opens a real X11 window (on Linux) showing a few
-// go-widgets widgets, driven by the pure-Go github.com/go-widgets/window
-// backend. On platforms without an X11 backend it prints the reason and
-// exits cleanly, so the command cross-builds and runs everywhere.
+// Command windowdemo opens a real native window showing a few go-widgets
+// widgets, driven by the pure-Go github.com/go-widgets/window backend — an X11
+// or Wayland window on Linux, an NSWindow on macOS. On platforms without a
+// native backend it prints the reason and exits cleanly, so the command
+// cross-builds and runs everywhere.
 package main
 
 import (
