@@ -84,9 +84,14 @@ type Bridge struct {
 	exported int // how many child paths have been exported so far
 	parent   Ref
 
-	// activate replays an ordinary click at a point, so an AT-SPI action takes
-	// the SAME path a real click does and every click behaviour comes free.
-	activate func(x, y int)
+	// pending holds activations requested by a client but not yet applied.
+	//
+	// An AT-SPI action arrives on a D-Bus goroutine, and the widget tree
+	// belongs to the thread that draws it: touching it from here would race
+	// with rendering. So the point is only RECORDED, and the back-end applies
+	// it on its own thread — which is also what makes the click take the exact
+	// same path as a real one.
+	pending []struct{ X, Y int }
 }
 
 var (
@@ -122,7 +127,7 @@ func (b *Bridge) ref(p dbus.ObjectPath) Ref { return Ref{Name: b.name, Path: p} 
 // activate is how an AT-SPI action reaches the widget tree; it is stored on
 // every call because the back-end owns it and this package must not import a
 // back-end.
-func Publish(root toolkit.Widget, title string, originX, originY int, activate func(x, y int)) {
+func Publish(root toolkit.Widget, title string, originX, originY int) {
 	nodes := Nodes(root)
 
 	startMu.Lock()
@@ -135,7 +140,7 @@ func Publish(root toolkit.Widget, title string, originX, originY int, activate f
 			startMu.Unlock()
 			return
 		}
-		bridge = start(nodes, title, originX, originY, activate)
+		bridge = start(nodes, title, originX, originY)
 		started = true
 		startMu.Unlock()
 		return
@@ -149,7 +154,6 @@ func Publish(root toolkit.Widget, title string, originX, originY int, activate f
 	b.mu.Lock()
 	b.nodes, b.title = nodes, title
 	b.originX, b.originY = originX, originY
-	b.activate = activate
 	need, have := len(nodes), b.exported
 	b.mu.Unlock()
 
@@ -186,14 +190,12 @@ func (b *Bridge) publishProps() {
 	title, nodes, parent := b.title, b.nodes, b.parent
 	b.mu.Unlock()
 
-	if err := b.conn.ExportProperties(rootPath, ifaceAccessible, map[string]*dbus.Prop{
+	_ = b.conn.ExportProperties(rootPath, ifaceAccessible, map[string]*dbus.Prop{
 		"Name":        {Value: title},
 		"Description": {Value: ""},
 		"ChildCount":  {Value: int32(len(nodes))},
 		"Parent":      {Value: parent},
-	}); err != nil {
-		println("atspi: ExportProperties root:", err.Error())
-	}
+	})
 	_ = b.conn.ExportProperties(rootPath, ifaceApplication, map[string]*dbus.Prop{
 		"ToolkitName":  {Value: "go-widgets"},
 		"Version":      {Value: "2.1"},
@@ -207,6 +209,17 @@ func (b *Bridge) publishProps() {
 			"Description": {Value: ""},
 			"ChildCount":  {Value: int32(0)},
 			"Parent":      {Value: root},
+		})
+		// NActions is a PROPERTY of the Action interface, not only a method.
+		// Answering the method alone leaves a client showing the element with
+		// an empty action list: readable, and impossible to operate. Measured
+		// exactly that way before this line existed.
+		actions := int32(0)
+		if Role(n.Role) == RolePushButton {
+			actions = 1
+		}
+		_ = b.conn.ExportProperties(childPath(i), ifaceAction, map[string]*dbus.Prop{
+			"NActions": {Value: actions},
 		})
 	}
 }
@@ -251,7 +264,7 @@ func (b *Bridge) announceNew(from, to int) {
 
 // start brings the bridge up: find the accessibility bus, export the
 // application root, and register with the registry.
-func start(nodes []toolkit.A11yNode, title string, originX, originY int, activate func(x, y int)) *Bridge {
+func start(nodes []toolkit.A11yNode, title string, originX, originY int) *Bridge {
 	addr, err := busAddress()
 	if err != nil || addr == "" {
 		return nil
@@ -273,7 +286,6 @@ func start(nodes []toolkit.A11yNode, title string, originX, originY int, activat
 	b := &Bridge{
 		conn: conn, name: names[0], parent: nullRef,
 		nodes: nodes, title: title, originX: originX, originY: originY,
-		activate: activate,
 	}
 	root := &accRoot{b: b}
 	for _, iface := range []string{ifaceAccessible, ifaceApplication, ifaceProperties} {
@@ -329,4 +341,30 @@ func busAddress() (string, error) {
 	err = sess.Object("org.a11y.Bus", "/org/a11y/bus").
 		Call("org.a11y.Bus.GetAddress", 0).Store(&addr)
 	return addr, err
+}
+
+// TakePending hands the back-end the activations a client asked for since the
+// last call, to be applied on the thread that owns the widget tree.
+//
+// KNOWN LIMITATION: the back-end drains this while painting, and the X11 loop
+// blocks on the display socket, so an action taken while the application is
+// otherwise idle is applied on the NEXT event rather than immediately. The
+// click itself lands correctly — measured, clicks: 0 to clicks: 1 — the tree
+// simply republishes a beat later. Closing that needs the loop woken from
+// outside, e.g. a self-addressed X ClientMessage.
+//
+// It returns nothing when the bridge never came up, which is the normal case on
+// a machine with no accessibility stack running.
+func TakePending() []struct{ X, Y int } {
+	startMu.Lock()
+	b := bridge
+	startMu.Unlock()
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	out := b.pending
+	b.pending = nil
+	b.mu.Unlock()
+	return out
 }

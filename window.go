@@ -383,11 +383,16 @@ func (w *Window) paintFrame(resize, expose bool) error {
 	// The frame about to be shown and the tree a screen reader reads are
 	// published from the same place, so the description never lags the pixels.
 	// Activation replays an ordinary click, so every click behaviour comes free.
-	atspi.Publish(w.root, w.title, w.originX, w.originY, func(x, y int) {
+	// Apply anything a screen reader asked for since the last frame, HERE, on
+	// the thread that owns the widget tree — the bridge only records the
+	// request. Replaying it as an ordinary click means every behaviour a click
+	// has is had by an accessibility action, with no second path to drift.
+	for _, p := range atspi.TakePending() {
 		if w.root != nil {
-			w.root.OnEvent(toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y})
+			w.root.OnEvent(toolkit.Event{Kind: toolkit.EventClick, X: p.X, Y: p.Y})
 		}
-	})
+	}
+	atspi.Publish(w.root, w.title, w.originX, w.originY)
 	if w.dmg == nil {
 		w.draw()
 		return w.present()

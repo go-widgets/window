@@ -154,17 +154,13 @@ func (c *accChild) DoAction(int32) (bool, *dbus.Error) {
 	if !ok {
 		return false, nil
 	}
-	c.b.mu.Lock()
-	activate := c.b.activate
-	c.b.mu.Unlock()
-	if activate == nil {
-		return false, nil
-	}
 	x, y, ok := ParsePressPoint(PressPoint(n.node))
 	if !ok {
 		return false, nil
 	}
-	activate(x, y)
+	c.b.mu.Lock()
+	c.b.pending = append(c.b.pending, struct{ X, Y int }{x, y})
+	c.b.mu.Unlock()
 	return true, nil
 }
 

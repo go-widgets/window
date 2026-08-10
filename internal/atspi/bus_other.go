@@ -15,5 +15,7 @@ import "github.com/go-widgets/toolkit"
 // protocol codec is unit-tested everywhere, which is what keeps cross-builds
 // green — so the call site must resolve even where the bus cannot exist. Same
 // reason open_other.go supplies an Open that returns ErrUnsupported.
-func Publish(root toolkit.Widget, title string, originX, originY int, activate func(x, y int)) {
-}
+func Publish(root toolkit.Widget, title string, originX, originY int) {}
+
+// TakePending has nothing to hand back off Linux.
+func TakePending() []struct{ X, Y int } { return nil }
