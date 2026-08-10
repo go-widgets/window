@@ -10,3 +10,8 @@
 # proof screenshot is committed as reviewable evidence).
 /test/node_modules
 /test/wasmbox-live-proof.png
+
+# Live macOS proof: the true on-screen screencapture is best-effort scratch
+# (needs Screen-Recording permission); the dated on-device render
+# (internal/cocoa/cocoa-capture-*.png) is committed as reviewable evidence.
+/internal/cocoa/cocoa-screencapture-*.png

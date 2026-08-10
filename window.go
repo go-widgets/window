@@ -29,14 +29,15 @@ import (
 	"github.com/go-widgets/window/internal/x11"
 )
 
-// ErrUnsupported is returned by Open on platforms with no windowing
-// backend (non-Linux).
-var ErrUnsupported = errors.New("window: a native windowing backend is only supported on Linux")
+// ErrUnsupported is returned by Open on platforms with no windowing backend —
+// everything that is neither Linux (X11/Wayland) nor macOS (Cocoa/AppKit) nor
+// the js/wasm wasmbox environment.
+var ErrUnsupported = errors.New("window: no native windowing backend for this platform")
 
-// Backend is an open, backend-specific window bound to a go-widgets scene.
-// Both the X11 (*Window) and the Wayland backend satisfy it, so Open can
-// return whichever the environment selects and a go-widgets application is
-// backend-agnostic: it just calls Run, Size, String and Close.
+// Backend is an open, backend-specific window bound to a go-widgets scene. The
+// X11 (*Window), Wayland, macOS Cocoa and wasmbox backends all satisfy it, so
+// Open can return whichever the environment selects and a go-widgets
+// application is backend-agnostic: it just calls Run, Size, String and Close.
 type Backend interface {
 	// Run binds root, performs the initial layout+present, then dispatches
 	// server/compositor events into the widget tree until the window closes.
