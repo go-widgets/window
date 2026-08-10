@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/go-macos/objc v0.1.1
 	github.com/go-widgets/painter v0.3.0
-	github.com/go-widgets/toolkit v0.132.0
+	github.com/go-widgets/toolkit v0.135.0
 )
 
 require (
