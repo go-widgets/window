@@ -408,6 +408,20 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		return r
 	}
 	switch message {
+	case wmGetObject:
+		// Only a request for the UI Automation root is ours; every other object
+		// id on this message belongs to MSAA and must be answered by the
+		// default handling rather than by silence.
+		if ret, ok := w.a11yGetObject(wParam, lParam); ok {
+			return ret
+		}
+		r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
+		return r
+	case wmMove:
+		// Only the UI thread may ask the window where it is; the accessibility
+		// bridge reads the answer from a cache.
+		w.noteWindowOrigin()
+		return 0
 	case wmEraseBkgnd:
 		return 1 // the framebuffer paints every pixel; skip the flicker-y erase
 	case wmPaint:
@@ -634,6 +648,10 @@ func (w *Window) drawIncremental() []toolkit.Rect {
 // framebuffer was reallocated (whole-surface damage) and the full surface is
 // presented.
 func (w *Window) paintFrame(resize bool) {
+	// The frame about to be shown and the tree a screen reader reads are
+	// published from the same place, so the description can never lag the
+	// pixels a sighted user already sees.
+	w.refreshA11y()
 	if w.dmg == nil {
 		w.draw()
 		w.invalidateAll()
