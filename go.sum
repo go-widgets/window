@@ -1,5 +1,7 @@
 github.com/ebitengine/purego v0.10.2 h1:W809HbnvzAxgdm+aOvlSekrM16wGCdT/e76+9tS7gzE=
 github.com/ebitengine/purego v0.10.2/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/go-freedesktop/dbus v0.1.1 h1:oznjbPKWkRga7lVhgkdQnt9aYfcy7gMYWlGX1HXd6q4=
+github.com/go-freedesktop/dbus v0.1.1/go.mod h1:POfbq95HLV4+H2pbs4GQKk8hLC+wbwgIxmrXbhBxgLw=
 github.com/go-macos/objc v0.1.1 h1:fcuSplZNWzpZjimxMN3HkDHW7XnHFaGaEDIwrTbhdxs=
 github.com/go-macos/objc v0.1.1/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
 github.com/go-opentype/bidi v0.2.1 h1:7xCGqywPYxmwSfPBgP1Ewrp2Iwg2S03NeKxGWTz2guo=
