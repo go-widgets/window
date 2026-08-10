@@ -42,8 +42,8 @@ func TestParseKeymapLookup(t *testing.T) {
 		wantMod    bool
 		wantNothin bool
 	}{
-		{30, false, 'a', "", false, false},   // <AC01> level 0
-		{30, true, 'A', "", false, false},    // <AC01> level 1
+		{30, false, 'a', "", false, false},    // <AC01> level 0
+		{30, true, 'A', "", false, false},     // <AC01> level 1
 		{28, false, 0, "Enter", false, false}, // <RTRN> named
 		{28, true, 0, "Enter", false, false},  // single level: shift ignored
 		{42, false, 0, "", true, false},       // <LFSH> Shift_L modifier

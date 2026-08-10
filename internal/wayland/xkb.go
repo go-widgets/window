@@ -170,22 +170,22 @@ func resolveKeysym(name string) Key {
 
 // namedKeysyms maps non-character xkb keysym names to toolkit key names.
 var namedKeysyms = map[string]string{
-	"Return":    "Enter",
-	"KP_Enter":  "Enter",
-	"BackSpace": "Backspace",
-	"Tab":       "Tab",
+	"Return":       "Enter",
+	"KP_Enter":     "Enter",
+	"BackSpace":    "Backspace",
+	"Tab":          "Tab",
 	"ISO_Left_Tab": "Tab",
-	"Escape":    "Escape",
-	"Delete":    "Delete",
-	"Insert":    "Insert",
-	"Left":      "ArrowLeft",
-	"Right":     "ArrowRight",
-	"Up":        "ArrowUp",
-	"Down":      "ArrowDown",
-	"Home":      "Home",
-	"End":       "End",
-	"Prior":     "PageUp",
-	"Next":      "PageDown",
+	"Escape":       "Escape",
+	"Delete":       "Delete",
+	"Insert":       "Insert",
+	"Left":         "ArrowLeft",
+	"Right":        "ArrowRight",
+	"Up":           "ArrowUp",
+	"Down":         "ArrowDown",
+	"Home":         "Home",
+	"End":          "End",
+	"Prior":        "PageUp",
+	"Next":         "PageDown",
 }
 
 // modifierKeysyms is the set of modifier key names, which deliver no event.

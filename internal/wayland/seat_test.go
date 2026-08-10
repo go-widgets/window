@@ -281,7 +281,13 @@ func TestKeyboardEvents(t *testing.T) {
 	must(keyboardEvtEnter, bodyOf(order, func(e *encoder) { e.putU32(1); e.putU32(2); e.putArray([]byte{30, 0, 0, 0}) }))
 	must(keyboardEvtLeave, bodyOf(order, func(e *encoder) { e.putU32(1); e.putU32(2) }))
 	must(keyboardEvtKey, bodyOf(order, func(e *encoder) { e.putU32(1); e.putU32(0); e.putU32(30); e.putU32(StatePressed) }))
-	must(keyboardEvtModifiers, bodyOf(order, func(e *encoder) { e.putU32(1); e.putU32(modMaskShift | modMaskControl); e.putU32(0); e.putU32(0); e.putU32(0) }))
+	must(keyboardEvtModifiers, bodyOf(order, func(e *encoder) {
+		e.putU32(1)
+		e.putU32(modMaskShift | modMaskControl)
+		e.putU32(0)
+		e.putU32(0)
+		e.putU32(0)
+	}))
 	must(keyboardEvtRepeatInfo, bodyOf(order, func(e *encoder) { e.putI32(25); e.putI32(600) }))
 
 	if !entered || !leftFocus || keyCode != 30 || !keyPressed || !modsSeen {

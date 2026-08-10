@@ -186,12 +186,12 @@ func TestLiveCocoaWindow(t *testing.T) {
 
 	theme := toolkit.DefaultDark()
 	var (
-		win     *Window
-		root    *recordingRoot
-		btn     *toolkit.Button
-		clicks  int
-		pngData []byte
-		btnRect toolkit.Rect
+		win      *Window
+		root     *recordingRoot
+		btn      *toolkit.Button
+		clicks   int
+		pngData  []byte
+		btnRect  toolkit.Rect
 		setupErr error
 	)
 

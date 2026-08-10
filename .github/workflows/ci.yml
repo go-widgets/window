@@ -33,6 +33,17 @@ jobs:
       - run: go version
       - run: CGO_ENABLED=0 go vet ./...
       - run: CGO_ENABLED=0 go build ./...
+      - name: Gofmt
+        # go vet does NOT check formatting, so drift accumulates silently: ten
+        # files had gone out of gofmt on main before this step existed. Printing
+        # the diff makes a failure actionable rather than just a list of names.
+        run: |
+          drift=$(gofmt -l .)
+          if [ -n "$drift" ]; then
+            echo "::error::not gofmt-clean:"; echo "$drift"
+            gofmt -d .
+            exit 1
+          fi
       - name: Test (whole module)
         run: CGO_ENABLED=0 go test ./...
       - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa + internal/win32)
