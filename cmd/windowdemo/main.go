@@ -29,10 +29,11 @@ func main() {
 // simply reports and succeeds.
 func run() error {
 	w, err := window.Open(window.Config{
-		Title:  "go-widgets/window demo",
-		Class:  "windowdemo",
-		Width:  480,
-		Height: 320,
+		Title: "go-widgets/window demo",
+		Class: "windowdemo",
+		// Width/Height left at 0 (logical points) so the backend picks a readable
+		// default: on macOS a fraction of the main screen's visible frame, so the
+		// window opens comfortably legible on a Retina display rather than tiny.
 	})
 	if err == window.ErrUnsupported {
 		fmt.Println("windowdemo:", err)
