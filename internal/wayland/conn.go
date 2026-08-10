@@ -21,9 +21,9 @@ type Conn struct {
 	t     transport
 	order ByteOrder
 
-	wmu      sync.Mutex          // serialises request writes
-	nextID   uint32              // next client-allocated object id
-	handlers map[uint32]handler  // object id -> event dispatcher
+	wmu      sync.Mutex         // serialises request writes
+	nextID   uint32             // next client-allocated object id
+	handlers map[uint32]handler // object id -> event dispatcher
 
 	display *Display
 	err     error // latched fatal protocol error (from wl_display.error)

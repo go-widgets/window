@@ -261,11 +261,11 @@ func TestDirtyRect(t *testing.T) {
 
 func TestFloorCeil(t *testing.T) {
 	cases := []struct {
-		v          float64
-		fl, ce     float64
+		v      float64
+		fl, ce float64
 	}{
-		{2.0, 2, 2},   // exact integer: neither adjusts
-		{2.5, 2, 3},   // positive fractional
+		{2.0, 2, 2},    // exact integer: neither adjusts
+		{2.5, 2, 3},    // positive fractional
 		{-2.5, -3, -2}, // negative fractional
 		{0, 0, 0},
 	}

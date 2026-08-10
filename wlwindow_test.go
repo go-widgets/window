@@ -205,4 +205,3 @@ func TestWlWindowApplyResize(t *testing.T) {
 		t.Fatal("zero resize should clear the flag")
 	}
 }
-
