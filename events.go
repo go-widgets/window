@@ -43,6 +43,12 @@ func (w *Window) mapEvent(xe x11.Event) outcome {
 	case xcodeMotionNotify:
 		return w.mapMotion(xe, shift, ctrl)
 	case xcodeConfigureNotify:
+		// Record where the window is, for the accessibility bridge: AT-SPI asks
+		// for extents in screen coordinates as well as window ones, and only
+		// the back-end knows the position. For a reparented window the server
+		// reports this relative to the WM frame rather than the root, so it is
+		// an approximation — an honest one, and better than the origin.
+		w.originX, w.originY = int(xe.X), int(xe.Y)
 		if int(xe.Width) != w.w || int(xe.Height) != w.h {
 			return outcome{resize: true, rw: int(xe.Width), rh: int(xe.Height)}
 		}
