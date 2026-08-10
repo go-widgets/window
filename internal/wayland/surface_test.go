@@ -148,8 +148,8 @@ func TestCompositorBindLowerVersion(t *testing.T) {
 		t.Fatalf("Compositor: %v", err)
 	}
 	_, _, d := lastWrite(t, st, order)
-	d.getU32()      // name
-	d.getString()   // interface
+	d.getU32()    // name
+	d.getString() // interface
 	if v := d.getU32(); v != 2 {
 		t.Errorf("bound version = %d, want 2 (min of offered/cap)", v)
 	}

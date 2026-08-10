@@ -35,13 +35,13 @@ const shmName = "MIT-SHM"
 // major opcode and version, and whether AttachFd (>= 1.2) is usable on this
 // connection.
 type Shm struct {
-	c          *Conn
-	major      byte
-	VerMajor   uint16
-	VerMinor   uint16
-	SharedPix  bool  // server supports shared pixmaps
-	PixmapFmt  uint8 // pixmap format for shared pixmaps
-	FDCapable  bool  // AttachFd usable: version >= 1.2 AND transport passes fds
+	c         *Conn
+	major     byte
+	VerMajor  uint16
+	VerMinor  uint16
+	SharedPix bool  // server supports shared pixmaps
+	PixmapFmt uint8 // pixmap format for shared pixmaps
+	FDCapable bool  // AttachFd usable: version >= 1.2 AND transport passes fds
 }
 
 // QueryShm queries the MIT-SHM extension and its version. It returns
