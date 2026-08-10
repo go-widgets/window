@@ -95,6 +95,8 @@ var (
 	selCenter               = objc.RegisterName("center")
 	selSetDelegate          = objc.RegisterName("setDelegate:")
 	selBackingScaleFactor   = objc.RegisterName("backingScaleFactor")
+	selMainScreen           = objc.RegisterName("mainScreen")
+	selVisibleFrame         = objc.RegisterName("visibleFrame")
 	selWindowNumber         = objc.RegisterName("windowNumber")
 	selClose                = objc.RegisterName("close")
 	selInitWithFrame        = objc.RegisterName("initWithFrame:")
@@ -125,9 +127,22 @@ type damageRenderer interface {
 }
 
 // Window is an open macOS window bound to a go-widgets scene. It owns the
-// backing RGBA framebuffer (in device pixels), presents it to the content view
+// backing RGBA framebuffer (in RENDER pixels), presents it to the content view
 // and drives the toolkit widget tree from NSEvent input. It satisfies
 // window.Backend (Run/Close/Size/String).
+//
+// HiDPI model. The toolkit lays out and paints in the framebuffer's coordinate
+// space, so that space MUST equal the window's LOGICAL point size for the UI to
+// appear at a readable size: the framebuffer is width×height points at
+// scale=1, and AppKit up-samples that logical bitmap to the display's backing
+// resolution when drawing it into the (point-sized) content view — readable on a
+// Retina display, exactly 1:1 on a non-Retina one. (Rendering at device pixels
+// instead — logical×backing — makes the toolkit lay the UI out twice as large in
+// pixels, so it is presented at HALF its logical size: crisp but far too small
+// to read. That was the pre-fix behaviour.) A future crisp-HiDPI path can set
+// scale = backing once the toolkit gains a global UI-scale hook that grows every
+// widget's pixel metrics to match; the whole coordinate pipeline already honours
+// an arbitrary scale, so only renderScaleOverride/New need change.
 type Window struct {
 	title string
 	theme *toolkit.Theme
@@ -135,10 +150,11 @@ type Window struct {
 	win  objc.ID
 	view objc.ID
 
-	mu    sync.Mutex // guards buf/w/h against the -drawRect: reader
-	buf   []byte     // RGBA framebuffer, 4*w*h bytes (device pixels)
-	w, h  int        // device-pixel size
-	scale float64    // backing scale factor (points→pixels)
+	mu      sync.Mutex // guards buf/w/h against the -drawRect: reader
+	buf     []byte     // RGBA framebuffer, 4*w*h bytes (render pixels)
+	w, h    int        // render-pixel size (= logical points at scale 1)
+	scale   float64    // RENDER scale: framebuffer pixels per point (1 = logical)
+	backing float64    // display backing scale factor (1 or 2), for diagnostics
 
 	root       toolkit.Widget
 	dmg        damageRenderer
@@ -146,6 +162,14 @@ type Window struct {
 
 	closed bool
 }
+
+// renderScaleOverride, when > 0, forces the framebuffer render scale (framebuffer
+// pixels per logical point) instead of the readable default of 1.0. Production
+// leaves it 0. It is the single knob the crisp-HiDPI follow-up will flip (to the
+// backing factor, once the toolkit can scale widget geometry to match) and the
+// seam the on-device legibility proof uses to render the pre-fix device-pixel
+// path and the post-fix logical path side by side and measure the gain.
+var renderScaleOverride float64
 
 // active is the single live window the class callbacks route to. A native GUI
 // app owns one main-thread run loop and one window here.
@@ -188,6 +212,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 				{Cmd: objc.RegisterName("scrollWheel:"), Fn: viewScrollWheel},
 				{Cmd: objc.RegisterName("keyDown:"), Fn: viewKeyDown},
 				{Cmd: objc.RegisterName("keyUp:"), Fn: viewKeyUp},
+				{Cmd: objc.RegisterName("viewDidChangeBackingProperties"), Fn: viewDidChangeBackingProperties},
 			})
 		if classesErr != nil {
 			return
@@ -341,20 +366,60 @@ func windowShouldClose(_ objc.ID, _ objc.SEL, _ objc.ID) bool {
 	return true
 }
 
-// windowDidResize re-derives the device size from the content view bounds and
-// backing scale, reallocates the framebuffer and re-presents the whole surface.
+// windowDidResize re-derives the render size from the content view bounds (in
+// points) at the current render scale, reallocates the framebuffer and
+// re-presents the whole surface. At the default render scale of 1 the
+// framebuffer tracks the window's logical point size, so the UI stays readable
+// as the window grows or shrinks.
 func windowDidResize(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	w := active
 	if w == nil || w.win == 0 {
 		return
 	}
-	scale := float64(objc.Send[float64](w.win, selBackingScaleFactor))
-	if scale <= 0 {
-		scale = 1
-	}
+	w.updateBacking()
 	cv := w.win.Send(selContentView)
 	b := objc.Send[nsRect](cv, selBounds)
-	w.resize(int(b.Size.W*scale), int(b.Size.H*scale), scale)
+	w.resize(int(b.Size.W*w.scale), int(b.Size.H*w.scale), w.scale)
+}
+
+// viewDidChangeBackingProperties fires when the window moves between displays of
+// different pixel density (Retina ↔ non-Retina). The framebuffer is kept in
+// LOGICAL points (render scale 1), so its size does not change — only the
+// display's up-sampling of that bitmap does — but the recorded backing factor is
+// refreshed (diagnostics) and the surface re-presented so AppKit re-samples the
+// current frame at the new density.
+func viewDidChangeBackingProperties(_ objc.ID, _ objc.SEL) {
+	w := active
+	if w == nil {
+		return
+	}
+	w.updateBacking()
+	w.presentFull()
+}
+
+// updateBacking refreshes the recorded display backing scale factor from the
+// window (1 on a non-Retina display, 2 on Retina).
+func (w *Window) updateBacking() {
+	if w.win == 0 {
+		return
+	}
+	b := float64(objc.Send[float64](w.win, selBackingScaleFactor))
+	if b <= 0 {
+		b = 1
+	}
+	w.backing = b
+}
+
+// mainScreenVisible returns the main screen's visible frame size in points
+// (the usable area, excluding the menu bar and Dock), or (0,0) when no screen is
+// available so DefaultContentSize falls back to a fixed size.
+func mainScreenVisible() (w, h float64) {
+	screen := objc.ID(objc.GetClass("NSScreen")).Send(selMainScreen)
+	if screen == 0 {
+		return 0, 0
+	}
+	vf := objc.Send[nsRect](screen, selVisibleFrame)
+	return vf.Size.W, vf.Size.H
 }
 
 // dispatch delivers one toolkit event to the root and re-presents the frame it
@@ -378,11 +443,12 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 	if err != nil {
 		return nil, err
 	}
-	if width <= 0 {
-		width = 640
-	}
-	if height <= 0 {
-		height = 480
+	// No explicit size → pick a readable default from the main screen's visible
+	// frame (a fraction of the usable area, clamped), so a defaulted window is
+	// legible without the caller having to size it. Width/Height are LOGICAL
+	// points; a desktop shell can pass its own point size through Config.
+	if width <= 0 || height <= 0 {
+		width, height = DefaultContentSize(mainScreenVisible())
 	}
 	if theme == nil {
 		theme = toolkit.DefaultDark()
@@ -405,18 +471,26 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 	deleg.Send(selRetain)
 	win.Send(selSetDelegate, deleg)
 
-	scale := float64(objc.Send[float64](win, selBackingScaleFactor))
-	if scale <= 0 {
-		scale = 1
+	backing := float64(objc.Send[float64](win, selBackingScaleFactor))
+	if backing <= 0 {
+		backing = 1
+	}
+	// Render scale: 1 (logical points) so the UI is presented at a readable size;
+	// the framebuffer is up-sampled to the backing resolution by AppKit. An
+	// override (the crisp-HiDPI seam / legibility proof) forces a different scale.
+	scale := 1.0
+	if renderScaleOverride > 0 {
+		scale = renderScaleOverride
 	}
 	w := &Window{
-		title: title,
-		theme: theme,
-		win:   win,
-		view:  view,
-		w:     int(float64(width) * scale),
-		h:     int(float64(height) * scale),
-		scale: scale,
+		title:   title,
+		theme:   theme,
+		win:     win,
+		view:    view,
+		w:       int(float64(width) * scale),
+		h:       int(float64(height) * scale),
+		scale:   scale,
+		backing: backing,
 	}
 	w.buf = make([]byte, 4*w.w*w.h)
 	active = w
@@ -527,7 +601,8 @@ func (w *Window) presentRects(rects []toolkit.Rect) {
 	w.view.Send(selDisplayIfNeeded)
 }
 
-// resize grows/shrinks the framebuffer to the new device size and re-presents.
+// resize grows/shrinks the framebuffer to the new render size (points × render
+// scale) and re-presents.
 func (w *Window) resize(nw, nh int, scale float64) {
 	if nw <= 0 || nh <= 0 || (nw == w.w && nh == w.h) {
 		return
@@ -539,7 +614,8 @@ func (w *Window) resize(nw, nh int, scale float64) {
 	w.paintFrame(true)
 }
 
-// Size returns the current client size in device pixels.
+// Size returns the current client size in framebuffer (render) pixels — equal to
+// the window's logical point size at the default render scale of 1.
 func (w *Window) Size() (int, int) { return w.w, w.h }
 
 // Close releases the window. Safe to call more than once.

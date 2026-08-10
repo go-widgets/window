@@ -11,6 +11,49 @@ import (
 	"github.com/go-widgets/toolkit"
 )
 
+func TestDefaultContentSize(t *testing.T) {
+	cases := []struct {
+		name       string
+		visW, visH float64
+		wantW      int
+		wantH      int
+	}{
+		// Unknown screen (either axis ≤ 0) → fixed fallback.
+		{"unknown-both", 0, 0, defaultFallbackW, defaultFallbackH},
+		{"unknown-w", 0, 900, defaultFallbackW, defaultFallbackH},
+		{"unknown-h", 1440, 0, defaultFallbackW, defaultFallbackH},
+		{"negative", -10, -10, defaultFallbackW, defaultFallbackH},
+		// Typical laptop visible frame: 0.85 fraction lands inside the band.
+		// 1512*0.85=1285.2→1285 ; 945*0.85=803.25→803.
+		{"laptop-in-band", 1512, 945, 1285, 803},
+		// Huge display: fraction exceeds the max on each axis → clamped to max.
+		{"huge-clamp-max", 6000, 4000, maxContentW, maxContentH},
+		// Small-ish display: fraction falls below the min but the screen still
+		// has room → clamped up to the min band.
+		{"small-clamp-min", 1080, 700, minContentW, minContentH},
+		// Tiny display: min band exceeds the visible extent → capped at the
+		// visible frame so the window never overflows the screen.
+		{"tiny-cap-avail", 800, 500, 800, 500},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w, h := DefaultContentSize(c.visW, c.visH)
+			if w != c.wantW || h != c.wantH {
+				t.Fatalf("DefaultContentSize(%v,%v) = (%d,%d), want (%d,%d)",
+					c.visW, c.visH, w, h, c.wantW, c.wantH)
+			}
+			// Post-conditions: a defaulted size is positive and, when the screen
+			// is known, never exceeds the visible frame.
+			if w <= 0 || h <= 0 {
+				t.Fatalf("non-positive default size (%d,%d)", w, h)
+			}
+			if c.visW > 0 && c.visH > 0 && (float64(w) > c.visW || float64(h) > c.visH) {
+				t.Fatalf("default size (%d,%d) exceeds visible frame (%v,%v)", w, h, c.visW, c.visH)
+			}
+		})
+	}
+}
+
 func TestDecodeMods(t *testing.T) {
 	cases := []struct {
 		name        string
