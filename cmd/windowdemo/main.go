@@ -4,9 +4,9 @@
 
 // Command windowdemo opens a real native window showing a few go-widgets
 // widgets, driven by the pure-Go github.com/go-widgets/window backend — an X11
-// or Wayland window on Linux, an NSWindow on macOS. On platforms without a
-// native backend it prints the reason and exits cleanly, so the command
-// cross-builds and runs everywhere.
+// or Wayland window on Linux, an NSWindow on macOS, a Win32 window on Windows.
+// On platforms without a native backend it prints the reason and exits cleanly,
+// so the command cross-builds and runs everywhere.
 package main
 
 import (
