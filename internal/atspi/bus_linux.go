@@ -1,0 +1,286 @@
+// Copyright (c) the go-widgets/window authors. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Bringing the AT-SPI bridge up and keeping the published tree current.
+//
+// # The two buses
+//
+// AT-SPI does not live on the session bus. The session bus only carries
+// org.a11y.Bus, whose GetAddress hands back the address of a SECOND bus that
+// the accessibility traffic actually flows over. Every toolkit follows that
+// indirection and so does this: exporting on the session bus would look
+// perfectly correct and be invisible to every screen reader.
+//
+// # Registration
+//
+// Objects are exported under /org/a11y/atspi/accessible/, then
+// org.a11y.atspi.Socket.Embed hands the registry our (bus name, root path) and
+// returns the parent to report. An application that skips Embed is exported,
+// reachable, and never discovered.
+//
+// Every step is allowed to fail quietly. A machine with no accessibility stack
+// running — which is most of them — has no org.a11y.Bus to answer, and a
+// windowing library must not refuse to open a window over that.
+//
+//go:build linux
+
+package atspi
+
+import (
+	"os"
+	"strconv"
+	"sync"
+
+	"github.com/go-freedesktop/dbus"
+	"github.com/go-widgets/toolkit"
+)
+
+// AT-SPI object paths. Children live under pathPrefix + their index, so a path
+// is enough to find the element it describes and no lookup table has to be kept
+// in step with the tree.
+const (
+	rootPath   = "/org/a11y/atspi/accessible/root"
+	pathPrefix = "/org/a11y/atspi/accessible/"
+	cachePath  = "/org/a11y/atspi/cache"
+
+	ifaceAccessible  = "org.a11y.atspi.Accessible"
+	ifaceApplication = "org.a11y.atspi.Application"
+	ifaceComponent   = "org.a11y.atspi.Component"
+	ifaceAction      = "org.a11y.atspi.Action"
+	ifaceCache       = "org.a11y.atspi.Cache"
+	ifaceEventObject = "org.a11y.atspi.Event.Object"
+	ifaceProperties  = "org.freedesktop.DBus.Properties"
+)
+
+// Ref is AT-SPI's object reference: the bus name that owns it and its path —
+// the "(so)" every AT-SPI method passes around.
+//
+// Name is a plain string. In godbus, against which this bridge was first
+// written, dbus.Sender is an ANNOTATION type meaning "inject the caller's
+// name" rather than "a string on the wire", and using it there silently changed
+// this struct's signature so the registry never listed the application. The
+// owned D-Bus has no such type, and the signature is checked rather than
+// assumed: SignatureOfType reports (so) for this and
+// a((so)(so)(so)iiassusau) for the cache item.
+type Ref struct {
+	Name string
+	Path dbus.ObjectPath
+}
+
+// nullRef is the reference AT-SPI uses for "nothing".
+var nullRef = Ref{Name: "org.a11y.atspi.Registry", Path: "/org/a11y/atspi/null"}
+
+// Bridge is the live connection and the snapshot being described.
+type Bridge struct {
+	conn *dbus.Conn
+	name string // our unique bus name on the accessibility bus
+
+	mu       sync.Mutex
+	nodes    []toolkit.A11yNode
+	originX  int
+	originY  int
+	title    string
+	exported int // how many child paths have been exported so far
+	parent   Ref
+
+	// activate replays an ordinary click at a point, so an AT-SPI action takes
+	// the SAME path a real click does and every click behaviour comes free.
+	activate func(x, y int)
+}
+
+var (
+	bridge  *Bridge
+	startMu sync.Mutex
+	started bool
+)
+
+// childPath is the object path for the nth element.
+func childPath(n int) dbus.ObjectPath {
+	return dbus.ObjectPath(pathPrefix + strconv.Itoa(n))
+}
+
+func (b *Bridge) snapshot() []toolkit.A11yNode {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.nodes
+}
+
+func (b *Bridge) at(n int) (toolkit.A11yNode, bool) {
+	s := b.snapshot()
+	if n < 0 || n >= len(s) {
+		return toolkit.A11yNode{}, false
+	}
+	return s[n], true
+}
+
+func (b *Bridge) ref(p dbus.ObjectPath) Ref { return Ref{Name: b.name, Path: p} }
+
+// Publish republishes the tree for the frame just drawn. The back-end calls it
+// from the same place that presents pixels, so the description never lags them.
+//
+// activate is how an AT-SPI action reaches the widget tree; it is stored on
+// every call because the back-end owns it and this package must not import a
+// back-end.
+func Publish(root toolkit.Widget, title string, originX, originY int, activate func(x, y int)) {
+	nodes := Nodes(root)
+
+	startMu.Lock()
+	if !started {
+		// Register only once the tree is POPULATED. A client reads the whole
+		// cache the moment an application appears and does not read it again
+		// unaided, so registering on the first empty frame hands it a permanent
+		// snapshot of an empty application — which is exactly what it showed.
+		if len(nodes) == 0 {
+			startMu.Unlock()
+			return
+		}
+		bridge = start(nodes, title, originX, originY, activate)
+		started = true
+		startMu.Unlock()
+		return
+	}
+	b := bridge
+	startMu.Unlock()
+	if b == nil {
+		return
+	}
+
+	b.mu.Lock()
+	b.nodes, b.title = nodes, title
+	b.originX, b.originY = originX, originY
+	b.activate = activate
+	need, have := len(nodes), b.exported
+	b.mu.Unlock()
+
+	for i := have; i < need; i++ {
+		if !b.exportChild(i) {
+			return
+		}
+	}
+	if need > have {
+		b.mu.Lock()
+		b.exported = need
+		b.mu.Unlock()
+		b.announceNew(have, need)
+	}
+}
+
+// exportChild publishes one element's object under its own path. Paths are
+// exported as the tree grows and then KEPT: a client may hold a reference
+// across frames, and unexporting underneath it would turn a live reference into
+// an error. Paths beyond the current tree report an invalid role and are not
+// listed as children, so they are unreachable rather than wrong.
+func (b *Bridge) exportChild(i int) bool {
+	child := &accChild{b: b, idx: i}
+	p := childPath(i)
+	for _, iface := range []string{ifaceAccessible, ifaceComponent, ifaceAction, ifaceProperties} {
+		if err := b.conn.Export(child, p, iface); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// announceNew tells a client that already snapshotted the cache about elements
+// added since. Without this a tree that grows after registration is invisible
+// to everything that read it once.
+func (b *Bridge) announceNew(from, to int) {
+	cache := &accCache{b: b}
+	root := b.ref(rootPath)
+	for i := from; i < to; i++ {
+		item, ok := cache.item(i)
+		if !ok {
+			continue
+		}
+		_ = b.conn.Emit(cachePath, ifaceCache+".AddAccessible", item)
+		// A client builds its model from the event stream as much as from the
+		// cache, so a tree that only appears in the cache has nothing to attach
+		// it to. The signature is "siiv(so)": what changed, two indices, the
+		// payload, and the source's application.
+		_ = b.conn.Emit(rootPath, ifaceEventObject+".ChildrenChanged",
+			"add", int32(i), int32(0),
+			dbus.MakeVariant(b.ref(childPath(i))), root)
+	}
+}
+
+// start brings the bridge up: find the accessibility bus, export the
+// application root, and register with the registry.
+func start(nodes []toolkit.A11yNode, title string, originX, originY int, activate func(x, y int)) *Bridge {
+	addr, err := busAddress()
+	if err != nil || addr == "" {
+		return nil
+	}
+	conn, err := dbus.Dial(addr)
+	if err != nil {
+		return nil
+	}
+	if _, err := conn.Hello(); err != nil {
+		conn.Close()
+		return nil
+	}
+	names := conn.Names()
+	if len(names) == 0 {
+		conn.Close()
+		return nil
+	}
+
+	b := &Bridge{
+		conn: conn, name: names[0], parent: nullRef,
+		nodes: nodes, title: title, originX: originX, originY: originY,
+		activate: activate,
+	}
+	root := &accRoot{b: b}
+	for _, iface := range []string{ifaceAccessible, ifaceApplication, ifaceProperties} {
+		if err := conn.Export(root, rootPath, iface); err != nil {
+			conn.Close()
+			return nil
+		}
+	}
+	// The cache is how a client actually reads the tree; without it the
+	// application is discovered and then appears empty, with at-spi logging
+	// exactly that.
+	if err := conn.Export(&accCache{b: b}, cachePath, ifaceCache); err != nil {
+		conn.Close()
+		return nil
+	}
+	for i := range nodes {
+		if !b.exportChild(i) {
+			conn.Close()
+			return nil
+		}
+	}
+	b.exported = len(nodes)
+
+	// Embed hands the registry our root and returns the parent to report. An
+	// application that exports its objects but skips this is reachable on the
+	// bus and never discovered by anything.
+	var parent Ref
+	call := conn.Object("org.a11y.atspi.Registry", rootPath).
+		Call("org.a11y.atspi.Socket.Embed", 0, b.ref(rootPath))
+	if call.Err == nil {
+		_ = call.Store(&parent)
+		b.mu.Lock()
+		b.parent = parent
+		b.mu.Unlock()
+	}
+	return b
+}
+
+// busAddress asks the SESSION bus where the accessibility bus is.
+//
+// AT_SPI_BUS_ADDRESS overrides the lookup, which is how a test harness points
+// an application at a bus it controls.
+func busAddress() (string, error) {
+	if a := os.Getenv("AT_SPI_BUS_ADDRESS"); a != "" {
+		return a, nil
+	}
+	sess, err := dbus.ConnectSessionBus()
+	if err != nil {
+		return "", err
+	}
+	var addr string
+	err = sess.Object("org.a11y.Bus", "/org/a11y/bus").
+		Call("org.a11y.Bus.GetAddress", 0).Store(&addr)
+	return addr, err
+}

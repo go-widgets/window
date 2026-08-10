@@ -23,6 +23,7 @@ package window
 import (
 	"errors"
 	"fmt"
+	"github.com/go-widgets/window/internal/atspi"
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
@@ -106,6 +107,11 @@ type Window struct {
 	root   toolkit.Widget
 	dmg    DamageRenderer // non-nil when root opts into incremental present
 	closed bool
+
+	// originX/originY are the window's position, kept for the accessibility
+	// bridge (see the ConfigureNotify branch in events.go).
+	originX, originY int
+	title            string
 }
 
 // newWindow builds a Window over an already-handshaken connection: it
@@ -143,6 +149,9 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 		h:     cfg.Height,
 		theme: theme,
 		buf:   make([]byte, 4*cfg.Width*cfg.Height),
+		// The accessibility bus names the application object; the window title
+		// is what the user already knows it by.
+		title: cfg.Title,
 	}
 	w.win = conn.NewID()
 	w.gc = conn.NewID()
@@ -371,6 +380,14 @@ func (w *Window) Run(root toolkit.Widget) error {
 // full surface is blitted) or an Expose (the framebuffer is intact, so the whole
 // surface is re-blitted with no redraw).
 func (w *Window) paintFrame(resize, expose bool) error {
+	// The frame about to be shown and the tree a screen reader reads are
+	// published from the same place, so the description never lags the pixels.
+	// Activation replays an ordinary click, so every click behaviour comes free.
+	atspi.Publish(w.root, w.title, w.originX, w.originY, func(x, y int) {
+		if w.root != nil {
+			w.root.OnEvent(toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y})
+		}
+	})
 	if w.dmg == nil {
 		w.draw()
 		return w.present()
