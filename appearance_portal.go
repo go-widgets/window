@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+//go:build !js
+
 package window
 
 import (
@@ -42,14 +44,6 @@ const (
 // when they flip their desktop to dark, and three orders of magnitude above
 // what it costs.
 const appearanceCacheFor = 500 * time.Millisecond
-
-// portalConn is the session-bus connection, opened on first use and kept.
-type portalConn struct {
-	bus    *dbus.Conn
-	tried  bool
-	cached Appearance
-	at     time.Time
-}
 
 // Appearance reports the desktop's colour scheme and accent colour. Implements
 // the AppearanceReader capability.
@@ -102,18 +96,19 @@ func appearanceFrom(obj dbus.BusObject) Appearance {
 // a desktop without a portal will not grow one while the window is open, and
 // retrying every poll would spend a connection attempt per frame proving it.
 func (w *Window) portalObject() (dbus.BusObject, bool) {
-	if w.portal.bus == nil {
+	bus, _ := w.portal.bus.(*dbus.Conn)
+	if bus == nil {
 		if w.portal.tried {
 			return nil, false
 		}
 		w.portal.tried = true
-		bus, err := dbus.SessionBus()
-		if err != nil {
+		var err error
+		if bus, err = dbus.SessionBus(); err != nil {
 			return nil, false
 		}
 		w.portal.bus = bus
 	}
-	return w.portal.bus.Object(portalService, dbus.ObjectPath(portalPath)), true
+	return bus.Object(portalService, dbus.ObjectPath(portalPath)), true
 }
 
 // portalRead calls Settings.Read, whose result is a variant wrapping a variant
