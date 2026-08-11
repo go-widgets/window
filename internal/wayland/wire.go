@@ -7,7 +7,7 @@
 // over a UNIX-domain stream socket.
 //
 // It mirrors the sovereign transport+codec approach of the sibling
-// internal/x11 package and of github.com/go-freedesktop/dbus: no
+// internal/x11 package and of github.com/godbus/dbus/v5: no
 // libwayland, no wayland-scanner, no cgo — the wire format is encoded and
 // decoded here, byte for byte, per the Wayland protocol specification, and
 // file descriptors are passed over the socket via SCM_RIGHTS ancillary

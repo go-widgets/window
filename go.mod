@@ -3,11 +3,11 @@ module github.com/go-widgets/window
 go 1.26.4
 
 require (
-	github.com/go-freedesktop/dbus v0.1.1
 	github.com/go-macos/objc v0.1.1
 	github.com/go-opentype/opentype v0.5.0
 	github.com/go-widgets/painter v0.9.0
 	github.com/go-widgets/toolkit v0.149.0
+	github.com/godbus/dbus/v5 v5.2.2
 )
 
 require (
@@ -16,4 +16,5 @@ require (
 	github.com/go-opentype/bidi v0.2.1 // indirect
 	github.com/go-opentype/fonts v0.6.0 // indirect
 	github.com/go-opentype/shape v0.4.0 // indirect
+	golang.org/x/sys v0.27.0 // indirect
 )
