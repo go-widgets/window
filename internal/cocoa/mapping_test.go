@@ -208,6 +208,9 @@ func TestMapMouse(t *testing.T) {
 	if got := MapMouseMove(7, 8, true, Mods{}); got != (toolkit.Event{Kind: toolkit.EventMouseDrag, X: 7, Y: 8}) {
 		t.Fatalf("MapMouseMove(drag) = %+v", got)
 	}
+	if got := MapSecondaryClick(9, 10, Mods{Ctrl: true}); got != (toolkit.Event{Kind: toolkit.EventSecondaryClick, X: 9, Y: 10, Ctrl: true}) {
+		t.Fatalf("MapSecondaryClick = %+v", got)
+	}
 }
 
 func TestMapScrollAndSign(t *testing.T) {

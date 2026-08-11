@@ -233,6 +233,9 @@ func TestLiveCocoaWindow(t *testing.T) {
 		loc := nsPoint{X: cx, Y: viewHpts - cyTop}
 		win.postMouse(app, evtLeftMouseDown, loc)
 		win.postMouse(app, evtLeftMouseUp, loc)
+		// A right press must reach the root as a secondary click (the context-menu
+		// gesture), travelling the -rightMouseDown: callback and mapping.go decode.
+		win.postMouse(app, evtRightMouseDown, loc)
 
 		// Synthesise a printable key 'a' (keyCode 0 on ANSI → printable path).
 		win.postKey(app, evtKeyDown, "a", 0)
@@ -289,6 +292,9 @@ func TestLiveCocoaWindow(t *testing.T) {
 	}
 	if !root.has(toolkit.EventClick, "") {
 		t.Fatalf("no EventClick dispatched to root; got %+v", root.events)
+	}
+	if !root.has(toolkit.EventSecondaryClick, "") {
+		t.Fatalf("no EventSecondaryClick dispatched to root after a right press; got %+v", root.events)
 	}
 	if !root.has(toolkit.EventKeyDown, "a") {
 		t.Fatalf("no EventKeyDown 'a' dispatched to root; got %+v", root.events)
