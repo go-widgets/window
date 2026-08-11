@@ -14,8 +14,8 @@
 package atspi
 
 import (
-	"github.com/go-freedesktop/dbus"
 	"github.com/go-widgets/toolkit"
+	"github.com/godbus/dbus/v5"
 )
 
 // accRoot is the application object: the thing a screen reader finds when it

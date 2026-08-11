@@ -11,7 +11,7 @@
 //
 // The X11 protocol itself is implemented from scratch in the internal/x11
 // package over a raw byte stream, mirroring the sovereign transport+codec
-// approach of github.com/go-freedesktop/dbus.
+// approach of a pure-Go wire library such as github.com/godbus/dbus/v5.
 //
 // Open dials the server named by $DISPLAY; it is implemented on Linux and
 // returns ErrUnsupported elsewhere, so cross-builds stay green. The
