@@ -16,5 +16,5 @@ github.com/go-opentype/shape v0.4.0 h1:Yz8ooo9+7HlzuzS72YWjJVM22GNGFf6jcxWfNNJOs
 github.com/go-opentype/shape v0.4.0/go.mod h1:7kybm69yrtRgQnjaxPyYI9nPRFFdBdzlrmjcYCBfCbg=
 github.com/go-widgets/painter v0.9.0 h1:/y0qn0+TP3bhdLMi4+/vmUUBnSp3/L2RQBBgwAmJkes=
 github.com/go-widgets/painter v0.9.0/go.mod h1:ccmlkH2UmcXQh6rt9Fu2eDt2RI0B5V0POaGmUKeW0EQ=
-github.com/go-widgets/toolkit v0.148.1-0.20260811182102-1f3408658c93 h1:92zf3kUPEgzsveOmXZBjyGlOYOoJW2QoUoX2K/cZ5m0=
-github.com/go-widgets/toolkit v0.148.1-0.20260811182102-1f3408658c93/go.mod h1:UZ8tGcFgtmcIZuZPmX1fPncrni7IOG+E0AaeMi0MXcI=
+github.com/go-widgets/toolkit v0.149.0 h1:QHTUpvF0NfkgyQsvJ2fgoIPOOGRV+atI+70KmeeWS+o=
+github.com/go-widgets/toolkit v0.149.0/go.mod h1:UZ8tGcFgtmcIZuZPmX1fPncrni7IOG+E0AaeMi0MXcI=

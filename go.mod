@@ -7,7 +7,7 @@ require (
 	github.com/go-macos/objc v0.1.1
 	github.com/go-opentype/opentype v0.5.0
 	github.com/go-widgets/painter v0.9.0
-	github.com/go-widgets/toolkit v0.148.1-0.20260811182102-1f3408658c93
+	github.com/go-widgets/toolkit v0.149.0
 )
 
 require (
