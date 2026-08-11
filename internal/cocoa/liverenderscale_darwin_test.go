@@ -59,6 +59,22 @@ func TestLiveRenderScaleFollowsThePanel(t *testing.T) {
 	}
 	t.Logf("backing=%.0fx logical=%dx%d native=%dx%d", backing, pw, ph, nw, nh)
 
+	// The scale is reported back, so a self-rendering root can turn framebuffer
+	// pixels into the logical size the user sees. A window that lied here would
+	// hand its renderer the wrong idea of what a point is worth.
+	var reported float64
+	callOnMain(func() {
+		win, err := NewScaled("render scale readback", pw, ph, nil, -1)
+		if err != nil {
+			return
+		}
+		defer func() { _ = win.Close() }()
+		reported = win.RenderScale()
+	})
+	if reported != backing {
+		t.Errorf("RenderScale() = %v, want the backing factor %v it was asked to follow", reported, backing)
+	}
+
 	// An explicit scale is used as given, neither clamped nor rounded to the
 	// panel: a caller asking for 3x on a 2x display means it.
 	ew, eh, _, err := measure(3)
