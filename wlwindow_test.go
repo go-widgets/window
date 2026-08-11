@@ -42,44 +42,44 @@ func TestTranslateKey(t *testing.T) {
 	km := wayland.ParseKeymap(testKeymap)
 
 	// Printable press -> KeyDown + Char; release -> KeyUp.
-	evs := translateKey(km, evA, true, false, false)
+	evs := translateKey(km, evA, true, wlmods{})
 	if len(evs) != 2 || evs[0].Kind != toolkit.EventKeyDown || evs[0].Code != "a" ||
 		evs[1].Kind != toolkit.EventChar || evs[1].Code != "a" {
 		t.Fatalf("press a = %+v", evs)
 	}
-	up := translateKey(km, evA, false, false, false)
+	up := translateKey(km, evA, false, wlmods{})
 	if len(up) != 1 || up[0].Kind != toolkit.EventKeyUp || up[0].Code != "a" {
 		t.Fatalf("release a = %+v", up)
 	}
 	// Shift selects level 1 ('A') and marks the event Shift.
-	sh := translateKey(km, evA, true, true, false)
+	sh := translateKey(km, evA, true, wlmods{shift: true})
 	if sh[1].Code != "A" || !sh[1].Shift {
 		t.Fatalf("shifted a = %+v", sh)
 	}
 	// Ctrl passes through.
-	if c := translateKey(km, evA, true, false, true); !c[0].Ctrl {
+	if c := translateKey(km, evA, true, wlmods{ctrl: true}); !c[0].Ctrl {
 		t.Fatalf("ctrl a = %+v", c)
 	}
 	// Named key: single KeyDown/KeyUp carrying the toolkit name.
-	nd := translateKey(km, evRtrn, true, false, false)
+	nd := translateKey(km, evRtrn, true, wlmods{})
 	if len(nd) != 1 || nd[0].Kind != toolkit.EventKeyDown || nd[0].Code != "Enter" {
 		t.Fatalf("Return down = %+v", nd)
 	}
-	nu := translateKey(km, evRtrn, false, false, false)
+	nu := translateKey(km, evRtrn, false, wlmods{})
 	if nu[0].Kind != toolkit.EventKeyUp || nu[0].Code != "Enter" {
 		t.Fatalf("Return up = %+v", nu)
 	}
 	// space -> ' ' rune.
-	sp := translateKey(km, evSpace, true, false, false)
+	sp := translateKey(km, evSpace, true, wlmods{})
 	if sp[1].Kind != toolkit.EventChar || sp[1].Code != " " {
 		t.Fatalf("space = %+v", sp)
 	}
 	// Modifier key delivers nothing.
-	if m := translateKey(km, evShift, true, false, false); m != nil {
+	if m := translateKey(km, evShift, true, wlmods{}); m != nil {
 		t.Fatalf("Shift_L should deliver nothing: %+v", m)
 	}
 	// Unmapped keycode delivers nothing.
-	if u := translateKey(km, 250, true, false, false); u != nil {
+	if u := translateKey(km, 250, true, wlmods{}); u != nil {
 		t.Fatalf("unmapped key should deliver nothing: %+v", u)
 	}
 }
@@ -87,7 +87,7 @@ func TestTranslateKey(t *testing.T) {
 func TestTranslateButton(t *testing.T) {
 	w := &wlWindow{ptrX: 33, ptrY: 44}
 	// Left press -> EventClick + sets the drag bit.
-	press := w.translateButton(wayland.BtnLeft, true, false, false)
+	press := w.translateButton(wayland.BtnLeft, true, wlmods{})
 	if len(press) != 1 || press[0].Kind != toolkit.EventClick || press[0].X != 33 || press[0].Y != 44 {
 		t.Fatalf("left press = %+v", press)
 	}
@@ -95,7 +95,7 @@ func TestTranslateButton(t *testing.T) {
 		t.Fatal("press should set the drag bit")
 	}
 	// Release -> EventMouseUp + clears the bit; modifiers pass through.
-	rel := w.translateButton(wayland.BtnLeft, false, true, true)
+	rel := w.translateButton(wayland.BtnLeft, false, wlmods{shift: true, ctrl: true})
 	if rel[0].Kind != toolkit.EventMouseUp || !rel[0].Ctrl || !rel[0].Shift {
 		t.Fatalf("left release = %+v", rel)
 	}
@@ -103,13 +103,13 @@ func TestTranslateButton(t *testing.T) {
 		t.Fatal("release should clear the drag bit")
 	}
 	// Right/middle also map; an unknown button is dropped.
-	if r := w.translateButton(wayland.BtnRight, true, false, false); r[0].Kind != toolkit.EventClick {
+	if r := w.translateButton(wayland.BtnRight, true, wlmods{}); r[0].Kind != toolkit.EventClick {
 		t.Fatalf("right press = %+v", r)
 	}
-	if m := w.translateButton(wayland.BtnMiddle, true, false, false); m[0].Kind != toolkit.EventClick {
+	if m := w.translateButton(wayland.BtnMiddle, true, wlmods{}); m[0].Kind != toolkit.EventClick {
 		t.Fatalf("middle press = %+v", m)
 	}
-	if u := w.translateButton(0x999, true, false, false); u != nil {
+	if u := w.translateButton(0x999, true, wlmods{}); u != nil {
 		t.Fatalf("unknown button should be dropped: %+v", u)
 	}
 }
@@ -117,31 +117,31 @@ func TestTranslateButton(t *testing.T) {
 func TestTranslateMotion(t *testing.T) {
 	w := &wlWindow{ptrX: 5, ptrY: 6}
 	// No button held -> hover move.
-	if mv := w.translateMotion(false, false); mv[0].Kind != toolkit.EventMouseMove || mv[0].X != 5 {
+	if mv := w.translateMotion(wlmods{}); mv[0].Kind != toolkit.EventMouseMove || mv[0].X != 5 {
 		t.Fatalf("move = %+v", mv)
 	}
 	// Button held -> drag; modifiers pass through.
 	w.buttons = 1
-	if dr := w.translateMotion(true, false); dr[0].Kind != toolkit.EventMouseDrag || !dr[0].Shift {
+	if dr := w.translateMotion(wlmods{shift: true}); dr[0].Kind != toolkit.EventMouseDrag || !dr[0].Shift {
 		t.Fatalf("drag = %+v", dr)
 	}
 }
 
 func TestTranslateAxis(t *testing.T) {
 	w := &wlWindow{ptrX: 1, ptrY: 2}
-	down := w.translateAxis(wayland.AxisVerticalScroll, wayland.FixedFromInt(10), false, false)
+	down := w.translateAxis(wayland.AxisVerticalScroll, wayland.FixedFromInt(10), wlmods{})
 	if len(down) != 1 || down[0].Kind != toolkit.EventScroll || down[0].Delta != 1 {
 		t.Fatalf("scroll down = %+v", down)
 	}
-	up := w.translateAxis(wayland.AxisVerticalScroll, wayland.FixedFromInt(-5), false, false)
+	up := w.translateAxis(wayland.AxisVerticalScroll, wayland.FixedFromInt(-5), wlmods{})
 	if up[0].Delta != -1 {
 		t.Fatalf("scroll up = %+v", up)
 	}
 	// Zero value and horizontal axis produce nothing.
-	if z := w.translateAxis(wayland.AxisVerticalScroll, 0, false, false); z != nil {
+	if z := w.translateAxis(wayland.AxisVerticalScroll, 0, wlmods{}); z != nil {
 		t.Fatalf("zero axis = %+v", z)
 	}
-	if h := w.translateAxis(wayland.AxisHorizontalScroll, wayland.FixedFromInt(3), false, false); h != nil {
+	if h := w.translateAxis(wayland.AxisHorizontalScroll, wayland.FixedFromInt(3), wlmods{}); h != nil {
 		t.Fatalf("horizontal axis = %+v", h)
 	}
 }
@@ -167,7 +167,7 @@ func TestWlWindowDrawAndHelpers(t *testing.T) {
 		t.Fatal("String empty")
 	}
 	// mods with no keyboard is false/false.
-	if s, c := w.mods(); s || c {
+	if m := w.mods(); m.shift || m.ctrl || m.alt || m.meta {
 		t.Fatal("mods with no keyboard should be false")
 	}
 	// queue of nothing is a no-op; queue of something marks repaint.

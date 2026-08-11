@@ -20,28 +20,51 @@ type outcome struct {
 	quit    bool
 }
 
+// xmods is the modifier state decoded from an X11 event's state mask: Shift,
+// Control, Alt (Mod1) and Meta (Mod4, the Super/logo key). Deriving all four
+// from the event itself keeps the mapping stateless and correct even if an
+// event is missed, and lets a widget tell a plain Ctrl chord from an Alt/Meta
+// one (e.g. paste vs paste-as-move in the file manager).
+type xmods struct{ shift, ctrl, alt, meta bool }
+
+// xmodsFrom decodes the four modifier bits from an X11 state mask.
+func xmodsFrom(state uint16) xmods {
+	return xmods{
+		shift: state&x11.ModShift != 0,
+		ctrl:  state&x11.ModControl != 0,
+		alt:   state&x11.ModMod1 != 0,
+		meta:  state&x11.ModMod4 != 0,
+	}
+}
+
+// with stamps the four modifier flags onto ev, so every toolkit event a mapper
+// emits carries the same decoded state.
+func (m xmods) with(ev toolkit.Event) toolkit.Event {
+	ev.Shift, ev.Ctrl, ev.Alt, ev.Meta = m.shift, m.ctrl, m.alt, m.meta
+	return ev
+}
+
 // mapEvent translates a decoded X11 event into an outcome. It is pure with
 // respect to I/O — it reads only the window's keymap, size and WM atoms —
 // so the whole input-routing table is unit-testable with no X server.
 //
-// Modifier state (Ctrl/Shift) and drag-vs-move are derived from the event's
-// own state mask rather than tracked across events, which keeps the mapping
-// stateless and correct even if an event is missed.
+// Modifier state (Shift/Ctrl/Alt/Meta) and drag-vs-move are derived from the
+// event's own state mask rather than tracked across events, which keeps the
+// mapping stateless and correct even if an event is missed.
 func (w *Window) mapEvent(xe x11.Event) outcome {
-	shift := xe.State&x11.ModShift != 0
-	ctrl := xe.State&x11.ModControl != 0
+	m := xmodsFrom(xe.State)
 
 	switch xe.Code {
 	case xcodeKeyPress:
-		return w.mapKey(xe, shift, ctrl, true)
+		return w.mapKey(xe, m, true)
 	case xcodeKeyRelease:
-		return w.mapKey(xe, shift, ctrl, false)
+		return w.mapKey(xe, m, false)
 	case xcodeButtonPress:
-		return w.mapButtonPress(xe, shift, ctrl)
+		return w.mapButtonPress(xe, m)
 	case xcodeButtonRelease:
-		return w.mapButtonRelease(xe, shift, ctrl)
+		return w.mapButtonRelease(xe, m)
 	case xcodeMotionNotify:
-		return w.mapMotion(xe, shift, ctrl)
+		return w.mapMotion(xe, m)
 	case xcodeConfigureNotify:
 		// Record where the window is, for the accessibility bridge: AT-SPI asks
 		// for extents in screen coordinates as well as window ones, and only
@@ -72,8 +95,8 @@ func (w *Window) mapEvent(xe x11.Event) outcome {
 // key (Enter, ArrowLeft, ...) yields a single KeyDown/KeyUp carrying that
 // name; a printable key yields KeyDown+Char on press (Char being the
 // committed rune) and KeyUp on release. Modifier keys deliver nothing.
-func (w *Window) mapKey(xe x11.Event, shift, ctrl, press bool) outcome {
-	ks := w.keymap.Keysym(xe.Detail, shift)
+func (w *Window) mapKey(xe x11.Event, m xmods, press bool) outcome {
+	ks := w.keymap.Keysym(xe.Detail, m.shift)
 	if x11.IsModifier(ks) {
 		return outcome{}
 	}
@@ -84,17 +107,17 @@ func (w *Window) mapKey(xe x11.Event, shift, ctrl, press bool) outcome {
 		if !press {
 			kind = up
 		}
-		out.events = append(out.events, toolkit.Event{Kind: kind, Code: name, Ctrl: ctrl, Shift: shift})
+		out.events = append(out.events, m.with(toolkit.Event{Kind: kind, Code: name}))
 		return out
 	}
 	if r, ok := x11.KeysymRune(ks); ok {
 		s := string(r)
 		if press {
 			out.events = append(out.events,
-				toolkit.Event{Kind: toolkit.EventKeyDown, Code: s, Ctrl: ctrl, Shift: shift},
-				toolkit.Event{Kind: toolkit.EventChar, Code: s, Ctrl: ctrl, Shift: shift})
+				m.with(toolkit.Event{Kind: toolkit.EventKeyDown, Code: s}),
+				m.with(toolkit.Event{Kind: toolkit.EventChar, Code: s}))
 		} else {
-			out.events = append(out.events, toolkit.Event{Kind: toolkit.EventKeyUp, Code: s, Ctrl: ctrl, Shift: shift})
+			out.events = append(out.events, m.with(toolkit.Event{Kind: toolkit.EventKeyUp, Code: s}))
 		}
 		return out
 	}
@@ -105,40 +128,40 @@ func (w *Window) mapKey(xe x11.Event, shift, ctrl, press bool) outcome {
 
 // mapButtonPress turns a ButtonPress into a click (buttons 1–3) or a scroll
 // tick (wheel buttons 4/5).
-func (w *Window) mapButtonPress(xe x11.Event, shift, ctrl bool) outcome {
+func (w *Window) mapButtonPress(xe x11.Event, m xmods) outcome {
 	x, y := int(xe.EventX), int(xe.EventY)
 	switch xe.Detail {
 	case x11.ButtonWheelUp:
-		return outcome{repaint: true, events: []toolkit.Event{{Kind: toolkit.EventScroll, X: x, Y: y, Delta: -1, Ctrl: ctrl, Shift: shift}}}
+		return outcome{repaint: true, events: []toolkit.Event{m.with(toolkit.Event{Kind: toolkit.EventScroll, X: x, Y: y, Delta: -1})}}
 	case x11.ButtonWheelDown:
-		return outcome{repaint: true, events: []toolkit.Event{{Kind: toolkit.EventScroll, X: x, Y: y, Delta: 1, Ctrl: ctrl, Shift: shift}}}
+		return outcome{repaint: true, events: []toolkit.Event{m.with(toolkit.Event{Kind: toolkit.EventScroll, X: x, Y: y, Delta: 1})}}
 	default:
-		return outcome{repaint: true, events: []toolkit.Event{{Kind: toolkit.EventClick, X: x, Y: y, Ctrl: ctrl, Shift: shift}}}
+		return outcome{repaint: true, events: []toolkit.Event{m.with(toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y})}}
 	}
 }
 
 // mapButtonRelease turns a ButtonRelease (buttons 1–3) into a mouse-up.
 // Wheel-button releases carry no toolkit meaning.
-func (w *Window) mapButtonRelease(xe x11.Event, shift, ctrl bool) outcome {
+func (w *Window) mapButtonRelease(xe x11.Event, m xmods) outcome {
 	if xe.Detail == x11.ButtonWheelUp || xe.Detail == x11.ButtonWheelDown {
 		return outcome{}
 	}
-	return outcome{repaint: true, events: []toolkit.Event{{
-		Kind: toolkit.EventMouseUp, X: int(xe.EventX), Y: int(xe.EventY), Ctrl: ctrl, Shift: shift,
-	}}}
+	return outcome{repaint: true, events: []toolkit.Event{m.with(toolkit.Event{
+		Kind: toolkit.EventMouseUp, X: int(xe.EventX), Y: int(xe.EventY),
+	})}}
 }
 
 // mapMotion turns a MotionNotify into a drag (a button held) or a plain
 // hover move (no button), per the event's state mask.
-func (w *Window) mapMotion(xe x11.Event, shift, ctrl bool) outcome {
+func (w *Window) mapMotion(xe x11.Event, m xmods) outcome {
 	buttons := x11.ModButton1 | x11.ModButton2 | x11.ModButton3
 	kind := toolkit.EventMouseMove
 	if xe.State&uint16(buttons) != 0 {
 		kind = toolkit.EventMouseDrag
 	}
-	return outcome{repaint: true, events: []toolkit.Event{{
-		Kind: kind, X: int(xe.EventX), Y: int(xe.EventY), Ctrl: ctrl, Shift: shift,
-	}}}
+	return outcome{repaint: true, events: []toolkit.Event{m.with(toolkit.Event{
+		Kind: kind, X: int(xe.EventX), Y: int(xe.EventY),
+	})}}
 }
 
 // X11 event codes re-exported at the window layer so mapEvent reads

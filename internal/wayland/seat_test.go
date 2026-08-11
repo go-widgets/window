@@ -283,7 +283,7 @@ func TestKeyboardEvents(t *testing.T) {
 	must(keyboardEvtKey, bodyOf(order, func(e *encoder) { e.putU32(1); e.putU32(0); e.putU32(30); e.putU32(StatePressed) }))
 	must(keyboardEvtModifiers, bodyOf(order, func(e *encoder) {
 		e.putU32(1)
-		e.putU32(modMaskShift | modMaskControl)
+		e.putU32(modMaskShift | modMaskControl | modMaskLogo)
 		e.putU32(0)
 		e.putU32(0)
 		e.putU32(0)
@@ -293,8 +293,9 @@ func TestKeyboardEvents(t *testing.T) {
 	if !entered || !leftFocus || keyCode != 30 || !keyPressed || !modsSeen {
 		t.Fatalf("keyboard callbacks: entered=%v left=%v key=%d pressed=%v mods=%v", entered, leftFocus, keyCode, keyPressed, modsSeen)
 	}
-	if !k.Shift() || !k.Ctrl() || k.Alt() {
-		t.Errorf("modifiers shift=%v ctrl=%v alt=%v", k.Shift(), k.Ctrl(), k.Alt())
+	// Shift+Ctrl+Super held (no Alt): Logo (the Meta/⌘ key) reports true.
+	if !k.Shift() || !k.Ctrl() || k.Alt() || !k.Logo() {
+		t.Errorf("modifiers shift=%v ctrl=%v alt=%v logo=%v", k.Shift(), k.Ctrl(), k.Alt(), k.Logo())
 	}
 	if k.RepeatRate() != 25 || k.RepeatDelay() != 600 {
 		t.Errorf("repeat = %d/%d", k.RepeatRate(), k.RepeatDelay())
