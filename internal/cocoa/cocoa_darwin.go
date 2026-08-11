@@ -217,6 +217,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 				{Cmd: objc.RegisterName("keyDown:"), Fn: viewKeyDown},
 				{Cmd: objc.RegisterName("keyUp:"), Fn: viewKeyUp},
 				{Cmd: objc.RegisterName("viewDidChangeBackingProperties"), Fn: viewDidChangeBackingProperties},
+				{Cmd: selRepaintNow, Fn: viewRepaintNow},
 			}, a11yMethods()...))
 		if classesErr != nil {
 			return
@@ -438,6 +439,34 @@ func (w *Window) dispatch(ev toolkit.Event) {
 // RenderScale reports the framebuffer pixels this window allocates per logical
 // point. Implements the window.Scaler capability.
 func (w *Window) RenderScale() float64 { return w.scale }
+
+// selRepaintNow is a selector of our own on the view class: AppKit has no
+// no-argument "redraw yourself" message that can be performed on the main
+// thread, and performSelectorOnMainThread: cannot pass the BOOL that
+// setNeedsDisplay: wants.
+var selRepaintNow = objc.RegisterName("goWidgetsRepaintNow")
+
+var selPerformOnMain = objc.RegisterName("performSelectorOnMainThread:withObject:waitUntilDone:")
+
+// Repaint asks for a frame from any goroutine. Implements the
+// window.Repainter capability.
+//
+// The work is performed on the main thread because that is where AppKit
+// requires it, and waitUntilDone is NO so a producer goroutine is never blocked
+// by the frame it asked for -- a network fetch should not wait on a paint.
+func (w *Window) Repaint() {
+	if w == nil || w.view == 0 {
+		return
+	}
+	w.view.Send(selPerformOnMain, selRepaintNow, objc.ID(0), false)
+}
+
+// viewRepaintNow is the main-thread half of Repaint.
+func viewRepaintNow(_ objc.ID, _ objc.SEL) {
+	if active != nil {
+		active.paintFrame(false)
+	}
+}
 
 // New creates the NSApplication, an NSWindow with a flipped content view and a
 // window delegate, presents an initial blank frame and returns the window ready
