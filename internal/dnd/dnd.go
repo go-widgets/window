@@ -82,11 +82,17 @@ func hitRoot(root toolkit.Widget) toolkit.Widget {
 type Controller struct {
 	root toolkit.Widget
 
-	// armed is set when a press landed on a DragSource with a non-empty payload,
-	// making this a drag candidate; dragging is set once the pointer travels past
-	// Threshold, promoting the candidate to a live drag.
+	// armed is set when a press landed on a DragSource, making this a drag
+	// candidate; dragging is set once the pointer travels past Threshold,
+	// promoting the candidate to a live drag. source is the DragSource pressed;
+	// its payload is read lazily when the drag begins (see onDrag) — NOT at press
+	// — because a DragSource commonly derives its payload from state the press
+	// itself sets: an icon grid selects the cell on mousedown and DragData()
+	// returns the selected path, so reading it before the selecting click was
+	// delivered would carry the wrong (or empty) payload.
 	armed    bool
 	dragging bool
+	source   toolkit.DragSource
 	payload  string
 
 	// startX/startY is where the press landed (for the threshold test); target is
@@ -129,26 +135,28 @@ func (c *Controller) Process(ev toolkit.Event) []toolkit.Event {
 	}
 }
 
-// onPress records a drag candidate when the press lands on a DragSource with a
-// non-empty payload. The press itself is always delivered, so a widget that is
-// both clickable and draggable (a Favoris row that selects on click and reorders
-// on drag) still sees the click.
+// onPress records a drag candidate when the press lands on a DragSource. The
+// press itself is always delivered, so a widget that is both clickable and
+// draggable (an icon grid that selects on click, a Favoris row that selects on
+// click and reorders on drag) still sees the click — and that click is what
+// makes the source's later DragData() meaningful, which is why the payload is
+// read in onDrag, after this click has been delivered, not here.
 func (c *Controller) onPress(ev toolkit.Event) []toolkit.Event {
 	c.reset()
 	if src := c.dragSourceAt(ev.X, ev.Y); src != nil {
-		if data := src.DragData(); data != "" {
-			c.armed = true
-			c.payload = data
-			c.startX, c.startY = ev.X, ev.Y
-		}
+		c.armed = true
+		c.source = src
+		c.startX, c.startY = ev.X, ev.Y
 	}
 	return []toolkit.Event{ev}
 }
 
 // onDrag advances a candidate/live drag. With no candidate it passes the raw
 // drag through (plain behaviour preserved). Below the threshold it swallows the
-// move. Past it, it hit-tests for a DropTarget and emits the enter/move/leave
-// feedback lifecycle.
+// move. On crossing it, the source's payload is read (now that the selecting
+// press-click has been delivered); an empty payload means the source has nothing
+// to carry, so the gesture reverts to a plain drag. Past the threshold it
+// hit-tests for a DropTarget and emits the enter/move/leave feedback lifecycle.
 func (c *Controller) onDrag(ev toolkit.Event) []toolkit.Event {
 	if !c.armed {
 		return []toolkit.Event{ev}
@@ -156,6 +164,10 @@ func (c *Controller) onDrag(ev toolkit.Event) []toolkit.Event {
 	if !c.dragging {
 		if abs(ev.X-c.startX) < Threshold && abs(ev.Y-c.startY) < Threshold {
 			return nil
+		}
+		if c.payload = c.source.DragData(); c.payload == "" {
+			c.reset()
+			return []toolkit.Event{ev}
 		}
 		c.dragging = true
 	}
@@ -207,12 +219,14 @@ func (c *Controller) onUp(ev toolkit.Event) []toolkit.Event {
 func (c *Controller) reset() {
 	c.armed = false
 	c.dragging = false
+	c.source = nil
 	c.payload = ""
 	c.target = nil
 }
 
-// dragSourceAt returns the deepest DragSource (with a non-empty-capable payload
-// contract) under the point, or nil.
+// dragSourceAt returns the deepest DragSource under the point, or nil. Whether
+// it actually has a payload to carry is decided later (onDrag), once the press
+// that may set that payload has been delivered.
 func (c *Controller) dragSourceAt(x, y int) toolkit.DragSource {
 	w := deepestHit(hitRoot(c.root), x, y, func(n toolkit.Widget) bool {
 		_, ok := n.(toolkit.DragSource)

@@ -219,13 +219,57 @@ func TestNoSourcePassthrough(t *testing.T) {
 	eq(t, kinds(up), []toolkit.EventKind{toolkit.EventMouseUp})
 }
 
-// TestEmptyPayloadNotDraggable: a DragSource whose DragData is empty is treated
-// as non-draggable — the drag stream passes through.
+// TestEmptyPayloadNotDraggable: a DragSource whose DragData is empty when the
+// drag begins has nothing to carry, so the gesture reverts to a plain drag.
 func TestEmptyPayloadNotDraggable(t *testing.T) {
 	c, _, _, _, _ := newScene()
 	c.Process(toolkit.Event{Kind: toolkit.EventClick, X: 10, Y: 110}) // on the empty-payload source
 	drag := c.Process(toolkit.Event{Kind: toolkit.EventMouseDrag, X: 120, Y: 110})
 	eq(t, kinds(drag), []toolkit.EventKind{toolkit.EventMouseDrag})
+}
+
+// selectingSource models the real icon-grid / Favoris pattern: it carries NO
+// payload until a click selects it, then DragData returns the selected path.
+type selectingSource struct {
+	toolkit.Base
+	clicked bool
+	path    string
+}
+
+func (s *selectingSource) OnEvent(ev toolkit.Event) {
+	if ev.Kind == toolkit.EventClick {
+		s.clicked = true
+	}
+}
+func (s *selectingSource) DragData() string {
+	if s.clicked {
+		return s.path
+	}
+	return ""
+}
+
+// TestPayloadReadAfterSelectingClick proves the payload is read only once the
+// press-click has been delivered (which sets the selection DragData reads), not
+// at press time. Reading at press would capture the empty pre-selection payload.
+func TestPayloadReadAfterSelectingClick(t *testing.T) {
+	sel := &selectingSource{path: "selected:/x"}
+	sel.SetBounds(rect(0, 0, 50, 50))
+	c := New()
+	c.Bind(sel)
+
+	// Press: the controller emits the click; the backend (here, the test)
+	// delivers it to the tree, selecting the source.
+	for _, e := range c.Process(toolkit.Event{Kind: toolkit.EventClick, X: 10, Y: 10}) {
+		sel.OnEvent(e)
+	}
+	if !sel.clicked {
+		t.Fatal("selecting click was not delivered to the source")
+	}
+	// Drag past the threshold: the payload is read NOW and reflects the selection.
+	c.Process(toolkit.Event{Kind: toolkit.EventMouseDrag, X: 10, Y: 40})
+	if c.payload != "selected:/x" {
+		t.Fatalf("payload = %q, want the post-click selection %q", c.payload, "selected:/x")
+	}
 }
 
 // TestRejectingTarget: a drag over a target that rejects the payload yields no
