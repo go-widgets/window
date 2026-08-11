@@ -76,7 +76,33 @@ type Config struct {
 	// Theme overrides the toolkit theme used to paint the background and
 	// widgets. Nil uses toolkit.DefaultDark.
 	Theme *toolkit.Theme
+	// RenderScale is how many framebuffer pixels the back-end allocates per
+	// logical point.
+	//
+	// Zero, the default, is one pixel per point. The UI is laid out and painted
+	// at a readable size and the compositor up-samples it to a HiDPI display,
+	// which is slightly soft but correct for every widget tree: the toolkit lays
+	// out in the same units it paints in, so a framebuffer twice as wide would
+	// give a window full of widgets at half the size.
+	//
+	// [NativeScale] follows the display's backing factor, giving a framebuffer at
+	// the panel's true resolution. It is CORRECT ONLY FOR A ROOT THAT RENDERS ITS
+	// OWN PIXELS at the size it is given -- a [toolkit.Surface] over an
+	// application's own scene -- because such a root is told the render-pixel
+	// size and composes for it, so nothing is laid out in the wrong unit. Passing
+	// it with an ordinary widget tree is not an error the back-end can detect; it
+	// simply makes everything half-size on a 2x display.
+	//
+	// Any other positive value is used as-is.
+	//
+	// Honoured today by the macOS (Cocoa) back-end.
+	RenderScale float64
 }
+
+// NativeScale asks for a framebuffer at the display's own resolution rather
+// than one pixel per logical point. See [Config.RenderScale] for when that is
+// the right thing to ask for -- it is a narrower case than it sounds.
+const NativeScale = -1.0
 
 // Window is an open X11 window bound to a go-widgets scene. It owns the
 // backing RGBA framebuffer, presents it to the server and drives the

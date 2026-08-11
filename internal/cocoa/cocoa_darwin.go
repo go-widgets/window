@@ -440,6 +440,14 @@ func (w *Window) dispatch(ev toolkit.Event) {
 // for Run. It must be called on the process main OS thread (the parent Open
 // locks it).
 func New(title string, width, height int, theme *toolkit.Theme) (*Window, error) {
+	return NewScaled(title, width, height, theme, 0)
+}
+
+// NewScaled is New with an explicit render scale: framebuffer pixels per
+// logical point. 0 keeps the readable default of 1, a negative value follows the
+// display's backing factor, and a positive one is used as-is. The parent package
+// documents when each is right (window.Config.RenderScale).
+func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScale float64) (*Window, error) {
 	if err := loadFrameworks(); err != nil {
 		return nil, err
 	}
@@ -483,7 +491,14 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 	// the framebuffer is up-sampled to the backing resolution by AppKit. An
 	// override (the crisp-HiDPI seam / legibility proof) forces a different scale.
 	scale := 1.0
-	if renderScaleOverride > 0 {
+	switch {
+	case renderScale < 0:
+		// Follow the panel: the caller has told us its root composes its own
+		// pixels at whatever size it is handed.
+		scale = backing
+	case renderScale > 0:
+		scale = renderScale
+	case renderScaleOverride > 0:
 		scale = renderScaleOverride
 	}
 	w := &Window{
