@@ -48,6 +48,14 @@ type Event struct {
 	Atom   uint32 // ClientMessage: message type
 	Format byte   // ClientMessage: data format
 	Data32 uint32 // ClientMessage: first 32-bit data word (WM_DELETE_WINDOW)
+
+	// Selection events. Requestor is the window asking (SelectionRequest) or
+	// asked (SelectionNotify); Property is the one to write the answer into, or
+	// 0 in a SelectionNotify that refuses.
+	Requestor uint32
+	Selection uint32
+	Target    uint32
+	Property  uint32
 }
 
 // decodeEvent parses a 32-byte X11 event packet. The layout of the shared
@@ -89,6 +97,24 @@ func decodeEvent(order ByteOrder, raw []byte) Event {
 		ev.Y = int16(d.get16())
 		ev.Width = d.get16()
 		ev.Height = d.get16()
+	case evSelectionRequest:
+		ev.Time = d.get32()
+		ev.Window = d.get32() // owner
+		ev.Requestor = d.get32()
+		ev.Selection = d.get32()
+		ev.Target = d.get32()
+		ev.Property = d.get32()
+	case evSelectionNotify:
+		ev.Time = d.get32()
+		ev.Requestor = d.get32()
+		ev.Window = ev.Requestor // the event window, for callers that switch on it
+		ev.Selection = d.get32()
+		ev.Target = d.get32()
+		ev.Property = d.get32()
+	case evSelectionClear:
+		ev.Time = d.get32()
+		ev.Window = d.get32() // owner losing it
+		ev.Selection = d.get32()
 	case evClientMessage:
 		ev.Format = ev.Detail
 		ev.Window = d.get32()
