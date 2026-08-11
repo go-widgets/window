@@ -256,6 +256,7 @@ const (
 	modMaskShift   = 1 << 0
 	modMaskControl = 1 << 2
 	modMaskAlt     = 1 << 3
+	modMaskLogo    = 1 << 6 // Super / the Meta (⌘/Windows/logo) key (Mod4)
 )
 
 // Keyboard is a wl_keyboard device. It ingests the xkb keymap, tracks
@@ -395,6 +396,9 @@ func (k *Keyboard) Ctrl() bool { return k.mods&modMaskControl != 0 }
 
 // Alt reports whether Alt is currently held.
 func (k *Keyboard) Alt() bool { return k.mods&modMaskAlt != 0 }
+
+// Logo reports whether the Super / Meta (⌘/Windows/logo) key is currently held.
+func (k *Keyboard) Logo() bool { return k.mods&modMaskLogo != 0 }
 
 // RepeatRate returns the key-repeat rate in keys per second (0 disables).
 func (k *Keyboard) RepeatRate() int { return k.repeatRate }

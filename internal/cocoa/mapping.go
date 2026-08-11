@@ -108,13 +108,35 @@ func clampContent(want float64, lo, hi int, avail float64) int {
 	return v
 }
 
-// DecodeMods splits an NSEvent modifierFlags mask into the toolkit's Shift/Ctrl
-// booleans. Shift maps from NSEventModifierFlagShift; Ctrl maps from EITHER
-// Control OR Command, so a ⌘-based macOS shortcut reaches a widget with the
-// same Ctrl flag an X11/Wayland Control chord would — keeping the toolkit's
-// platform-neutral Ctrl shortcut semantics (Ctrl+C / Cmd+C both land as Ctrl).
-func DecodeMods(flags uint64) (shift, ctrl bool) {
-	return flags&modShift != 0, flags&(modControl|modCommand) != 0
+// Mods is the decoded modifier state carried on every toolkit event the Cocoa
+// backend emits: Shift, Ctrl, Alt (⌥ Option) and Meta (⌘ Command).
+type Mods struct{ Shift, Ctrl, Alt, Meta bool }
+
+// DecodeMods splits an NSEvent modifierFlags mask into the four toolkit
+// modifier flags.
+//
+// Shift maps from NSEventModifierFlagShift and Alt from NSEventModifierFlagOption
+// (⌥). Meta maps from NSEventModifierFlagCommand (⌘). Ctrl maps from EITHER
+// Control OR Command, so a plain ⌘-based macOS shortcut still reaches a widget
+// with the same Ctrl flag an X11/Wayland Control chord would — preserving the
+// toolkit's platform-neutral Ctrl shortcut semantics (Ctrl+C / ⌘C both set
+// Ctrl) — while the new Meta flag additionally lets code that cares tell a real
+// ⌘ chord apart from Control, and Alt surfaces ⌥ (both previously invisible).
+// So ⌘V sets Ctrl+Meta and ⌘⌥V sets Ctrl+Meta+Alt, letting the file manager
+// distinguish paste from paste-as-move.
+func DecodeMods(flags uint64) Mods {
+	return Mods{
+		Shift: flags&modShift != 0,
+		Ctrl:  flags&(modControl|modCommand) != 0,
+		Alt:   flags&modOption != 0,
+		Meta:  flags&modCommand != 0,
+	}
+}
+
+// apply stamps the four modifier flags onto ev.
+func (m Mods) apply(ev toolkit.Event) toolkit.Event {
+	ev.Shift, ev.Ctrl, ev.Alt, ev.Meta = m.Shift, m.Ctrl, m.Alt, m.Meta
+	return ev
 }
 
 // DecodeKey maps an NSEvent keyDown/keyUp to either a symbolic key NAME
@@ -182,14 +204,14 @@ func isPrintable(r rune) bool {
 //   - a key that decodes to nothing (unmapped / pure modifier) delivers nothing.
 //
 // The result is nil when the key maps to no toolkit event.
-func MapKey(keyCode uint16, chars string, shift, ctrl, press bool) []toolkit.Event {
+func MapKey(keyCode uint16, chars string, m Mods, press bool) []toolkit.Event {
 	name, r := DecodeKey(keyCode, chars)
 	if name != "" {
 		kind := toolkit.EventKeyDown
 		if !press {
 			kind = toolkit.EventKeyUp
 		}
-		return []toolkit.Event{{Kind: kind, Code: name, Shift: shift, Ctrl: ctrl}}
+		return []toolkit.Event{m.apply(toolkit.Event{Kind: kind, Code: name})}
 	}
 	if r == 0 {
 		return nil
@@ -197,36 +219,36 @@ func MapKey(keyCode uint16, chars string, shift, ctrl, press bool) []toolkit.Eve
 	s := string(r)
 	if press {
 		return []toolkit.Event{
-			{Kind: toolkit.EventKeyDown, Code: s, Shift: shift, Ctrl: ctrl},
-			{Kind: toolkit.EventChar, Code: s, Shift: shift, Ctrl: ctrl},
+			m.apply(toolkit.Event{Kind: toolkit.EventKeyDown, Code: s}),
+			m.apply(toolkit.Event{Kind: toolkit.EventChar, Code: s}),
 		}
 	}
-	return []toolkit.Event{{Kind: toolkit.EventKeyUp, Code: s, Shift: shift, Ctrl: ctrl}}
+	return []toolkit.Event{m.apply(toolkit.Event{Kind: toolkit.EventKeyUp, Code: s})}
 }
 
 // MapMouseDown turns a left/other mouse-button press at the given view-local
 // pixel into an EventClick, mirroring the X11 ButtonPress (buttons 1–3 → click)
 // mapping. macOS delivers separate selectors per button; the backend routes all
 // of them here.
-func MapMouseDown(x, y int, shift, ctrl bool) toolkit.Event {
-	return toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y, Shift: shift, Ctrl: ctrl}
+func MapMouseDown(x, y int, m Mods) toolkit.Event {
+	return m.apply(toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y})
 }
 
 // MapMouseUp turns a mouse-button release into an EventMouseUp.
-func MapMouseUp(x, y int, shift, ctrl bool) toolkit.Event {
-	return toolkit.Event{Kind: toolkit.EventMouseUp, X: x, Y: y, Shift: shift, Ctrl: ctrl}
+func MapMouseUp(x, y int, m Mods) toolkit.Event {
+	return m.apply(toolkit.Event{Kind: toolkit.EventMouseUp, X: x, Y: y})
 }
 
 // MapMouseMove turns a pointer move into a drag (a button held) or a plain hover
 // move, per buttonHeld — the same drag-vs-move split the X11/Wayland backends
 // derive from the event's button-state mask (AppKit instead delivers
 // -mouseMoved: vs -mouseDragged:, which the glue collapses into buttonHeld).
-func MapMouseMove(x, y int, buttonHeld, shift, ctrl bool) toolkit.Event {
+func MapMouseMove(x, y int, buttonHeld bool, m Mods) toolkit.Event {
 	kind := toolkit.EventMouseMove
 	if buttonHeld {
 		kind = toolkit.EventMouseDrag
 	}
-	return toolkit.Event{Kind: kind, X: x, Y: y, Shift: shift, Ctrl: ctrl}
+	return m.apply(toolkit.Event{Kind: kind, X: x, Y: y})
 }
 
 // MapScroll turns an AppKit -scrollingDeltaY into an EventScroll whose Delta is
@@ -236,8 +258,8 @@ func MapMouseMove(x, y int, buttonHeld, shift, ctrl bool) toolkit.Event {
 // browser/wheel convention the X11 and wasmbox backends use. A zero delta yields
 // a Delta-0 EventScroll (harmless; scrollable widgets clamp it), so the mapping
 // is total.
-func MapScroll(x, y int, deltaY float64, shift, ctrl bool) toolkit.Event {
-	return toolkit.Event{Kind: toolkit.EventScroll, X: x, Y: y, Delta: -signf(deltaY), Shift: shift, Ctrl: ctrl}
+func MapScroll(x, y int, deltaY float64, m Mods) toolkit.Event {
+	return m.apply(toolkit.Event{Kind: toolkit.EventScroll, X: x, Y: y, Delta: -signf(deltaY)})
 }
 
 // signf returns the sign of v as -1, 0 or +1.

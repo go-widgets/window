@@ -127,8 +127,8 @@ func PerformPressAt(ident string) bool {
 	if !ok {
 		return false
 	}
-	w.dispatch(MapMouseDown(x, y, false, false))
-	w.dispatch(MapMouseUp(x, y, false, false))
+	w.dispatch(MapMouseDown(x, y, Mods{}))
+	w.dispatch(MapMouseUp(x, y, Mods{}))
 	return true
 }
 

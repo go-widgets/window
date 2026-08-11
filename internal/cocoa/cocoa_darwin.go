@@ -289,7 +289,7 @@ func (w *Window) viewCoords(self, event objc.ID) (int, int) {
 	return ViewCoords(p.X, p.Y, b.Size.H, w.scale)
 }
 
-func eventMods(event objc.ID) (shift, ctrl bool) {
+func eventMods(event objc.ID) Mods {
 	return DecodeMods(uint64(objc.Send[uint64](event, selModifierFlags)))
 }
 
@@ -300,8 +300,7 @@ func viewMouseDown(self objc.ID, _ objc.SEL, event objc.ID) {
 	}
 	w.buttonHeld = true
 	x, y := w.viewCoords(self, event)
-	shift, ctrl := eventMods(event)
-	w.dispatch(MapMouseDown(x, y, shift, ctrl))
+	w.dispatch(MapMouseDown(x, y, eventMods(event)))
 }
 
 func viewMouseDragged(self objc.ID, _ objc.SEL, event objc.ID) {
@@ -310,8 +309,7 @@ func viewMouseDragged(self objc.ID, _ objc.SEL, event objc.ID) {
 		return
 	}
 	x, y := w.viewCoords(self, event)
-	shift, ctrl := eventMods(event)
-	w.dispatch(MapMouseMove(x, y, true, shift, ctrl))
+	w.dispatch(MapMouseMove(x, y, true, eventMods(event)))
 }
 
 func viewMouseUp(self objc.ID, _ objc.SEL, event objc.ID) {
@@ -321,8 +319,7 @@ func viewMouseUp(self objc.ID, _ objc.SEL, event objc.ID) {
 	}
 	w.buttonHeld = false
 	x, y := w.viewCoords(self, event)
-	shift, ctrl := eventMods(event)
-	w.dispatch(MapMouseUp(x, y, shift, ctrl))
+	w.dispatch(MapMouseUp(x, y, eventMods(event)))
 }
 
 func viewMouseMoved(self objc.ID, _ objc.SEL, event objc.ID) {
@@ -331,8 +328,7 @@ func viewMouseMoved(self objc.ID, _ objc.SEL, event objc.ID) {
 		return
 	}
 	x, y := w.viewCoords(self, event)
-	shift, ctrl := eventMods(event)
-	w.dispatch(MapMouseMove(x, y, false, shift, ctrl))
+	w.dispatch(MapMouseMove(x, y, false, eventMods(event)))
 }
 
 func viewScrollWheel(self objc.ID, _ objc.SEL, event objc.ID) {
@@ -341,9 +337,8 @@ func viewScrollWheel(self objc.ID, _ objc.SEL, event objc.ID) {
 		return
 	}
 	x, y := w.viewCoords(self, event)
-	shift, ctrl := eventMods(event)
 	dy := float64(objc.Send[float64](event, selScrollingDeltaY))
-	w.dispatch(MapScroll(x, y, dy, shift, ctrl))
+	w.dispatch(MapScroll(x, y, dy, eventMods(event)))
 }
 
 func viewKeyDown(_ objc.ID, _ objc.SEL, event objc.ID) { keyEvent(event, true) }
@@ -356,8 +351,7 @@ func keyEvent(event objc.ID, press bool) {
 	}
 	code := uint16(objc.Send[uint64](event, selKeyCode))
 	chars := objc.GoString(event.Send(selCharsIgnoringMods))
-	shift, ctrl := eventMods(event)
-	for _, ev := range MapKey(code, chars, shift, ctrl, press) {
+	for _, ev := range MapKey(code, chars, eventMods(event), press) {
 		w.dispatch(ev)
 	}
 }

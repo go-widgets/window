@@ -121,21 +121,20 @@ func TestCenterOffset(t *testing.T) {
 
 func TestDecodeMouseMods(t *testing.T) {
 	cases := []struct {
-		name        string
-		wparam      uintptr
-		shift, ctrl bool
+		name   string
+		wparam uintptr
+		want   Mods
 	}{
-		{"none", 0, false, false},
-		{"shift", mkShift, true, false},
-		{"control", mkControl, false, true},
-		{"both", mkShift | mkControl, true, true},
-		{"button-only", mkLButton, false, false},
+		{"none", 0, Mods{}},
+		{"shift", mkShift, Mods{Shift: true}},
+		{"control", mkControl, Mods{Ctrl: true}},
+		{"both", mkShift | mkControl, Mods{Shift: true, Ctrl: true}},
+		{"button-only", mkLButton, Mods{}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s, ct := DecodeMouseMods(c.wparam)
-			if s != c.shift || ct != c.ctrl {
-				t.Fatalf("DecodeMouseMods(%#x) = (%v,%v), want (%v,%v)", c.wparam, s, ct, c.shift, c.ctrl)
+			if got := DecodeMouseMods(c.wparam); got != c.want {
+				t.Fatalf("DecodeMouseMods(%#x) = %+v, want %+v", c.wparam, got, c.want)
 			}
 		})
 	}
@@ -189,30 +188,69 @@ func TestDecodeVK(t *testing.T) {
 
 func TestMapKeyDown(t *testing.T) {
 	// Named key → single EventKeyDown with the name.
-	got := MapKeyDown(vkLeft, true, false)
+	got := MapKeyDown(vkLeft, Mods{Shift: true})
 	want := []toolkit.Event{{Kind: toolkit.EventKeyDown, Code: "ArrowLeft", Shift: true}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MapKeyDown(Left) = %+v, want %+v", got, want)
 	}
 	// Non-named (printable) key → nothing (WM_CHAR carries it).
-	if got := MapKeyDown(0x41, false, true); got != nil {
-		t.Fatalf("MapKeyDown('A') = %+v, want nil", got)
+	if got := MapKeyDown(0x41, Mods{Shift: true}); got != nil {
+		t.Fatalf("MapKeyDown('A') with no accelerator = %+v, want nil", got)
 	}
 }
 
 func TestMapKeyUp(t *testing.T) {
-	got := MapKeyUp(vkReturn, false, true)
+	got := MapKeyUp(vkReturn, Mods{Ctrl: true})
 	want := []toolkit.Event{{Kind: toolkit.EventKeyUp, Code: "Enter", Ctrl: true}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MapKeyUp(Return) = %+v, want %+v", got, want)
 	}
-	if got := MapKeyUp(0x41, false, false); got != nil {
+	if got := MapKeyUp(0x41, Mods{}); got != nil {
 		t.Fatalf("MapKeyUp('A') = %+v, want nil", got)
 	}
 }
 
+// TestMapKeyAccelerator covers the Windows-specific path where a letter/digit
+// held under a Ctrl or Meta chord is emitted as the lowercase Code directly
+// (WM_CHAR would otherwise deliver only a control code), so Ctrl+C / ⊞+V reach
+// the widget tree as EventKeyDown{"c"}/{"v"} — and paste-as-move's ⌘⌥-style
+// Ctrl+Alt combo carries Alt through.
+func TestMapKeyAccelerator(t *testing.T) {
+	got := MapKeyDown('C', Mods{Ctrl: true})
+	want := []toolkit.Event{{Kind: toolkit.EventKeyDown, Code: "c", Ctrl: true}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("MapKeyDown(Ctrl+C) = %+v, want %+v", got, want)
+	}
+	// A Meta chord alone (⊞+V) also emits the letter, and Alt flows through.
+	got = MapKeyDown('V', Mods{Meta: true, Alt: true})
+	want = []toolkit.Event{{Kind: toolkit.EventKeyDown, Code: "v", Alt: true, Meta: true}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("MapKeyDown(Meta+Alt+V) = %+v, want %+v", got, want)
+	}
+	// A digit under Ctrl is an accelerator too.
+	if got := MapKeyDown('5', Mods{Ctrl: true}); len(got) != 1 || got[0].Code != "5" {
+		t.Fatalf("MapKeyDown(Ctrl+5) = %+v, want Code 5", got)
+	}
+	// The release peer emits the letter too.
+	if got := MapKeyUp('X', Mods{Ctrl: true}); len(got) != 1 || got[0].Kind != toolkit.EventKeyUp || got[0].Code != "x" {
+		t.Fatalf("MapKeyUp(Ctrl+X) = %+v, want EventKeyUp x", got)
+	}
+	// A non-letter/digit VK under Ctrl (here VK_LEFT) is not an accelerator
+	// letter, so the named-key path still owns it.
+	if got := MapKeyDown(vkLeft, Mods{Ctrl: true}); len(got) != 1 || got[0].Code != "ArrowLeft" {
+		t.Fatalf("MapKeyDown(Ctrl+Left) = %+v, want ArrowLeft", got)
+	}
+	// A symbol VK under Ctrl is neither named nor an accelerator letter → nil.
+	if got := MapKeyDown(0xBF, Mods{Ctrl: true}); got != nil { // VK_OEM_2 ('/')
+		t.Fatalf("MapKeyDown(Ctrl+'/') = %+v, want nil", got)
+	}
+	if got := MapKeyUp(0xBF, Mods{Ctrl: true}); got != nil {
+		t.Fatalf("MapKeyUp(Ctrl+'/') = %+v, want nil", got)
+	}
+}
+
 func TestMapCharDown(t *testing.T) {
-	got := MapCharDown('a', false, false)
+	got := MapCharDown('a', Mods{})
 	want := []toolkit.Event{
 		{Kind: toolkit.EventKeyDown, Code: "a"},
 		{Kind: toolkit.EventChar, Code: "a"},
@@ -221,7 +259,7 @@ func TestMapCharDown(t *testing.T) {
 		t.Fatalf("MapCharDown('a') = %+v, want %+v", got, want)
 	}
 	// A shifted printable carries the modifier through.
-	got = MapCharDown('A', true, false)
+	got = MapCharDown('A', Mods{Shift: true})
 	want = []toolkit.Event{
 		{Kind: toolkit.EventKeyDown, Code: "A", Shift: true},
 		{Kind: toolkit.EventChar, Code: "A", Shift: true},
@@ -230,54 +268,54 @@ func TestMapCharDown(t *testing.T) {
 		t.Fatalf("MapCharDown('A',shift) = %+v, want %+v", got, want)
 	}
 	// Control code (^M etc.) → nothing.
-	if got := MapCharDown('\r', false, false); got != nil {
+	if got := MapCharDown('\r', Mods{}); got != nil {
 		t.Fatalf("MapCharDown(CR) = %+v, want nil", got)
 	}
-	if got := MapCharDown(0x7f, false, false); got != nil {
+	if got := MapCharDown(0x7f, Mods{}); got != nil {
 		t.Fatalf("MapCharDown(DEL) = %+v, want nil", got)
 	}
 }
 
 func TestMapCharUp(t *testing.T) {
-	got := MapCharUp('z', false, true)
+	got := MapCharUp('z', Mods{Ctrl: true})
 	want := []toolkit.Event{{Kind: toolkit.EventKeyUp, Code: "z", Ctrl: true}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MapCharUp('z') = %+v, want %+v", got, want)
 	}
-	if got := MapCharUp('\t', false, false); got != nil {
+	if got := MapCharUp('\t', Mods{}); got != nil {
 		t.Fatalf("MapCharUp(TAB) = %+v, want nil", got)
 	}
 }
 
 func TestMapMouseDownUp(t *testing.T) {
-	if got := MapMouseDown(10, 20, true, false); got != (toolkit.Event{Kind: toolkit.EventClick, X: 10, Y: 20, Shift: true}) {
+	if got := MapMouseDown(10, 20, Mods{Shift: true}); got != (toolkit.Event{Kind: toolkit.EventClick, X: 10, Y: 20, Shift: true}) {
 		t.Fatalf("MapMouseDown = %+v", got)
 	}
-	if got := MapMouseUp(10, 20, false, true); got != (toolkit.Event{Kind: toolkit.EventMouseUp, X: 10, Y: 20, Ctrl: true}) {
+	if got := MapMouseUp(10, 20, Mods{Ctrl: true}); got != (toolkit.Event{Kind: toolkit.EventMouseUp, X: 10, Y: 20, Ctrl: true}) {
 		t.Fatalf("MapMouseUp = %+v", got)
 	}
 }
 
 func TestMapMouseMove(t *testing.T) {
-	if got := MapMouseMove(3, 4, false, false, false); got.Kind != toolkit.EventMouseMove {
+	if got := MapMouseMove(3, 4, false, Mods{}); got.Kind != toolkit.EventMouseMove {
 		t.Fatalf("MapMouseMove no-button = %+v, want EventMouseMove", got)
 	}
-	if got := MapMouseMove(3, 4, true, false, false); got.Kind != toolkit.EventMouseDrag {
+	if got := MapMouseMove(3, 4, true, Mods{}); got.Kind != toolkit.EventMouseDrag {
 		t.Fatalf("MapMouseMove button-held = %+v, want EventMouseDrag", got)
 	}
 }
 
 func TestMapWheel(t *testing.T) {
 	// Forward (positive) wheel → scroll up (Delta -1).
-	if got := MapWheel(1, 2, wheelDelta, false, false); got.Delta != -1 || got.Kind != toolkit.EventScroll {
+	if got := MapWheel(1, 2, wheelDelta, Mods{}); got.Delta != -1 || got.Kind != toolkit.EventScroll {
 		t.Fatalf("MapWheel(+) = %+v, want Delta -1", got)
 	}
 	// Backward (negative) → scroll down (Delta +1).
-	if got := MapWheel(1, 2, -wheelDelta, false, false); got.Delta != 1 {
+	if got := MapWheel(1, 2, -wheelDelta, Mods{}); got.Delta != 1 {
 		t.Fatalf("MapWheel(-) = %+v, want Delta 1", got)
 	}
 	// Zero → Delta 0.
-	if got := MapWheel(1, 2, 0, false, false); got.Delta != 0 {
+	if got := MapWheel(1, 2, 0, Mods{}); got.Delta != 0 {
 		t.Fatalf("MapWheel(0) = %+v, want Delta 0", got)
 	}
 }

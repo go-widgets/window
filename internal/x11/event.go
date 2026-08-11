@@ -10,6 +10,7 @@ const (
 	ModLock    = 0x0002
 	ModControl = 0x0004
 	ModMod1    = 0x0008 // typically Alt
+	ModMod4    = 0x0040 // typically Super / the Meta (⌘/Windows/logo) key
 	ModButton1 = 0x0100
 	ModButton2 = 0x0200
 	ModButton3 = 0x0400
