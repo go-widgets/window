@@ -14,7 +14,12 @@
 // points x backing) rather than a hard-coded 2.
 package cocoa
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/go-macos/objc"
+)
 
 func TestLiveRenderScaleFollowsThePanel(t *testing.T) {
 	skipUnlessIntegration(t)
@@ -84,4 +89,80 @@ func TestLiveRenderScaleFollowsThePanel(t *testing.T) {
 	if ew != pw*3 || eh != ph*3 {
 		t.Errorf("explicit 3x framebuffer = %dx%d, want %dx%d", ew, eh, pw*3, ph*3)
 	}
+}
+
+// A window that asked to FOLLOW the panel must follow it when it moves.
+//
+// This needs two displays of DIFFERENT density, so it skips where there is only
+// one — an environmental prerequisite, not a failure of the thing under test.
+// It is the case that cannot be reproduced on a single-screen machine, and the
+// fix for it was written and then discarded a day earlier because the machine
+// reported only a 1x display: platform glue that cannot be exercised has no
+// business being merged.
+func TestLiveRenderScaleFollowsAMove(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	const pw, ph = 320, 200
+	var before, after float64
+	var moved bool
+
+	callOnMain(func() {
+		// The window comes FIRST. NSScreen.screens is not populated until an
+		// NSApplication exists, so asking before opening one reports a single
+		// display on a machine that has two — which is how an earlier version
+		// of this test skipped itself while a standalone probe, which happened
+		// to open a window first, saw both screens. The same mistake produced a
+		// confident wrong conclusion that the built-in panel was asleep.
+		win, err := NewScaled("render scale move", pw, ph, nil, -1)
+		if err != nil {
+			t.Errorf("open: %v", err)
+			return
+		}
+		defer func() { _ = win.Close() }()
+		before = win.RenderScale()
+
+		other, ok := screenWithBacking(2)
+		if !ok {
+			return
+		}
+		win.win.Send(objc.RegisterName("setFrame:display:"),
+			nsRect{Origin: nsPoint{X: other.Origin.X + 80, Y: other.Origin.Y + 80},
+				Size: nsSize{W: pw, H: ph}}, true)
+		// The move is reported through viewDidChangeBackingProperties, which
+		// arrives on the run loop rather than from setFrame: itself.
+		runLoopFor(400 * time.Millisecond)
+		after = win.RenderScale()
+		moved = true
+	})
+
+	if !moved {
+		t.Skip("only one display density available; this needs a 1x and a 2x screen")
+	}
+	if before != 1 {
+		t.Fatalf("the window opened at %vx, so the move proves nothing", before)
+	}
+	if after != 2 {
+		t.Errorf("after moving to a 2x panel the render scale is %v, want 2 — it asked to follow the panel", after)
+	}
+	t.Logf("render scale across the move: %vx -> %vx", before, after)
+}
+
+// screenWithBacking returns the frame of a screen at the given density.
+func screenWithBacking(want float64) (nsRect, bool) {
+	screens := objc.ID(objc.GetClass("NSScreen")).Send(objc.RegisterName("screens"))
+	n := objc.Send[uint64](screens, objc.RegisterName("count"))
+	for i := uint64(0); i < n; i++ {
+		s := screens.Send(objc.RegisterName("objectAtIndex:"), i)
+		if objc.Send[float64](s, objc.RegisterName("backingScaleFactor")) >= want {
+			return objc.Send[nsRect](s, objc.RegisterName("frame")), true
+		}
+	}
+	return nsRect{}, false
+}
+
+// runLoopFor turns the main run loop so queued AppKit callbacks are delivered.
+func runLoopFor(d time.Duration) {
+	rl := objc.ID(objc.GetClass("NSRunLoop")).Send(objc.RegisterName("currentRunLoop"))
+	until := objc.ID(objc.GetClass("NSDate")).Send(objc.RegisterName("dateWithTimeIntervalSinceNow:"), d.Seconds())
+	rl.Send(objc.RegisterName("runUntilDate:"), until)
 }
