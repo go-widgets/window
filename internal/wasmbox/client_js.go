@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/dnd"
 )
 
 // portHandoff is the one-shot message the compositor posts to a freshly-spawned
@@ -64,6 +65,7 @@ type Client struct {
 
 	root       toolkit.Widget
 	dmg        damageRenderer
+	dnd        *dnd.Controller
 	buttonHeld bool // pointer-button state, so mousemove picks drag vs move
 
 	welcomeCh chan Welcome
@@ -207,7 +209,9 @@ func (c *Client) dispatch(data js.Value) {
 func (c *Client) handleInput(ev InputEvent) {
 	if c.root != nil {
 		for _, te := range MapInput(ev, c.buttonHeld) {
-			c.root.OnEvent(te)
+			for _, dev := range c.dnd.Process(te) {
+				c.root.OnEvent(dev)
+			}
 		}
 	}
 	switch ev.Kind {
@@ -227,6 +231,10 @@ func (c *Client) handleInput(ev InputEvent) {
 func (c *Client) Run(root toolkit.Widget) error {
 	c.root = root
 	c.dmg, _ = root.(damageRenderer)
+	if c.dnd == nil {
+		c.dnd = dnd.New()
+	}
+	c.dnd.Bind(root)
 	c.frame() // seed: full-surface for a plain root, full seed-damage for a scene root
 	<-c.done
 	return nil
