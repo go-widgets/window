@@ -68,10 +68,11 @@ const (
 
 // NSEventType values used when the integration test synthesises real NSEvents.
 const (
-	evtLeftMouseDown = 1
-	evtLeftMouseUp   = 2
-	evtKeyDown       = 10
-	evtKeyUp         = 11
+	evtLeftMouseDown  = 1
+	evtLeftMouseUp    = 2
+	evtRightMouseDown = 3
+	evtKeyDown        = 10
+	evtKeyUp          = 11
 )
 
 // selectors resolved once.
@@ -221,6 +222,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 				{Cmd: objc.RegisterName("acceptsFirstResponder"), Fn: viewAcceptsFirstResponder},
 				{Cmd: objc.RegisterName("drawRect:"), Fn: viewDrawRect},
 				{Cmd: objc.RegisterName("mouseDown:"), Fn: viewMouseDown},
+				{Cmd: objc.RegisterName("rightMouseDown:"), Fn: viewRightMouseDown},
 				{Cmd: objc.RegisterName("mouseDragged:"), Fn: viewMouseDragged},
 				{Cmd: objc.RegisterName("mouseUp:"), Fn: viewMouseUp},
 				{Cmd: objc.RegisterName("mouseMoved:"), Fn: viewMouseMoved},
@@ -320,6 +322,20 @@ func viewMouseDown(self objc.ID, _ objc.SEL, event objc.ID) {
 	w.buttonHeld = true
 	x, y := w.viewCoords(self, event)
 	w.dispatch(MapMouseDown(x, y, eventMods(event)))
+}
+
+// viewRightMouseDown handles AppKit's -rightMouseDown: — a real right-click, a
+// two-finger trackpad tap, or a Control-click, all of which the system delivers
+// here. It emits a secondary click so an app can open a context menu; unlike the
+// left button it takes no buttonHeld/drag path, because a menu opens on the down
+// and there is no secondary-drag gesture to track.
+func viewRightMouseDown(self objc.ID, _ objc.SEL, event objc.ID) {
+	w := active
+	if w == nil {
+		return
+	}
+	x, y := w.viewCoords(self, event)
+	w.dispatch(MapSecondaryClick(x, y, eventMods(event)))
 }
 
 func viewMouseDragged(self objc.ID, _ objc.SEL, event objc.ID) {
