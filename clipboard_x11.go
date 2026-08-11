@@ -123,10 +123,7 @@ func (w *Window) ClipboardText() string {
 // owner that stops answering while it pastes deadlocks against whoever it is
 // pasting from.
 func (w *Window) awaitSelection(a clipboardAtoms) bool {
-	bounded := w.conn.SetReadDeadline(time.Now().Add(clipboardWait))
-	if bounded {
-		defer w.conn.SetReadDeadline(time.Time{})
-	}
+	deadline := time.Now().Add(clipboardWait)
 	var deferred []x11.Event
 	defer func() {
 		for i := len(deferred) - 1; i >= 0; i-- {
@@ -134,9 +131,16 @@ func (w *Window) awaitSelection(a clipboardAtoms) bool {
 		}
 	}()
 	for {
+		// Wait for the server to send something BEFORE reading, so a silent
+		// owner times out here rather than blocking inside a half-read packet.
+		// A transport that cannot answer (the test fake) reads straight
+		// through, which is what it did before this existed.
+		if ready, supported := w.conn.WaitReadable(time.Until(deadline)); supported && !ready {
+			return false // a dead owner is not a hang
+		}
 		ev, err := w.conn.NextEvent()
 		if err != nil {
-			return false // including the deadline: a dead owner is not a hang
+			return false
 		}
 		switch ev.Code {
 		case xcodeSelectionNotify:

@@ -154,20 +154,24 @@ func (c *Conn) PushEvent(ev Event) {
 	c.events = append([]Event{ev}, c.events...)
 }
 
-// SetReadDeadline bounds how long NextEvent will block, and reports whether the
-// transport could honour it.
+// WaitReadable reports whether the server sent something within d, and whether
+// the transport could answer at all.
 //
-// It exists for one situation, and it is not hypothetical: the X11 selection
-// protocol has no timeout. A paste asks whoever owns the clipboard and waits
-// for an event that only arrives if that owner is still alive and still
-// answering. An owner that died between claiming and being asked leaves the
-// asker blocked for ever -- a frozen window, on Ctrl+V, with nothing in any log
-// to say why. A real connection is a socket and can be bounded; a transport
-// that cannot says so rather than pretending.
-func (c *Conn) SetReadDeadline(t time.Time) bool {
-	d, ok := c.rw.(interface{ SetReadDeadline(time.Time) error })
+// It exists because the selection protocol has no timeout. A paste asks whoever
+// owns the clipboard and waits for an event that only arrives if that owner is
+// still alive and still answering; an owner that died between claiming and being
+// asked leaves the asker blocked for ever -- a frozen window, on Ctrl+V, with
+// nothing in any log to say why.
+//
+// It waits for READABILITY rather than putting a deadline on the read, and the
+// difference matters: a deadline that expires between a packet's header and its
+// body leaves the stream desynchronised, turning a slow paste into a broken
+// connection. Waiting first and reading only when there is something to read
+// cannot cut a packet in half.
+func (c *Conn) WaitReadable(d time.Duration) (ready, supported bool) {
+	w, ok := c.rw.(interface{ WaitReadable(time.Duration) bool })
 	if !ok {
-		return false
+		return false, false
 	}
-	return d.SetReadDeadline(t) == nil
+	return w.WaitReadable(d), true
 }

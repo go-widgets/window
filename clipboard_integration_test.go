@@ -55,12 +55,16 @@ func pump(t *testing.T, w *Window, d time.Duration) chan struct{} {
 		defer close(done)
 		deadline := time.Now().Add(d)
 		for time.Now().Before(deadline) {
-			if !w.conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond)) {
+			ready, supported := w.conn.WaitReadable(50 * time.Millisecond)
+			if !supported {
 				return
+			}
+			if !ready {
+				continue // nobody has asked yet
 			}
 			ev, err := w.conn.NextEvent()
 			if err != nil {
-				continue // deadline: nobody asked yet
+				return
 			}
 			w.handleSelectionEvent(ev)
 		}
@@ -152,10 +156,9 @@ func TestLiveX11ClipboardKeepsEventsThatArriveDuringAPaste(t *testing.T) {
 
 	// Whatever the server sent the asker while it waited is still queued, so a
 	// subsequent read returns it rather than nothing.
-	if !asker.conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)) {
-		t.Skip("this transport cannot be bounded")
-	}
-	if _, err := asker.conn.NextEvent(); err != nil {
-		t.Log("no event was pending, which is fine; the point is that none was consumed by the paste")
+	if ready, supported := asker.conn.WaitReadable(200 * time.Millisecond); supported && ready {
+		if _, err := asker.conn.NextEvent(); err != nil {
+			t.Errorf("an event the server sent during the paste could not be read back: %v", err)
+		}
 	}
 }
