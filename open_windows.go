@@ -7,6 +7,7 @@
 package window
 
 import (
+	"image/color"
 	"runtime"
 
 	"github.com/go-widgets/window/internal/win32"
@@ -27,5 +28,32 @@ import (
 // Open+Run from main (as cmd/windowdemo does), matching the Cocoa backend.
 func Open(cfg Config) (Backend, error) {
 	runtime.LockOSThread()
-	return win32.New(cfg.Title, cfg.Width, cfg.Height, cfg.Theme)
+	w, err := win32.New(cfg.Title, cfg.Width, cfg.Height, cfg.Theme)
+	if err != nil {
+		return nil, err
+	}
+	return windowsBackend{w}, nil
 }
+
+// windowsBackend is the Win32 window wearing this package's public vocabulary.
+// The back-end lives in an internal package that THIS one imports, so it cannot
+// name Appearance without a cycle; it reports primitive values and the wrapper
+// puts them in the public shape. Everything else -- Run, Close, Size, String,
+// the clipboard -- is promoted from the embedded window unchanged.
+type windowsBackend struct{ *win32.Window }
+
+// Appearance implements AppearanceReader over the back-end's raw reading.
+func (b windowsBackend) Appearance() Appearance {
+	dark, r, g, bl, has := b.Window.AppearanceRaw()
+	return Appearance{
+		Dark:      dark,
+		Accent:    color.RGBA{R: r, G: g, B: bl, A: 255},
+		HasAccent: has,
+	}
+}
+
+var (
+	_ Backend          = windowsBackend{}
+	_ AppearanceReader = windowsBackend{}
+	_ Clipboard        = (*win32.Window)(nil)
+)
