@@ -19,8 +19,11 @@ package window
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-widgets/window/internal/x11"
 )
 
 func skipUnlessX11(t *testing.T) {
@@ -30,20 +33,46 @@ func skipUnlessX11(t *testing.T) {
 	}
 }
 
-// twoWindows opens an owner and an asker, each on its own connection.
+// twoWindows returns the owner and the asker, opened once for the whole file.
+//
+// Once, not per test, because opening a fresh pair for each of them had the
+// server resetting the connection partway down the file -- and the tests that
+// hit it SKIPPED, which in a lane whose job is to prove something is worse than
+// failing: two of these were quietly not running at all and the lane was green.
+// Now the pair is shared, and a server that cannot be reached is a failure.
+var (
+	pairOnce  sync.Once
+	pairOwner *Window
+	pairAsker *Window
+	pairErr   error
+)
+
 func twoWindows(t *testing.T) (owner, asker *Window) {
 	t.Helper()
-	a, err := Open(Config{Title: "clipboard owner", Width: 120, Height: 80})
-	if err != nil {
-		t.Skipf("no X server: %v", err)
+	pairOnce.Do(func() {
+		a, err := Open(Config{Title: "clipboard owner", Width: 120, Height: 80})
+		if err != nil {
+			pairErr = err
+			return
+		}
+		b, err := Open(Config{Title: "clipboard asker", Width: 120, Height: 80})
+		if err != nil {
+			_ = a.Close()
+			pairErr = err
+			return
+		}
+		pairOwner, pairAsker = a.(*Window), b.(*Window)
+	})
+	if pairErr != nil {
+		t.Fatalf("opening a window on the X server this lane provides: %v", pairErr)
 	}
-	b, err := Open(Config{Title: "clipboard asker", Width: 120, Height: 80})
-	if err != nil {
-		_ = a.Close()
-		t.Fatalf("second window: %v", err)
+	// Each test starts from nobody owning the selection, so one test's text
+	// cannot make the next one pass.
+	pairOwner.clipOwned, pairOwner.clipText = false, ""
+	if a, ok := pairOwner.clipAtoms(); ok {
+		_ = pairOwner.conn.SetSelectionOwner(0, a.clipboard, x11.CurrentTime)
 	}
-	t.Cleanup(func() { _ = a.Close(); _ = b.Close() })
-	return a.(*Window), b.(*Window)
+	return pairOwner, pairAsker
 }
 
 // pump answers selection requests on the owner's connection for a while, which

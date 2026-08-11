@@ -28,6 +28,9 @@ import (
 	"github.com/godbus/dbus/v5/introspect"
 )
 
+// accentRGB is the (ddd) struct the portal publishes an accent colour as.
+type accentRGB struct{ R, G, B float64 }
+
 // stubPortal serves org.freedesktop.portal.Settings.Read.
 type stubPortal struct{ scheme uint32 }
 
@@ -40,7 +43,13 @@ func (s stubPortal) Read(ns, key string) (dbus.Variant, *dbus.Error) {
 		// The wrapping the real portal does, and the reason this test exists.
 		return dbus.MakeVariant(dbus.MakeVariant(s.scheme)), nil
 	case keyAccentColour:
-		return dbus.MakeVariant(dbus.MakeVariant([]interface{}{1.0, 0.5, 0.0})), nil
+		// A STRUCT of three doubles, (ddd), which is what the portal sends.
+		// Handing back []interface{} here would serialise as an array of
+		// variants and decode as []dbus.Variant -- a shape the reader is right
+		// to reject, and one a hand-made fake happily returns. That divergence
+		// is the whole reason this test exists, and it caught it on the first
+		// run.
+		return dbus.MakeVariant(dbus.MakeVariant(accentRGB{1.0, 0.5, 0.0})), nil
 	}
 	return dbus.Variant{}, dbus.NewError("org.freedesktop.portal.Error.NotFound", nil)
 }
