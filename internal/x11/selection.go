@@ -4,6 +4,8 @@
 
 package x11
 
+import "time"
+
 // The X11 selection protocol, which is what a clipboard is on this platform.
 //
 // There is no clipboard server to ask. A selection is OWNED by a window, and
@@ -138,4 +140,34 @@ func (c *Conn) SendSelectionNotify(requestor, selection, target, property, time 
 	e.put32(0) // event-mask: 0 delivers to the requestor itself
 	e.putBytes(ev.buf)
 	return c.sendRequest(opSendEvent, 0, e.buf) // propagate = 0
+}
+
+// PushEvent returns an event to the head of the queue, so it is delivered by
+// the next NextEvent.
+//
+// A synchronous exchange -- asking for a selection and waiting for the reply --
+// has to read events that are not the reply, and those belong to the
+// application, not to the exchange. Dropping them loses a click; handling them
+// there would re-enter the widget tree from inside a paste. Putting them back
+// is the only option that does neither.
+func (c *Conn) PushEvent(ev Event) {
+	c.events = append([]Event{ev}, c.events...)
+}
+
+// SetReadDeadline bounds how long NextEvent will block, and reports whether the
+// transport could honour it.
+//
+// It exists for one situation, and it is not hypothetical: the X11 selection
+// protocol has no timeout. A paste asks whoever owns the clipboard and waits
+// for an event that only arrives if that owner is still alive and still
+// answering. An owner that died between claiming and being asked leaves the
+// asker blocked for ever -- a frozen window, on Ctrl+V, with nothing in any log
+// to say why. A real connection is a socket and can be bounded; a transport
+// that cannot says so rather than pretending.
+func (c *Conn) SetReadDeadline(t time.Time) bool {
+	d, ok := c.rw.(interface{ SetReadDeadline(time.Time) error })
+	if !ok {
+		return false
+	}
+	return d.SetReadDeadline(t) == nil
 }

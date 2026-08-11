@@ -167,12 +167,15 @@ func (w *Window) mapMotion(xe x11.Event, m xmods) outcome {
 // X11 event codes re-exported at the window layer so mapEvent reads
 // clearly. They mirror the internal/x11 wire codes.
 const (
-	xcodeKeyPress        = 2
-	xcodeKeyRelease      = 3
-	xcodeButtonPress     = 4
-	xcodeButtonRelease   = 5
-	xcodeMotionNotify    = 6
-	xcodeExpose          = 12
-	xcodeConfigureNotify = 22
-	xcodeClientMessage   = 33
+	xcodeKeyPress         = 2
+	xcodeKeyRelease       = 3
+	xcodeButtonPress      = 4
+	xcodeButtonRelease    = 5
+	xcodeMotionNotify     = 6
+	xcodeExpose           = 12
+	xcodeConfigureNotify  = 22
+	xcodeClientMessage    = 33
+	xcodeSelectionClear   = 29
+	xcodeSelectionRequest = 30
+	xcodeSelectionNotify  = 31
 )

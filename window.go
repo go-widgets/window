@@ -169,6 +169,13 @@ type Window struct {
 	dnd    *dnd.Controller
 	closed bool
 
+	// Clipboard state: the atoms (interned on first use), the text we are
+	// handing out, and whether we currently own the selection. See
+	// clipboard_linux.go.
+	clip      clipboardAtoms
+	clipText  string
+	clipOwned bool
+
 	// originX/originY are the window's position, kept for the accessibility
 	// bridge (see the ConfigureNotify branch in events.go).
 	originX, originY int
@@ -417,6 +424,12 @@ func (w *Window) Run(root toolkit.Widget) error {
 		xe, err := w.conn.NextEvent()
 		if err != nil {
 			return err
+		}
+		// Selection events are the clipboard talking, not the user: another
+		// application asking for the text we copied, or telling us it has been
+		// replaced. They never reach the widget tree.
+		if w.handleSelectionEvent(xe) {
+			continue
 		}
 		out := w.mapEvent(xe)
 		if out.quit {
