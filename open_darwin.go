@@ -57,5 +57,6 @@ var (
 	_ Clipboard        = (*cocoa.Window)(nil)
 	_ AppearanceReader = darwinBackend{}
 	_ Scaler           = (*cocoa.Window)(nil)
+	_ Repainter        = (*cocoa.Window)(nil)
 	_ Backend          = darwinBackend{}
 )

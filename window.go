@@ -99,6 +99,25 @@ type Config struct {
 	RenderScale float64
 }
 
+// Repainter is an optional [Backend] capability: ask for a repaint from ANY
+// goroutine.
+//
+// This package repaints when something happens — an event, a resize, a
+// [scene.HostRoot] invalidation — which covers an interface that only changes
+// because the user did something. It does not cover an application whose
+// content arrives on its own: a feed reader with a fetch in flight, a log
+// viewer, a clock. Such an application draws its first frame and, with the
+// window idle, would show it for as long as it runs.
+//
+// Repaint is safe to call from any goroutine and returns immediately; the
+// back-end marshals the work to whatever thread its platform demands. Calling it
+// more often than the display refreshes is not an error, just wasted frames.
+//
+// Implemented today by the macOS (Cocoa) back-end.
+type Repainter interface {
+	Repaint()
+}
+
 // Scaler is an optional [Backend] capability: how many framebuffer pixels the
 // back-end is allocating per logical point.
 //
