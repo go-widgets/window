@@ -94,6 +94,29 @@ func drain(w *Window) {
 	}
 }
 
+// claim copies text and waits for the server to have processed the claim.
+//
+// The round trip is not politeness. The owner and the asker are on DIFFERENT
+// connections, and X orders requests within a connection, not between two: a
+// paste issued 76 microseconds after a copy asked a server that had not yet
+// seen the claim, and was told nobody owned the selection. Real applications
+// never race that closely, but a test does.
+func claim(t *testing.T, owner *Window, text string) {
+	t.Helper()
+	owner.SetClipboardText(text)
+	a, ok := owner.clipAtoms()
+	if !ok {
+		t.Fatal("could not intern the clipboard atoms")
+	}
+	who, err := owner.conn.GetSelectionOwner(a.clipboard)
+	if err != nil {
+		t.Fatalf("confirming the claim: %v", err)
+	}
+	if who != owner.win {
+		t.Fatalf("after copying, the selection is owned by %#x, not us (%#x)", who, owner.win)
+	}
+}
+
 // pump answers selection requests on the owner's connection for a while, which
 // is what its event loop would be doing if this were an application.
 func pump(t *testing.T, w *Window, d time.Duration) chan struct{} {
@@ -131,7 +154,7 @@ func TestLiveX11ClipboardCrossesTwoWindows(t *testing.T) {
 	owner, asker := twoWindows(t)
 
 	const text = "go-widgets clipboard — accentué, 日本語, 🎯"
-	owner.SetClipboardText(text)
+	claim(t, owner, text)
 	stop := pump(t, owner, 3*time.Second)
 
 	if got := asker.ClipboardText(); got != text {
@@ -147,7 +170,7 @@ func TestLiveX11ClipboardOwnerReadsItsOwnText(t *testing.T) {
 	skipUnlessX11(t)
 	owner, _ := twoWindows(t)
 
-	owner.SetClipboardText("mine")
+	claim(t, owner, "mine")
 	if got := owner.ClipboardText(); got != "mine" {
 		t.Errorf("the owner read %q of its own text", got)
 	}
@@ -176,7 +199,7 @@ func TestLiveX11ClipboardDoesNotHangOnASilentOwner(t *testing.T) {
 	skipUnlessX11(t)
 	owner, asker := twoWindows(t)
 
-	owner.SetClipboardText("never answered") // claimed, but nothing will pump
+	claim(t, owner, "never answered") // claimed, but nothing will pump
 
 	start := time.Now()
 	got := asker.ClipboardText()
@@ -199,11 +222,7 @@ func TestLiveX11ClipboardKeepsEventsThatArriveDuringAPaste(t *testing.T) {
 	skipUnlessX11(t)
 	owner, asker := twoWindows(t)
 
-	owner.SetClipboardText("text")
-	if a, ok := owner.clipAtoms(); ok {
-		who, err := owner.conn.GetSelectionOwner(a.clipboard)
-		t.Logf("before the paste: selection owner=%#x ours=%#x err=%v", who, owner.win, err)
-	}
+	claim(t, owner, "text")
 	stop := pump(t, owner, 3*time.Second)
 
 	if got := asker.ClipboardText(); got != "text" {
