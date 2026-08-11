@@ -356,7 +356,7 @@ func (p *provider) invoke() uintptr {
 	if !ok {
 		return eFail
 	}
-	active.dispatch(MapMouseDown(x, y, false, false))
-	active.dispatch(MapMouseUp(x, y, false, false))
+	active.dispatch(MapMouseDown(x, y, Mods{}))
+	active.dispatch(MapMouseUp(x, y, Mods{}))
 	return sOK
 }

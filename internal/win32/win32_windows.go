@@ -126,6 +126,9 @@ const (
 
 	vkShift   = 0x10
 	vkControl = 0x11
+	vkMenu    = 0x12 // Alt
+	vkLWin    = 0x5B // left  ⊞ Windows/logo key
+	vkRWin    = 0x5C // right ⊞ Windows/logo key
 )
 
 // rect mirrors Win32 RECT (left, top, right, bottom).
@@ -441,45 +444,39 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		return 0
 	case wmMouseMove:
 		x, y := w.clientPoint(lParam)
-		shift, ctrl := DecodeMouseMods(wParam)
-		w.dispatch(MapMouseMove(x, y, AnyButtonDown(wParam), shift, ctrl))
+		w.dispatch(MapMouseMove(x, y, AnyButtonDown(wParam), DecodeMouseMods(wParam)))
 		return 0
 	case wmLButtonDown, wmRButtonDown:
 		w.buttonHeld = true
 		x, y := w.clientPoint(lParam)
-		shift, ctrl := DecodeMouseMods(wParam)
-		w.dispatch(MapMouseDown(x, y, shift, ctrl))
+		w.dispatch(MapMouseDown(x, y, DecodeMouseMods(wParam)))
 		return 0
 	case wmLButtonUp, wmRButtonUp:
 		w.buttonHeld = false
 		x, y := w.clientPoint(lParam)
-		shift, ctrl := DecodeMouseMods(wParam)
-		w.dispatch(MapMouseUp(x, y, shift, ctrl))
+		w.dispatch(MapMouseUp(x, y, DecodeMouseMods(wParam)))
 		return 0
 	case wmMouseWheel:
 		// WM_MOUSEWHEEL delivers SCREEN coordinates; convert to client pixels.
 		x, y := w.screenPoint(lParam)
 		delta := int(int16(hiWord(uint32(wParam))))
-		shift, ctrl := DecodeMouseMods(uintptr(loWord(uint32(wParam))))
-		w.dispatch(MapWheel(x, y, delta, shift, ctrl))
+		w.dispatch(MapWheel(x, y, delta, DecodeMouseMods(uintptr(loWord(uint32(wParam))))))
 		return 0
 	case wmKeyDown:
-		shift, ctrl := keyMods()
-		w.dispatchAll(MapKeyDown(uint32(wParam), shift, ctrl))
+		w.dispatchAll(MapKeyDown(uint32(wParam), keyMods()))
 		return 0
 	case wmKeyUp:
-		shift, ctrl := keyMods()
-		if evs := MapKeyUp(uint32(wParam), shift, ctrl); evs != nil {
+		m := keyMods()
+		if evs := MapKeyUp(uint32(wParam), m); evs != nil {
 			w.dispatchAll(evs)
 		} else {
 			// A printable key's release: translate the virtual key to its rune.
 			ch, _, _ := procMapVirtualKeyW.Call(wParam, uintptr(mapvkVKToChar))
-			w.dispatchAll(MapCharUp(rune(uint16(ch)), shift, ctrl))
+			w.dispatchAll(MapCharUp(rune(uint16(ch)), m))
 		}
 		return 0
 	case wmChar:
-		shift, ctrl := keyMods()
-		w.dispatchAll(MapCharDown(rune(uint16(wParam)), shift, ctrl))
+		w.dispatchAll(MapCharDown(rune(uint16(wParam)), keyMods()))
 		return 0
 	case wmClose:
 		procDestroyWindow.Call(hwnd)
@@ -517,10 +514,17 @@ func (w *Window) screenPoint(lParam uintptr) (int, int) {
 // keyMods reads the current Shift/Ctrl state for a keyboard message (WM_KEYDOWN/
 // WM_KEYUP/WM_CHAR carry no key-state mask, unlike the mouse messages). The high
 // bit of GetKeyState marks a held key.
-func keyMods() (shift, ctrl bool) {
-	s, _, _ := procGetKeyState.Call(uintptr(vkShift))
-	c, _, _ := procGetKeyState.Call(uintptr(vkControl))
-	return int16(s) < 0, int16(c) < 0
+func keyMods() Mods {
+	held := func(vk int) bool {
+		s, _, _ := procGetKeyState.Call(uintptr(vk))
+		return int16(s) < 0
+	}
+	return Mods{
+		Shift: held(vkShift),
+		Ctrl:  held(vkControl),
+		Alt:   held(vkMenu),
+		Meta:  held(vkLWin) || held(vkRWin),
+	}
 }
 
 // onPaint blits the current DIB into the update region with StretchDIBits,

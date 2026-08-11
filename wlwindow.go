@@ -255,12 +255,10 @@ func (w *wlWindow) wirePointer() {
 		w.queue(w.translateMotion(w.mods()))
 	}
 	w.pointer.OnButton = func(button uint32, pressed bool) {
-		s, c := w.mods()
-		w.queue(w.translateButton(button, pressed, s, c))
+		w.queue(w.translateButton(button, pressed, w.mods()))
 	}
 	w.pointer.OnAxis = func(axis uint32, value wayland.Fixed) {
-		s, c := w.mods()
-		w.queue(w.translateAxis(axis, value, s, c))
+		w.queue(w.translateAxis(axis, value, w.mods()))
 	}
 }
 
@@ -268,17 +266,33 @@ func (w *wlWindow) wirePointer() {
 // key/char toolkit events via the parsed xkb keymap and modifier state.
 func (w *wlWindow) wireKeyboard() {
 	w.keyboard.OnKey = func(evdev uint32, pressed bool) {
-		w.queue(translateKey(w.keyboard.Keymap(), evdev, pressed, w.keyboard.Shift(), w.keyboard.Ctrl()))
+		w.queue(translateKey(w.keyboard.Keymap(), evdev, pressed, w.mods()))
 	}
 	w.keyboard.OnModifiers = func() {}
 }
 
-// mods returns the current Shift/Ctrl modifier state (false if no keyboard).
-func (w *wlWindow) mods() (shift, ctrl bool) {
+// wlmods is the decoded modifier state: Shift, Control, Alt and Meta (the
+// Super/logo key). Deriving all four lets a widget tell a plain Ctrl chord from
+// an Alt/Meta one (paste vs paste-as-move in the file manager).
+type wlmods struct{ shift, ctrl, alt, meta bool }
+
+// with stamps the four modifier flags onto ev.
+func (m wlmods) with(ev toolkit.Event) toolkit.Event {
+	ev.Shift, ev.Ctrl, ev.Alt, ev.Meta = m.shift, m.ctrl, m.alt, m.meta
+	return ev
+}
+
+// mods returns the current modifier state (all false if no keyboard).
+func (w *wlWindow) mods() wlmods {
 	if w.keyboard == nil {
-		return false, false
+		return wlmods{}
 	}
-	return w.keyboard.Shift(), w.keyboard.Ctrl()
+	return wlmods{
+		shift: w.keyboard.Shift(),
+		ctrl:  w.keyboard.Ctrl(),
+		alt:   w.keyboard.Alt(),
+		meta:  w.keyboard.Logo(),
+	}
 }
 
 // queue appends translated events to the pending batch and marks a repaint.
@@ -296,8 +310,8 @@ func (w *wlWindow) queue(evs []toolkit.Event) {
 // key/char events. A modifier key yields nothing; a named key yields a
 // single KeyDown/KeyUp carrying the name; a printable key yields KeyDown+Char
 // on press and KeyUp on release. An unmapped key yields nothing.
-func translateKey(km *wayland.Keymap, evdev uint32, pressed, shift, ctrl bool) []toolkit.Event {
-	key := km.Lookup(evdev, shift)
+func translateKey(km *wayland.Keymap, evdev uint32, pressed bool, m wlmods) []toolkit.Event {
+	key := km.Lookup(evdev, m.shift)
 	if key.IsModifier {
 		return nil
 	}
@@ -306,17 +320,17 @@ func translateKey(km *wayland.Keymap, evdev uint32, pressed, shift, ctrl bool) [
 		if !pressed {
 			kind = toolkit.EventKeyUp
 		}
-		return []toolkit.Event{{Kind: kind, Code: key.Name, Ctrl: ctrl, Shift: shift}}
+		return []toolkit.Event{m.with(toolkit.Event{Kind: kind, Code: key.Name})}
 	}
 	if key.HasRune {
 		s := string(key.Rune)
 		if pressed {
 			return []toolkit.Event{
-				{Kind: toolkit.EventKeyDown, Code: s, Ctrl: ctrl, Shift: shift},
-				{Kind: toolkit.EventChar, Code: s, Ctrl: ctrl, Shift: shift},
+				m.with(toolkit.Event{Kind: toolkit.EventKeyDown, Code: s}),
+				m.with(toolkit.Event{Kind: toolkit.EventChar, Code: s}),
 			}
 		}
-		return []toolkit.Event{{Kind: toolkit.EventKeyUp, Code: s, Ctrl: ctrl, Shift: shift}}
+		return []toolkit.Event{m.with(toolkit.Event{Kind: toolkit.EventKeyUp, Code: s})}
 	}
 	return nil
 }
@@ -339,33 +353,33 @@ func buttonBit(button uint32) int {
 // translateButton maps a pointer button press/release to a click (press) or
 // mouse-up (release) at the last-known pointer position, updating the held
 // -button mask used for drag detection.
-func (w *wlWindow) translateButton(button uint32, pressed, shift, ctrl bool) []toolkit.Event {
+func (w *wlWindow) translateButton(button uint32, pressed bool, m wlmods) []toolkit.Event {
 	bit := buttonBit(button)
 	if bit == 0 {
 		return nil
 	}
 	if pressed {
 		w.buttons |= bit
-		return []toolkit.Event{{Kind: toolkit.EventClick, X: w.ptrX, Y: w.ptrY, Ctrl: ctrl, Shift: shift}}
+		return []toolkit.Event{m.with(toolkit.Event{Kind: toolkit.EventClick, X: w.ptrX, Y: w.ptrY})}
 	}
 	w.buttons &^= bit
-	return []toolkit.Event{{Kind: toolkit.EventMouseUp, X: w.ptrX, Y: w.ptrY, Ctrl: ctrl, Shift: shift}}
+	return []toolkit.Event{m.with(toolkit.Event{Kind: toolkit.EventMouseUp, X: w.ptrX, Y: w.ptrY})}
 }
 
 // translateMotion maps a pointer motion to a drag (a button held) or a plain
 // hover move (no button) at the current pointer position.
-func (w *wlWindow) translateMotion(shift, ctrl bool) []toolkit.Event {
+func (w *wlWindow) translateMotion(m wlmods) []toolkit.Event {
 	kind := toolkit.EventMouseMove
 	if w.buttons != 0 {
 		kind = toolkit.EventMouseDrag
 	}
-	return []toolkit.Event{{Kind: kind, X: w.ptrX, Y: w.ptrY, Ctrl: ctrl, Shift: shift}}
+	return []toolkit.Event{m.with(toolkit.Event{Kind: kind, X: w.ptrX, Y: w.ptrY})}
 }
 
 // translateAxis maps a vertical scroll axis tick to an EventScroll (one row
 // per tick, sign following the scroll direction). Horizontal scroll carries
 // no toolkit meaning and is dropped.
-func (w *wlWindow) translateAxis(axis uint32, value wayland.Fixed, shift, ctrl bool) []toolkit.Event {
+func (w *wlWindow) translateAxis(axis uint32, value wayland.Fixed, m wlmods) []toolkit.Event {
 	if axis != wayland.AxisVerticalScroll || value == 0 {
 		return nil
 	}
@@ -373,7 +387,7 @@ func (w *wlWindow) translateAxis(axis uint32, value wayland.Fixed, shift, ctrl b
 	if value.Float() < 0 {
 		delta = -1
 	}
-	return []toolkit.Event{{Kind: toolkit.EventScroll, X: w.ptrX, Y: w.ptrY, Delta: delta, Ctrl: ctrl, Shift: shift}}
+	return []toolkit.Event{m.with(toolkit.Event{Kind: toolkit.EventScroll, X: w.ptrX, Y: w.ptrY, Delta: delta})}
 }
 
 // --- present --------------------------------------------------------------
