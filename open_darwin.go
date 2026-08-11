@@ -26,3 +26,9 @@ func Open(cfg Config) (Backend, error) {
 	runtime.LockOSThread()
 	return cocoa.New(cfg.Title, cfg.Width, cfg.Height, cfg.Theme)
 }
+
+// The Cocoa back-end carries the OS pasteboard. Asserting it here, where the
+// capability is declared, is what stops a rename inside the back-end from
+// silently turning `w.(window.Clipboard)` into a failed assertion and an app
+// back on the in-process clipboard with nothing to show for it.
+var _ Clipboard = (*cocoa.Window)(nil)
