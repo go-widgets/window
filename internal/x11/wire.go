@@ -8,7 +8,7 @@
 // socket in practice).
 //
 // It mirrors the sovereign transport+codec approach of
-// github.com/go-freedesktop/dbus: no Xlib, no XCB, no cgo — the wire
+// github.com/godbus/dbus/v5: no Xlib, no XCB, no cgo — the wire
 // format is encoded and decoded here, byte for byte, per the X11
 // protocol specification.
 //

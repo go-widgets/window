@@ -18,7 +18,7 @@ with `CGO_ENABLED=0`.
 
 It implements the **X11 core protocol (v11.0) from scratch over the unix
 socket** — no Xlib, no XCB, no cgo — the same sovereign transport + wire-codec
-approach used by [`go-freedesktop/dbus`](https://github.com/go-freedesktop/dbus).
+approach used by [`godbus/dbus/v5`](https://github.com/godbus/dbus).
 It opens a **real window** on Linux, blits the toolkit's RGBA framebuffer into it
 via the core-protocol `PutImage`, and routes X input into `toolkit.Event`.
 

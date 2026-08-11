@@ -32,8 +32,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/go-freedesktop/dbus"
 	"github.com/go-widgets/toolkit"
+	"github.com/godbus/dbus/v5"
+	"github.com/godbus/dbus/v5/prop"
 )
 
 // AT-SPI object paths. Children live under pathPrefix + their index, so a path
@@ -50,18 +51,16 @@ const (
 	ifaceAction      = "org.a11y.atspi.Action"
 	ifaceCache       = "org.a11y.atspi.Cache"
 	ifaceEventObject = "org.a11y.atspi.Event.Object"
-	ifaceProperties  = "org.freedesktop.DBus.Properties"
 )
 
 // Ref is AT-SPI's object reference: the bus name that owns it and its path —
 // the "(so)" every AT-SPI method passes around.
 //
-// Name is a plain string. In godbus, against which this bridge was first
-// written, dbus.Sender is an ANNOTATION type meaning "inject the caller's
-// name" rather than "a string on the wire", and using it there silently changed
-// this struct's signature so the registry never listed the application. The
-// owned D-Bus has no such type, and the signature is checked rather than
-// assumed: SignatureOfType reports (so) for this and
+// Name is a plain string, and MUST stay one. godbus's dbus.Sender is an
+// ANNOTATION type meaning "inject the caller's name" rather than "a string on
+// the wire": using it here silently changes this struct's marshalled signature
+// so the registry never lists the application. The signature is checked rather
+// than assumed -- dbus.SignatureOf reports (so) for this and
 // a((so)(so)(so)iiassusau) for the cache item.
 type Ref struct {
 	Name string
@@ -173,43 +172,42 @@ func Publish(root toolkit.Widget, title string, originX, originY int) {
 
 // publishProps registers the properties a client reads an element through.
 //
-// The D-Bus library serves org.freedesktop.DBus.Properties ITSELF and never
-// dispatches to an exported Get method, so answering there is not enough: the
-// values have to be registered. Measured, before this: the cache returned the
-// whole correct tree while every Name lookup failed with "no property Name on
-// interface org.a11y.atspi.Accessible", and a client showed the application
-// unnamed.
+// The D-Bus library serves org.freedesktop.DBus.Properties ITSELF (godbus via
+// its prop subpackage) and never dispatches to an exported Get method, so
+// answering there is not enough: the values have to be registered. Measured,
+// before this: the cache returned the whole correct tree while every Name
+// lookup failed with "no property Name on interface org.a11y.atspi.Accessible",
+// and a client showed the application unnamed.
 //
-// Fresh *Prop values are published on every change rather than mutated in
-// place. The library hands a *Prop out under its own lock and then reads the
-// value outside it, so mutating one that is already published is a data race;
-// replacing the whole set through ExportProperties, which takes that same lock,
-// is not.
+// A fresh property set is published on every change rather than mutated in
+// place. prop.Export builds a brand-new *prop.Properties (with its own copies
+// of every value) and re-registers the org.freedesktop.DBus.Properties handler
+// for the path atomically through conn.Export, so a value already handed to a
+// client is never mutated underneath it -- no data race. Because prop.Export
+// registers ONE handler covering every interface at a path, all of a path's
+// interfaces are published in a single call (godbus would otherwise have the
+// second call replace the first).
 func (b *Bridge) publishProps() {
 	b.mu.Lock()
 	title, nodes, parent := b.title, b.nodes, b.parent
 	b.mu.Unlock()
 
-	_ = b.conn.ExportProperties(rootPath, ifaceAccessible, map[string]*dbus.Prop{
-		"Name":        {Value: title},
-		"Description": {Value: ""},
-		"ChildCount":  {Value: int32(len(nodes))},
-		"Parent":      {Value: parent},
-	})
-	_ = b.conn.ExportProperties(rootPath, ifaceApplication, map[string]*dbus.Prop{
-		"ToolkitName":  {Value: "go-widgets"},
-		"Version":      {Value: "2.1"},
-		"AtspiVersion": {Value: "2.1"},
-		"Id":           {Value: int32(0)},
+	_, _ = prop.Export(b.conn, rootPath, prop.Map{
+		ifaceAccessible: {
+			"Name":        {Value: title},
+			"Description": {Value: ""},
+			"ChildCount":  {Value: int32(len(nodes))},
+			"Parent":      {Value: parent},
+		},
+		ifaceApplication: {
+			"ToolkitName":  {Value: "go-widgets"},
+			"Version":      {Value: "2.1"},
+			"AtspiVersion": {Value: "2.1"},
+			"Id":           {Value: int32(0)},
+		},
 	})
 	root := b.ref(rootPath)
 	for i, n := range nodes {
-		_ = b.conn.ExportProperties(childPath(i), ifaceAccessible, map[string]*dbus.Prop{
-			"Name":        {Value: n.Name},
-			"Description": {Value: ""},
-			"ChildCount":  {Value: int32(0)},
-			"Parent":      {Value: root},
-		})
 		// NActions is a PROPERTY of the Action interface, not only a method.
 		// Answering the method alone leaves a client showing the element with
 		// an empty action list: readable, and impossible to operate. Measured
@@ -218,8 +216,16 @@ func (b *Bridge) publishProps() {
 		if Role(n.Role) == RolePushButton {
 			actions = 1
 		}
-		_ = b.conn.ExportProperties(childPath(i), ifaceAction, map[string]*dbus.Prop{
-			"NActions": {Value: actions},
+		_, _ = prop.Export(b.conn, childPath(i), prop.Map{
+			ifaceAccessible: {
+				"Name":        {Value: n.Name},
+				"Description": {Value: ""},
+				"ChildCount":  {Value: int32(0)},
+				"Parent":      {Value: root},
+			},
+			ifaceAction: {
+				"NActions": {Value: actions},
+			},
 		})
 	}
 }
@@ -232,7 +238,9 @@ func (b *Bridge) publishProps() {
 func (b *Bridge) exportChild(i int) bool {
 	child := &accChild{b: b, idx: i}
 	p := childPath(i)
-	for _, iface := range []string{ifaceAccessible, ifaceComponent, ifaceAction, ifaceProperties} {
+	// org.freedesktop.DBus.Properties is served by prop.Export (see
+	// publishProps), not by this object, so it is not in the export list.
+	for _, iface := range []string{ifaceAccessible, ifaceComponent, ifaceAction} {
 		if err := b.conn.Export(child, p, iface); err != nil {
 			return false
 		}
@@ -273,7 +281,15 @@ func start(nodes []toolkit.A11yNode, title string, originX, originY int) *Bridge
 	if err != nil {
 		return nil
 	}
-	if _, err := conn.Hello(); err != nil {
+	// godbus's Dial returns an unauthenticated connection: the SASL handshake
+	// and the org.freedesktop.DBus.Hello that assigns our unique name are
+	// explicit steps (ConnectSessionBus does them for the session bus, but the
+	// a11y bus is dialled by address).
+	if err := conn.Auth(nil); err != nil {
+		conn.Close()
+		return nil
+	}
+	if err := conn.Hello(); err != nil {
 		conn.Close()
 		return nil
 	}
@@ -288,7 +304,9 @@ func start(nodes []toolkit.A11yNode, title string, originX, originY int) *Bridge
 		nodes: nodes, title: title, originX: originX, originY: originY,
 	}
 	root := &accRoot{b: b}
-	for _, iface := range []string{ifaceAccessible, ifaceApplication, ifaceProperties} {
+	// Properties is served by prop.Export in publishProps (called below), not
+	// by accRoot, so it is not exported here.
+	for _, iface := range []string{ifaceAccessible, ifaceApplication} {
 		if err := conn.Export(root, rootPath, iface); err != nil {
 			conn.Close()
 			return nil
