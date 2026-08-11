@@ -82,6 +82,8 @@ func pump(t *testing.T, w *Window, d time.Duration) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		handled := 0
+		defer func() { t.Logf("pump handled %d selection events", handled) }()
 		deadline := time.Now().Add(d)
 		for time.Now().Before(deadline) {
 			ready, supported := w.conn.WaitReadable(50 * time.Millisecond)
@@ -95,7 +97,11 @@ func pump(t *testing.T, w *Window, d time.Duration) chan struct{} {
 			if err != nil {
 				return
 			}
-			w.handleSelectionEvent(ev)
+			if w.handleSelectionEvent(ev) {
+				handled++
+			} else {
+				t.Logf("pump saw a non-selection event, code %d", ev.Code)
+			}
 		}
 	}()
 	return done
@@ -175,11 +181,14 @@ func TestLiveX11ClipboardKeepsEventsThatArriveDuringAPaste(t *testing.T) {
 	owner, asker := twoWindows(t)
 
 	owner.SetClipboardText("text")
+	if a, ok := owner.clipAtoms(); ok {
+		who, err := owner.conn.GetSelectionOwner(a.clipboard)
+		t.Logf("before the paste: selection owner=%#x ours=%#x err=%v", who, owner.win, err)
+	}
 	stop := pump(t, owner, 3*time.Second)
 
-	// An Expose the asker has not read yet: its window was just mapped.
 	if got := asker.ClipboardText(); got != "text" {
-		t.Fatalf("paste read %q", got)
+		t.Errorf("paste read %q", got)
 	}
 	<-stop
 
