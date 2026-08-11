@@ -169,6 +169,10 @@ type Window struct {
 	dnd    *dnd.Controller
 	closed bool
 
+	// portal is the session-bus connection the desktop appearance is read
+	// through, opened on first use. See appearance_x11.go.
+	portal portalConn
+
 	// Clipboard state: the atoms (interned on first use), the text we are
 	// handing out, and whether we currently own the selection. See
 	// clipboard_linux.go.
