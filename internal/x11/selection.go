@@ -4,6 +4,8 @@
 
 package x11
 
+import "time"
+
 // The X11 selection protocol, which is what a clipboard is on this platform.
 //
 // There is no clipboard server to ask. A selection is OWNED by a window, and
@@ -138,4 +140,38 @@ func (c *Conn) SendSelectionNotify(requestor, selection, target, property, time 
 	e.put32(0) // event-mask: 0 delivers to the requestor itself
 	e.putBytes(ev.buf)
 	return c.sendRequest(opSendEvent, 0, e.buf) // propagate = 0
+}
+
+// PushEvent returns an event to the head of the queue, so it is delivered by
+// the next NextEvent.
+//
+// A synchronous exchange -- asking for a selection and waiting for the reply --
+// has to read events that are not the reply, and those belong to the
+// application, not to the exchange. Dropping them loses a click; handling them
+// there would re-enter the widget tree from inside a paste. Putting them back
+// is the only option that does neither.
+func (c *Conn) PushEvent(ev Event) {
+	c.events = append([]Event{ev}, c.events...)
+}
+
+// WaitReadable reports whether the server sent something within d, and whether
+// the transport could answer at all.
+//
+// It exists because the selection protocol has no timeout. A paste asks whoever
+// owns the clipboard and waits for an event that only arrives if that owner is
+// still alive and still answering; an owner that died between claiming and being
+// asked leaves the asker blocked for ever -- a frozen window, on Ctrl+V, with
+// nothing in any log to say why.
+//
+// It waits for READABILITY rather than putting a deadline on the read, and the
+// difference matters: a deadline that expires between a packet's header and its
+// body leaves the stream desynchronised, turning a slow paste into a broken
+// connection. Waiting first and reading only when there is something to read
+// cannot cut a packet in half.
+func (c *Conn) WaitReadable(d time.Duration) (ready, supported bool) {
+	w, ok := c.rw.(interface{ WaitReadable(time.Duration) bool })
+	if !ok {
+		return false, false
+	}
+	return w.WaitReadable(d), true
 }

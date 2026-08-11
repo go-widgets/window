@@ -7,6 +7,7 @@ package x11
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 )
 
 // A selection request is asserted on the WIRE, not on a round trip through our
@@ -275,5 +276,44 @@ func TestDecodeSelectionEvents(t *testing.T) {
 	ev = decodeEvent(order, clr)
 	if ev.Window != 0xB2 || ev.Selection != 0xB3 {
 		t.Errorf("SelectionClear decoded as %+v", ev)
+	}
+}
+
+// An exchange that reads events which are not its reply must give them back:
+// dropping one loses a click, and the application never sees it happen.
+func TestPushEventReturnsItToTheHead(t *testing.T) {
+	order := binary.LittleEndian
+	c, _ := dialFakeConn(t, order, nil)
+
+	c.PushEvent(Event{Code: 12, Window: 0xB})
+	c.PushEvent(Event{Code: 4, Window: 0xA}) // pushed second, delivered first
+
+	first, err := c.NextEvent()
+	if err != nil {
+		t.Fatalf("next: %v", err)
+	}
+	if first.Code != 4 || first.Window != 0xA {
+		t.Errorf("first = %+v, want the most recently pushed", first)
+	}
+	second, err := c.NextEvent()
+	if err != nil {
+		t.Fatalf("next: %v", err)
+	}
+	if second.Code != 12 || second.Window != 0xB {
+		t.Errorf("second = %+v", second)
+	}
+}
+
+// A transport that cannot answer says so, rather than reporting "not ready" and
+// making every paste look like a dead owner.
+func TestWaitReadableUnsupportedTransport(t *testing.T) {
+	order := binary.LittleEndian
+	c, _ := dialFakeConn(t, order, nil)
+	ready, supported := c.WaitReadable(time.Millisecond)
+	if supported {
+		t.Error("the in-memory fake claimed it could wait on a socket")
+	}
+	if ready {
+		t.Error("an unsupported wait reported ready")
 	}
 }

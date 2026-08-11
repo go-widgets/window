@@ -142,3 +142,8 @@ func authFilePathEnv() string {
 	}
 	return ""
 }
+
+// The X11 back-end carries the OS clipboard, through selection ownership.
+// Asserting it where the capability is declared stops a rename inside the
+// back-end from silently turning w.(window.Clipboard) into a failed assertion.
+var _ Clipboard = (*Window)(nil)
