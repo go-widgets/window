@@ -282,3 +282,20 @@ func TestFloorCeil(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitToByte(t *testing.T) {
+	for _, tc := range []struct {
+		in   float64
+		want uint8
+	}{
+		{0, 0}, {1, 255}, {0.5, 128}, {0.25, 64},
+		{-0.1, 0},       // below the range: clamp, not wrap
+		{1.000001, 255}, // a hair above, as a colour-space conversion can land
+		{0.999, 255},    // rounds up rather than truncating to 254
+		{0.002, 1},      // and a value just off zero is not lost
+	} {
+		if got := unitToByte(tc.in); got != tc.want {
+			t.Errorf("unitToByte(%v) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
