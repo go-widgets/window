@@ -327,3 +327,23 @@ func ceil(v float64) float64 {
 	}
 	return i
 }
+
+// unitToByte maps a 0..1 AppKit colour component to a 0..255 byte, clamped and
+// rounded. It lives here, untagged, rather than beside the AppKit calls that
+// feed it, because it is arithmetic and not glue: this way the Linux coverage
+// gate proves it, on a machine that has no AppKit at all.
+//
+// Clamping is not defensive padding. AppKit colour components are documented as
+// 0..1 but come from a colour-space conversion, which can land a hair outside
+// on either side; without the clamp that becomes a wrapped byte -- a component
+// of 1.000001 turning into 0, a black accent where the user chose white.
+func unitToByte(v float64) uint8 {
+	switch {
+	case v <= 0:
+		return 0
+	case v >= 1:
+		return 255
+	default:
+		return uint8(v*255 + 0.5)
+	}
+}
