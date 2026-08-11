@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-//go:build linux
-
 package window
 
 import (
@@ -13,6 +11,11 @@ import (
 )
 
 // The X11 half of the Clipboard capability.
+//
+// No build tag, like the rest of this package: the X11 protocol is pure Go and
+// compiles everywhere, and window.go -- which holds the state below -- is
+// untagged too. Only the live proof is linux-only, because only it needs a
+// server.
 //
 // Nothing here resembles the macOS one, and that is the platform's doing rather
 // than ours: there is no clipboard object to read and write. A selection is
