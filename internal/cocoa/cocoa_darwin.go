@@ -164,6 +164,17 @@ type Window struct {
 	buttonHeld bool
 	dnd        *dnd.Controller
 
+	// Translucent-material (vibrancy) state. Zero unless the tree carries a
+	// toolkit.Material: translucent flips the window non-opaque, container holds
+	// the effect views behind the framebuffer view, holes are the framebuffer
+	// regions punched transparent so the effect views show through, and
+	// materials/effectViews track the installed NSVisualEffectViews.
+	translucent bool
+	container   objc.ID
+	effectViews []objc.ID
+	holes       []toolkit.Rect
+	materials   []*toolkit.Material
+
 	closed bool
 }
 
@@ -260,8 +271,15 @@ func viewDrawRect(self objc.ID, _ objc.SEL) {
 	bounds := objc.Send[nsRect](self, selBounds)
 	// The full drawInRect: form with respectFlipped:YES honours the flipped
 	// view so the buffer's row 0 lands at the top of the window; fromRect zero =
-	// whole image; operation Copy; fraction 1.0 (opaque); hints nil.
-	objc.Send[objc.ID](rep, selDrawInRectFull, bounds, nsRect{}, uint(nsCompositingCopy), 1.0, true, objc.ID(0))
+	// whole image; fraction 1.0; hints nil. The op is Copy in the ordinary
+	// opaque path; in translucent mode it is SourceOver so the framebuffer's
+	// transparent holes (punched over material regions) reveal the effect views
+	// composited behind this view.
+	op := nsCompositingCopy
+	if w.translucent {
+		op = nsCompositingSourceOver
+	}
+	objc.Send[objc.ID](rep, selDrawInRectFull, bounds, nsRect{}, uint(op), 1.0, true, objc.ID(0))
 	rep.Send(selRelease)
 	runtime.KeepAlive(buf)
 }
@@ -561,10 +579,22 @@ func (w *Window) bindAndSeed(root toolkit.Widget) {
 		w.dnd = dnd.New()
 	}
 	w.dnd.Bind(root)
+	// First layout pass so every Material learns its bounds.
 	if w.dmg != nil {
 		w.drawIncremental()
 	} else {
 		w.draw()
+	}
+	// Install native vibrancy views behind any Material, then repaint so the
+	// framebuffer holes are punched and each material renders its native
+	// (child-only) path. A tree with no Material leaves everything unchanged.
+	w.syncMaterials(root)
+	if w.translucent {
+		if w.dmg != nil {
+			w.drawIncremental()
+		} else {
+			w.draw()
+		}
 	}
 	w.presentFull()
 }
@@ -581,6 +611,7 @@ func (w *Window) draw() {
 		w.root.SetBounds(full)
 		w.root.Draw(p, w.theme)
 	}
+	w.punchHoles()
 }
 
 // drawIncremental lays the root out to the full client area and repaints ONLY
@@ -590,7 +621,9 @@ func (w *Window) drawIncremental() []toolkit.Rect {
 	defer w.mu.Unlock()
 	p := painter.NewPixelPainter(w.buf, w.w, w.h)
 	w.root.SetBounds(toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h})
-	return w.dmg.RenderDamaged(p, w.theme)
+	rects := w.dmg.RenderDamaged(p, w.theme)
+	w.punchHoles()
+	return rects
 }
 
 // paintFrame renders and presents one frame after an event or resize. A plain
@@ -655,6 +688,15 @@ func (w *Window) resize(nw, nh int, scale float64) {
 	w.w, w.h, w.scale = nw, nh, scale
 	w.buf = make([]byte, 4*nw*nh)
 	w.mu.Unlock()
+	if w.translucent {
+		// Relayout at the new size so the materials report fresh bounds, rebuild
+		// the effect views over them, then repaint so the holes match, and blit.
+		w.draw()
+		w.syncMaterials(w.root)
+		w.draw()
+		w.presentFull()
+		return
+	}
 	w.paintFrame(true)
 }
 
