@@ -182,11 +182,41 @@ func CenterOffset(avail, winExtent int) int {
 	return off
 }
 
+// Mods is the decoded modifier state carried on every toolkit event the Win32
+// backend emits: Shift, Ctrl, Alt and Meta (the ⊞ Windows/logo key).
+type Mods struct{ Shift, Ctrl, Alt, Meta bool }
+
+// apply stamps the four modifier flags onto ev.
+func (m Mods) apply(ev toolkit.Event) toolkit.Event {
+	ev.Shift, ev.Ctrl, ev.Alt, ev.Meta = m.Shift, m.Ctrl, m.Alt, m.Meta
+	return ev
+}
+
 // DecodeMouseMods splits a Win32 mouse-message wParam (its low word carries the
-// MK_* key-state bits) into the toolkit's Shift/Ctrl booleans, so a Ctrl-click
-// or Shift-click reaches a widget with the same flags an X11/Cocoa chord would.
-func DecodeMouseMods(wparam uintptr) (shift, ctrl bool) {
-	return wparam&mkShift != 0, wparam&mkControl != 0
+// MK_* key-state bits) into the toolkit modifiers, so a Ctrl-click or
+// Shift-click reaches a widget with the same flags an X11/Cocoa chord would. The
+// mouse wParam carries no Alt or Windows-key bit, so Alt/Meta are left false for
+// pointer events (they are read from the keyboard state for key events).
+func DecodeMouseMods(wparam uintptr) Mods {
+	return Mods{Shift: wparam&mkShift != 0, Ctrl: wparam&mkControl != 0}
+}
+
+// acceleratorRune maps a letter/digit virtual key held under a Ctrl or Meta
+// chord to the lowercase character the toolkit expects in Code, and reports
+// whether vk is such a key. Windows delivers no usable WM_CHAR for Ctrl+letter
+// (it synthesises a control code instead), so without this a ⌃C / ⌃V shortcut
+// would reach the widget tree as nothing at all — unlike X11/Cocoa/Wayland,
+// where the letter is always the Code. Emitting it here from MapKeyDown/Up
+// closes that gap, so a file manager's Ctrl+C/X/V works on Windows too.
+func acceleratorRune(vk uint32) (string, bool) {
+	switch {
+	case vk >= 'A' && vk <= 'Z':
+		return string(rune(vk - 'A' + 'a')), true
+	case vk >= '0' && vk <= '9':
+		return string(rune(vk)), true
+	default:
+		return "", false
+	}
 }
 
 // AnyButtonDown reports whether any mouse button is held per a WM_MOUSEMOVE
@@ -242,9 +272,17 @@ func DecodeVK(vk uint32) string {
 // keystroke into the following WM_CHAR, so MapCharDown emits the KeyDown+Char
 // pair for printables — keeping the toolkit's press/char split identical to the
 // X11 and Cocoa backends.
-func MapKeyDown(vk uint32, shift, ctrl bool) []toolkit.Event {
+func MapKeyDown(vk uint32, m Mods) []toolkit.Event {
 	if name := DecodeVK(vk); name != "" {
-		return []toolkit.Event{{Kind: toolkit.EventKeyDown, Code: name, Shift: shift, Ctrl: ctrl}}
+		return []toolkit.Event{m.apply(toolkit.Event{Kind: toolkit.EventKeyDown, Code: name})}
+	}
+	// Under a Ctrl or Meta chord a letter/digit's WM_CHAR is a control code, so
+	// emit the accelerator letter here (⌃C → EventKeyDown{"c"}); a bare letter
+	// still yields nothing (its printable comes from MapCharDown's WM_CHAR).
+	if m.Ctrl || m.Meta {
+		if s, ok := acceleratorRune(vk); ok {
+			return []toolkit.Event{m.apply(toolkit.Event{Kind: toolkit.EventKeyDown, Code: s})}
+		}
 	}
 	return nil
 }
@@ -254,9 +292,14 @@ func MapKeyDown(vk uint32, shift, ctrl bool) []toolkit.Event {
 // (printable) key's release is delivered via MapCharUp (the glue translates the
 // virtual key to its rune), so a printable key produces EventKeyUp{rune} exactly
 // as the X11 backend does.
-func MapKeyUp(vk uint32, shift, ctrl bool) []toolkit.Event {
+func MapKeyUp(vk uint32, m Mods) []toolkit.Event {
 	if name := DecodeVK(vk); name != "" {
-		return []toolkit.Event{{Kind: toolkit.EventKeyUp, Code: name, Shift: shift, Ctrl: ctrl}}
+		return []toolkit.Event{m.apply(toolkit.Event{Kind: toolkit.EventKeyUp, Code: name})}
+	}
+	if m.Ctrl || m.Meta {
+		if s, ok := acceleratorRune(vk); ok {
+			return []toolkit.Event{m.apply(toolkit.Event{Kind: toolkit.EventKeyUp, Code: s})}
+		}
 	}
 	return nil
 }
@@ -267,25 +310,25 @@ func MapKeyUp(vk uint32, shift, ctrl bool) []toolkit.Event {
 // (a control code such as the ^M/^I/^[ that WM_CHAR also delivers for
 // Enter/Tab/Escape, or DEL) yields nothing, because those keys are already
 // delivered as named keys through MapKeyDown.
-func MapCharDown(r rune, shift, ctrl bool) []toolkit.Event {
+func MapCharDown(r rune, m Mods) []toolkit.Event {
 	if !isPrintable(r) {
 		return nil
 	}
 	s := string(r)
 	return []toolkit.Event{
-		{Kind: toolkit.EventKeyDown, Code: s, Shift: shift, Ctrl: ctrl},
-		{Kind: toolkit.EventChar, Code: s, Shift: shift, Ctrl: ctrl},
+		m.apply(toolkit.Event{Kind: toolkit.EventKeyDown, Code: s}),
+		m.apply(toolkit.Event{Kind: toolkit.EventChar, Code: s}),
 	}
 }
 
 // MapCharUp turns a printable rune (the glue translates the WM_KEYUP virtual key
 // to its character) into the single EventKeyUp the toolkit expects on release. A
 // non-printable rune yields nothing.
-func MapCharUp(r rune, shift, ctrl bool) []toolkit.Event {
+func MapCharUp(r rune, m Mods) []toolkit.Event {
 	if !isPrintable(r) {
 		return nil
 	}
-	return []toolkit.Event{{Kind: toolkit.EventKeyUp, Code: string(r), Shift: shift, Ctrl: ctrl}}
+	return []toolkit.Event{m.apply(toolkit.Event{Kind: toolkit.EventKeyUp, Code: string(r)})}
 }
 
 // isPrintable reports whether r is a genuine committed character rather than a
@@ -301,24 +344,24 @@ func isPrintable(r rune) bool {
 // and Cocoa mapping. Windows delivers a distinct message per button; the backend
 // routes all of them here, button-agnostically, exactly as the toolkit's click
 // model expects.
-func MapMouseDown(x, y int, shift, ctrl bool) toolkit.Event {
-	return toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y, Shift: shift, Ctrl: ctrl}
+func MapMouseDown(x, y int, m Mods) toolkit.Event {
+	return m.apply(toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y})
 }
 
 // MapMouseUp turns a WM_LBUTTONUP/WM_RBUTTONUP into an EventMouseUp.
-func MapMouseUp(x, y int, shift, ctrl bool) toolkit.Event {
-	return toolkit.Event{Kind: toolkit.EventMouseUp, X: x, Y: y, Shift: shift, Ctrl: ctrl}
+func MapMouseUp(x, y int, m Mods) toolkit.Event {
+	return m.apply(toolkit.Event{Kind: toolkit.EventMouseUp, X: x, Y: y})
 }
 
 // MapMouseMove turns a WM_MOUSEMOVE into a drag (a button held) or a plain hover
 // move (no button), per buttonHeld — the same drag-vs-move split the X11/Wayland
 // backends derive from the event's button-state mask.
-func MapMouseMove(x, y int, buttonHeld, shift, ctrl bool) toolkit.Event {
+func MapMouseMove(x, y int, buttonHeld bool, m Mods) toolkit.Event {
 	kind := toolkit.EventMouseMove
 	if buttonHeld {
 		kind = toolkit.EventMouseDrag
 	}
-	return toolkit.Event{Kind: kind, X: x, Y: y, Shift: shift, Ctrl: ctrl}
+	return m.apply(toolkit.Event{Kind: kind, X: x, Y: y})
 }
 
 // MapWheel turns a WM_MOUSEWHEEL delta into an EventScroll whose Delta is
@@ -328,8 +371,8 @@ func MapMouseMove(x, y int, buttonHeld, shift, ctrl bool) toolkit.Event {
 // matching the browser/wheel convention the X11 and wasmbox backends use. A zero
 // delta yields a Delta-0 EventScroll (harmless; scrollable widgets clamp it), so
 // the mapping is total.
-func MapWheel(x, y, delta int, shift, ctrl bool) toolkit.Event {
-	return toolkit.Event{Kind: toolkit.EventScroll, X: x, Y: y, Delta: -signi(delta), Shift: shift, Ctrl: ctrl}
+func MapWheel(x, y, delta int, m Mods) toolkit.Event {
+	return m.apply(toolkit.Event{Kind: toolkit.EventScroll, X: x, Y: y, Delta: -signi(delta)})
 }
 
 // signi returns the sign of v as -1, 0 or +1.

@@ -56,23 +56,25 @@ func TestDefaultContentSize(t *testing.T) {
 
 func TestDecodeMods(t *testing.T) {
 	cases := []struct {
-		name        string
-		flags       uint64
-		shift, ctrl bool
+		name  string
+		flags uint64
+		want  Mods
 	}{
-		{"none", 0, false, false},
-		{"shift", modShift, true, false},
-		{"control", modControl, false, true},
-		{"command", modCommand, false, true},
-		{"option-only", modOption, false, false},
-		{"shift+cmd", modShift | modCommand, true, true},
-		{"shift+ctrl", modShift | modControl, true, true},
+		{"none", 0, Mods{}},
+		{"shift", modShift, Mods{Shift: true}},
+		{"control", modControl, Mods{Ctrl: true}},
+		// ⌘ sets BOTH Ctrl (platform-neutral fold) and Meta (the real ⌘).
+		{"command", modCommand, Mods{Ctrl: true, Meta: true}},
+		{"option-only", modOption, Mods{Alt: true}},
+		{"shift+cmd", modShift | modCommand, Mods{Shift: true, Ctrl: true, Meta: true}},
+		{"shift+ctrl", modShift | modControl, Mods{Shift: true, Ctrl: true}},
+		// ⌘⌥ (paste-as-move accelerator): Ctrl+Meta+Alt, no Shift.
+		{"cmd+option", modCommand | modOption, Mods{Ctrl: true, Alt: true, Meta: true}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s, ct := DecodeMods(c.flags)
-			if s != c.shift || ct != c.ctrl {
-				t.Fatalf("DecodeMods(%#x) = (%v,%v), want (%v,%v)", c.flags, s, ct, c.shift, c.ctrl)
+			if got := DecodeMods(c.flags); got != c.want {
+				t.Fatalf("DecodeMods(%#x) = %+v, want %+v", c.flags, got, c.want)
 			}
 		})
 	}
@@ -172,7 +174,7 @@ func TestMapKey(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := MapKey(c.code, c.chars, false, false, c.press)
+			got := MapKey(c.code, c.chars, Mods{}, c.press)
 			if !reflect.DeepEqual(got, c.want) {
 				t.Fatalf("MapKey = %+v, want %+v", got, c.want)
 			}
@@ -181,10 +183,12 @@ func TestMapKey(t *testing.T) {
 }
 
 func TestMapKeyModifiersFlow(t *testing.T) {
-	got := MapKey(0, "c", true, true, true)
+	// A ⌘⌥C chord: Ctrl (⌘ fold) + Meta (⌘) + Alt (⌥), on BOTH the KeyDown and
+	// the Char, so a shell can read the accelerator off either.
+	got := MapKey(0, "c", Mods{Ctrl: true, Alt: true, Meta: true}, true)
 	want := []toolkit.Event{
-		{Kind: toolkit.EventKeyDown, Code: "c", Shift: true, Ctrl: true},
-		{Kind: toolkit.EventChar, Code: "c", Shift: true, Ctrl: true},
+		{Kind: toolkit.EventKeyDown, Code: "c", Ctrl: true, Alt: true, Meta: true},
+		{Kind: toolkit.EventChar, Code: "c", Ctrl: true, Alt: true, Meta: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MapKey with mods = %+v, want %+v", got, want)
@@ -192,32 +196,32 @@ func TestMapKeyModifiersFlow(t *testing.T) {
 }
 
 func TestMapMouse(t *testing.T) {
-	if got := MapMouseDown(3, 4, true, false); got != (toolkit.Event{Kind: toolkit.EventClick, X: 3, Y: 4, Shift: true}) {
+	if got := MapMouseDown(3, 4, Mods{Shift: true}); got != (toolkit.Event{Kind: toolkit.EventClick, X: 3, Y: 4, Shift: true}) {
 		t.Fatalf("MapMouseDown = %+v", got)
 	}
-	if got := MapMouseUp(5, 6, false, true); got != (toolkit.Event{Kind: toolkit.EventMouseUp, X: 5, Y: 6, Ctrl: true}) {
+	if got := MapMouseUp(5, 6, Mods{Ctrl: true}); got != (toolkit.Event{Kind: toolkit.EventMouseUp, X: 5, Y: 6, Ctrl: true}) {
 		t.Fatalf("MapMouseUp = %+v", got)
 	}
-	if got := MapMouseMove(7, 8, false, false, false); got != (toolkit.Event{Kind: toolkit.EventMouseMove, X: 7, Y: 8}) {
+	if got := MapMouseMove(7, 8, false, Mods{}); got != (toolkit.Event{Kind: toolkit.EventMouseMove, X: 7, Y: 8}) {
 		t.Fatalf("MapMouseMove(move) = %+v", got)
 	}
-	if got := MapMouseMove(7, 8, true, false, false); got != (toolkit.Event{Kind: toolkit.EventMouseDrag, X: 7, Y: 8}) {
+	if got := MapMouseMove(7, 8, true, Mods{}); got != (toolkit.Event{Kind: toolkit.EventMouseDrag, X: 7, Y: 8}) {
 		t.Fatalf("MapMouseMove(drag) = %+v", got)
 	}
 }
 
 func TestMapScrollAndSign(t *testing.T) {
 	// AppKit positive scrollingDeltaY (upward swipe) → toolkit Delta -1 (up/back).
-	if got := MapScroll(1, 2, 3.0, false, false); got.Delta != -1 {
+	if got := MapScroll(1, 2, 3.0, Mods{}); got.Delta != -1 {
 		t.Fatalf("MapScroll(+dy).Delta = %d, want -1", got.Delta)
 	}
-	if got := MapScroll(1, 2, -3.0, false, false); got.Delta != 1 {
+	if got := MapScroll(1, 2, -3.0, Mods{}); got.Delta != 1 {
 		t.Fatalf("MapScroll(-dy).Delta = %d, want 1", got.Delta)
 	}
-	if got := MapScroll(1, 2, 0.0, false, false); got.Delta != 0 {
+	if got := MapScroll(1, 2, 0.0, Mods{}); got.Delta != 0 {
 		t.Fatalf("MapScroll(0).Delta = %d, want 0", got.Delta)
 	}
-	if got := MapScroll(9, 10, -1, true, true); got.X != 9 || got.Y != 10 || !got.Shift || !got.Ctrl {
+	if got := MapScroll(9, 10, -1, Mods{Shift: true, Ctrl: true, Alt: true, Meta: true}); got.X != 9 || got.Y != 10 || !got.Shift || !got.Ctrl || !got.Alt || !got.Meta {
 		t.Fatalf("MapScroll coords/mods = %+v", got)
 	}
 	for v, want := range map[float64]int{-2.5: -1, 2.5: 1, 0: 0} {
