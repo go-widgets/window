@@ -159,6 +159,11 @@ type Window struct {
 	w, h    int        // render-pixel size (= logical points at scale 1)
 	scale   float64    // RENDER scale: framebuffer pixels per point (1 = logical)
 	backing float64    // display backing scale factor (1 or 2), for diagnostics
+	// follow records that the caller asked for the PANEL's resolution rather
+	// than a fixed scale. The request has to outlive construction: a window
+	// moved to a display of another density has to re-derive, and the resolved
+	// scale alone cannot say whether it is allowed to.
+	follow bool
 
 	root       toolkit.Widget
 	dmg        damageRenderer
@@ -431,6 +436,18 @@ func viewDidChangeBackingProperties(_ objc.ID, _ objc.SEL) {
 		return
 	}
 	w.updateBacking()
+	// A window that asked to FOLLOW the panel follows it HERE. Without this it
+	// got the resolution of whichever display it happened to open on and kept
+	// it: dragged from a 1x panel to a 2x one it stayed at 1x for the rest of
+	// the session, silently, since nothing about a soft window says which of
+	// the two settings produced it.
+	if w.follow && w.backing != w.scale && w.win != 0 {
+		w.scale = w.backing
+		cv := w.win.Send(selContentView)
+		b := objc.Send[nsRect](cv, selBounds)
+		w.resize(int(b.Size.W*w.scale), int(b.Size.H*w.scale), w.scale)
+		return
+	}
 	w.presentFull()
 }
 
@@ -571,6 +588,7 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScal
 	w := &Window{
 		title:   title,
 		theme:   theme,
+		follow:  renderScale < 0,
 		win:     win,
 		view:    view,
 		w:       int(float64(width) * scale),
