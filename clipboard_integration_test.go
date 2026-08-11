@@ -66,13 +66,32 @@ func twoWindows(t *testing.T) (owner, asker *Window) {
 	if pairErr != nil {
 		t.Fatalf("opening a window on the X server this lane provides: %v", pairErr)
 	}
-	// Each test starts from nobody owning the selection, so one test's text
-	// cannot make the next one pass.
+	// Each test starts from nobody owning the selection AND from an empty
+	// queue on both connections. The second half matters as much as the first:
+	// a test that deliberately leaves a request unanswered (the silent-owner
+	// one) leaves it sitting in the owner's socket, and the next test's pump
+	// answers THAT instead of its own -- which is how this fixture first sent a
+	// paste an answer meant for the test before it.
 	pairOwner.clipOwned, pairOwner.clipText = false, ""
 	if a, ok := pairOwner.clipAtoms(); ok {
 		_ = pairOwner.conn.SetSelectionOwner(0, a.clipboard, x11.CurrentTime)
 	}
+	drain(pairOwner)
+	drain(pairAsker)
 	return pairOwner, pairAsker
+}
+
+// drain reads whatever is already queued and throws it away.
+func drain(w *Window) {
+	for {
+		ready, supported := w.conn.WaitReadable(80 * time.Millisecond)
+		if !supported || !ready {
+			return
+		}
+		if _, err := w.conn.NextEvent(); err != nil {
+			return
+		}
+	}
 }
 
 // pump answers selection requests on the owner's connection for a while, which
