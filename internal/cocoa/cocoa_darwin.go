@@ -599,10 +599,17 @@ func (w *Window) drawIncremental() []toolkit.Rect {
 // framebuffer was reallocated (whole-surface damage) and the full surface is
 // presented.
 func (w *Window) paintFrame(resize bool) {
-	// The frame about to be shown and the tree a screen reader reads are
-	// published from the same place, so the description can never lag the
-	// pixels a sighted user already sees.
-	w.refreshA11y()
+	// The frame and the tree a screen reader reads are published from the same
+	// place, so the description cannot lag the pixels a sighted user sees.
+	//
+	// AFTER the draw, not before. A widget tree describes itself the same either
+	// way, but a root that RENDERS ITS OWN PIXELS -- a toolkit.Surface over an
+	// application's scene -- only knows what it is showing once it has been
+	// asked to show it. Refreshing first published the PREVIOUS frame's tree,
+	// which on the first paint is no tree at all: such an application came up
+	// with an empty accessibility tree and, with nothing repainting it while
+	// idle, kept one.
+	defer w.refreshA11y()
 	if w.dmg == nil {
 		w.draw()
 		w.presentFull()
