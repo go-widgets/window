@@ -7,6 +7,7 @@
 package x11
 
 import (
+	"io"
 	"testing"
 	"time"
 )
@@ -67,7 +68,8 @@ func TestWaitReadableZeroTimeout(t *testing.T) {
 	}
 }
 
-// A closed socket cannot be waited on, and says so instead of spinning.
+// A closed socket is not going to become readable, and says so at once rather
+// than waiting out a timeout that cannot end differently.
 func TestWaitReadableClosedSocket(t *testing.T) {
 	cli, srv := x11SocketPair(t)
 	srv.Close()
@@ -76,8 +78,40 @@ func TestWaitReadableClosedSocket(t *testing.T) {
 	c := &Conn{rw: rw}
 
 	start := time.Now()
-	c.WaitReadable(200 * time.Millisecond)
-	if d := time.Since(start); d > 2*time.Second {
-		t.Errorf("waiting on a closed socket took %v", d)
+	if ready, _ := c.WaitReadable(2 * time.Second); ready {
+		t.Error("a closed socket reported ready")
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("took %v to notice the socket was closed", d)
+	}
+}
+
+// The byte WaitReadable took off the socket to prove something arrived must be
+// handed back, or every packet it peeked at is read one byte short -- which is
+// a desynchronised protocol stream, not a lost byte.
+func TestWaitReadableGivesTheByteBack(t *testing.T) {
+	cli, srv := x11SocketPair(t)
+	defer srv.Close()
+	rw := WrapUnix(cli)
+	c := &Conn{rw: rw}
+
+	if _, err := srv.Write([]byte("ABCDE")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if ready, _ := c.WaitReadable(time.Second); !ready {
+		t.Fatal("data was sent but the wait said no")
+	}
+	// A second wait must not take another byte.
+	if ready, _ := c.WaitReadable(time.Second); !ready {
+		t.Fatal("the peeked byte was forgotten between waits")
+	}
+
+	got := make([]byte, 5)
+	n, err := io.ReadFull(rw, got)
+	if err != nil {
+		t.Fatalf("read back: %v (%d bytes)", err, n)
+	}
+	if string(got) != "ABCDE" {
+		t.Errorf("read %q, want the whole thing; the peeked byte was dropped", got)
 	}
 }

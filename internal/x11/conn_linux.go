@@ -19,57 +19,55 @@ import (
 // travels as an ordinary socket write. It is Linux-only: fd passing over
 // SCM_RIGHTS is how the X11 backend hands the server a shared-memory segment,
 // and the backend itself only runs on Linux.
-type unixRW struct{ c *net.UnixConn }
+type unixRW struct {
+	c *net.UnixConn
+	// peek holds the byte WaitReadable took off the socket to prove something
+	// had arrived. Read hands it back before touching the socket again, so the
+	// packet it belongs to is never seen short.
+	peek []byte
+}
 
 // WrapUnix wraps a dialed *net.UnixConn as an fd-passing transport for
 // Handshake. A connection built over it reports SupportsFDPassing() == true.
 func WrapUnix(c *net.UnixConn) io.ReadWriteCloser { return &unixRW{c: c} }
 
-func (u *unixRW) Read(b []byte) (int, error)  { return u.c.Read(b) }
+func (u *unixRW) Read(b []byte) (int, error) {
+	if len(u.peek) > 0 {
+		n := copy(b, u.peek)
+		u.peek = u.peek[n:]
+		return n, nil
+	}
+	return u.c.Read(b)
+}
 func (u *unixRW) Write(b []byte) (int, error) { return u.c.Write(b) }
 func (u *unixRW) Close() error                { return u.c.Close() }
 
-// WaitReadable blocks until the socket has something to read or d elapses.
+// WaitReadable reports whether the server sent anything within d.
 //
-// It polls rather than setting a read deadline because a deadline can expire
-// between a packet's header and its body, leaving the protocol stream
-// desynchronised; readability is a question about the socket, not an
-// interruption of a read in progress.
+// It reads ONE byte and keeps it, rather than asking the kernel whether the
+// socket is readable. That is the difference between a wait and a broken
+// connection: a read deadline that expires between a packet's header and its
+// body leaves the protocol stream desynchronised, whereas a byte taken off the
+// front and handed back by the next Read cannot cut a packet in half.
 //
-// syscall.Select rather than a dependency on golang.org/x/sys: this package
-// implements the X11 protocol from scratch precisely so that it needs nothing,
-// and one timeout is not a reason to give that up.
+// It exists because the X11 selection protocol has no timeout of its own. A
+// paste asks whoever owns the clipboard and waits for an event that arrives
+// only if that owner is alive and still answering; one that died between
+// claiming and being asked would otherwise block the window for ever.
 func (u *unixRW) WaitReadable(d time.Duration) bool {
-	raw, err := u.c.SyscallConn()
-	if err != nil {
-		return false
+	if len(u.peek) > 0 {
+		return true
 	}
-	deadline := time.Now().Add(d)
-	for {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return false
-		}
-		var ready bool
-		var serr error
-		if cerr := raw.Control(func(fd uintptr) {
-			var set syscall.FdSet
-			set.Bits[fd/64] |= 1 << (fd % 64)
-			tv := syscall.NsecToTimeval(int64(remaining))
-			n, e := syscall.Select(int(fd)+1, &set, nil, nil, &tv)
-			ready, serr = n > 0, e
-		}); cerr != nil {
-			return false
-		}
-		if ready {
-			return true
-		}
-		// A signal interrupts the wait; ask again with whatever time is left
-		// rather than reporting a timeout that did not happen.
-		if serr != nil && serr != syscall.EINTR {
-			return false
-		}
+	if err := u.c.SetReadDeadline(time.Now().Add(d)); err != nil {
+		return false // a closed connection is not going to become readable
 	}
+	defer func() { _ = u.c.SetReadDeadline(time.Time{}) }()
+	var one [1]byte
+	n, err := u.c.Read(one[:])
+	if n > 0 {
+		u.peek = append(u.peek, one[0])
+	}
+	return err == nil && n > 0
 }
 
 // SendFD writes msg with fd attached as a single SCM_RIGHTS control message.
