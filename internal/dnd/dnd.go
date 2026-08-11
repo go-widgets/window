@@ -25,7 +25,10 @@
 // no reference to any backend and every backend embeds the same instance.
 package dnd
 
-import "github.com/go-widgets/toolkit"
+import (
+	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/toolkit/scene"
+)
 
 // Threshold is the pointer travel, in pixels, a press must exceed before a
 // candidate drag becomes a live drag. Below it a press+move+release is a plain
@@ -39,6 +42,37 @@ const Threshold = 4
 // a leaf widget does not, and simply is not descended into.
 type childLister interface {
 	Children() []toolkit.Widget
+}
+
+// sceneHost is satisfied by *scene.HostRoot — the damage-aware root a desktop
+// app runs under. It wraps the application tree behind an unexported container
+// and, unlike every other toolkit container, does NOT expose that tree via
+// Children() []toolkit.Widget, so a generic tree-walker cannot descend it. It
+// does expose the retained Scene, whose root node wraps that same container, so
+// the controller unwraps through it to reach the real widgets. (See the flagged
+// toolkit gap: HostRoot ought to implement Children() like its inner container
+// does, which would make this unwrap unnecessary.)
+type sceneHost interface {
+	Scene() *scene.Scene
+}
+
+// hitRoot returns the widget the controller should hit-test from: the root
+// itself, or — when the root is a scene HostRoot that hides its tree — the
+// wrapped container the retained scene mirrors (a normal childLister). Reading
+// it through Scene().Root().Widget() reflects the LIVE widget tree (the node
+// wraps the live container), so it is correct on the very first event, before
+// any frame is rendered.
+func hitRoot(root toolkit.Widget) toolkit.Widget {
+	if sh, ok := root.(sceneHost); ok {
+		if sc := sh.Scene(); sc != nil {
+			if n := sc.Root(); n != nil {
+				if w := n.Widget(); w != nil {
+					return w
+				}
+			}
+		}
+	}
+	return root
 }
 
 // Controller is the shared drag-and-drop state machine. The zero value is not
@@ -180,7 +214,7 @@ func (c *Controller) reset() {
 // dragSourceAt returns the deepest DragSource (with a non-empty-capable payload
 // contract) under the point, or nil.
 func (c *Controller) dragSourceAt(x, y int) toolkit.DragSource {
-	w := deepestHit(c.root, x, y, func(n toolkit.Widget) bool {
+	w := deepestHit(hitRoot(c.root), x, y, func(n toolkit.Widget) bool {
 		_, ok := n.(toolkit.DragSource)
 		return ok
 	})
@@ -194,7 +228,7 @@ func (c *Controller) dragSourceAt(x, y int) toolkit.DragSource {
 // current payload, or nil.
 func (c *Controller) dropTargetAt(x, y int) toolkit.DropTarget {
 	payload := c.payload
-	w := deepestHit(c.root, x, y, func(n toolkit.Widget) bool {
+	w := deepestHit(hitRoot(c.root), x, y, func(n toolkit.Widget) bool {
 		dt, ok := n.(toolkit.DropTarget)
 		return ok && dt.AcceptsDrop(payload)
 	})

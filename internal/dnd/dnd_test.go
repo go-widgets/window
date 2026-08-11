@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/toolkit/scene"
 )
 
 // --- fake widget tree ------------------------------------------------------
@@ -326,6 +327,35 @@ func TestNilRoot(t *testing.T) {
 	}
 	if c.dropTargetAt(1, 1) != nil {
 		t.Fatal("dropTargetAt on nil root should be nil")
+	}
+}
+
+// TestSceneHostRootUnwrap proves DnD works under the standard damage-aware
+// desktop root: scene.HostRoot hides its wrapped tree (it exposes no Children),
+// so the controller must unwrap it via Scene() to hit-test the real widgets. A
+// full press→drag→drop through a HostRoot must still deliver EventDrop with the
+// payload.
+func TestSceneHostRootUnwrap(t *testing.T) {
+	src := &fakeSource{payload: "host:/f"}
+	src.SetBounds(rect(0, 0, 60, 40))
+	tgt := &fakeTarget{}
+	tgt.SetBounds(rect(0, 40, 60, 40))
+	inner := &fakeContainer{kids: []toolkit.Widget{src, tgt}}
+	inner.SetBounds(rect(0, 0, 60, 80))
+
+	host := scene.NewHostRoot(inner)
+	host.SetBounds(rect(0, 0, 60, 80))
+
+	c := New()
+	c.Bind(host)
+
+	c.Process(toolkit.Event{Kind: toolkit.EventClick, X: 30, Y: 20}) // press on source
+	d := c.Process(toolkit.Event{Kind: toolkit.EventMouseDrag, X: 30, Y: 60})
+	eq(t, kinds(d), []toolkit.EventKind{toolkit.EventDragStart})
+	up := c.Process(toolkit.Event{Kind: toolkit.EventMouseUp, X: 30, Y: 60})
+	eq(t, kinds(up), []toolkit.EventKind{toolkit.EventDrop})
+	if up[0].Code != "host:/f" {
+		t.Fatalf("drop through HostRoot carried %q, want host:/f", up[0].Code)
 	}
 }
 
