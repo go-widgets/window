@@ -99,6 +99,20 @@ type Config struct {
 	RenderScale float64
 }
 
+// Scaler is an optional [Backend] capability: how many framebuffer pixels the
+// back-end is allocating per logical point.
+//
+// It is the answer to [Config.RenderScale], which may have been NativeScale --
+// "whatever the panel is" -- and so is not something the caller can compute
+// from what it passed in. A self-rendering root needs it to tell its own
+// renderer what a point is worth: [Backend.Size] reports FRAMEBUFFER pixels, and
+// dividing by this gives the logical size the user actually sees.
+//
+// A back-end that does not implement it renders one pixel per point.
+type Scaler interface {
+	RenderScale() float64
+}
+
 // NativeScale asks for a framebuffer at the display's own resolution rather
 // than one pixel per logical point. See [Config.RenderScale] for when that is
 // the right thing to ask for -- it is a narrower case than it sounds.
