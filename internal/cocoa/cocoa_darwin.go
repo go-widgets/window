@@ -435,6 +435,10 @@ func (w *Window) dispatch(ev toolkit.Event) {
 	w.paintFrame(false)
 }
 
+// RenderScale reports the framebuffer pixels this window allocates per logical
+// point. Implements the window.Scaler capability.
+func (w *Window) RenderScale() float64 { return w.scale }
+
 // New creates the NSApplication, an NSWindow with a flipped content view and a
 // window delegate, presents an initial blank frame and returns the window ready
 // for Run. It must be called on the process main OS thread (the parent Open

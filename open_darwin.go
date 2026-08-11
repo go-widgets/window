@@ -56,5 +56,6 @@ func (b darwinBackend) Appearance() Appearance {
 var (
 	_ Clipboard        = (*cocoa.Window)(nil)
 	_ AppearanceReader = darwinBackend{}
+	_ Scaler           = (*cocoa.Window)(nil)
 	_ Backend          = darwinBackend{}
 )
