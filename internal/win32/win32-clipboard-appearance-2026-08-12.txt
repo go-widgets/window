@@ -1,0 +1,17 @@
+go-widgets/window — live Win32 proof
+Windows 11 ARM64 (build 26200.8875) under QEMU/HVF, 2026-08-11 21:21 UTC
+Cross-compiled on darwin/arm64, copied over ssh, run on the machine itself.
+
+X11 forwarding request failed on channel 0
+=== RUN   TestLiveWin32ClipboardRoundTrip
+--- PASS: TestLiveWin32ClipboardRoundTrip (0.75s)
+=== RUN   TestLiveWin32ClipboardNonText
+--- PASS: TestLiveWin32ClipboardNonText (0.20s)
+=== RUN   TestLiveWin32Appearance
+    live_windows_test.go:130: no accent on this machine; setting one to exercise the byte order
+    live_windows_test.go:145: byte order confirmed: 0xFF0080FF -> r=255 g=128 b=0
+--- PASS: TestLiveWin32Appearance (0.70s)
+=== RUN   TestLiveWin32SystemFont
+    live_windows_test.go:179: system font: 959752 bytes, signature 00 01 00 00
+--- PASS: TestLiveWin32SystemFont (0.00s)
+PASS
