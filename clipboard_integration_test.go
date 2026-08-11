@@ -19,8 +19,11 @@ package window
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-widgets/window/internal/x11"
 )
 
 func skipUnlessX11(t *testing.T) {
@@ -30,20 +33,88 @@ func skipUnlessX11(t *testing.T) {
 	}
 }
 
-// twoWindows opens an owner and an asker, each on its own connection.
+// twoWindows returns the owner and the asker, opened once for the whole file.
+//
+// Once, not per test, because opening a fresh pair for each of them had the
+// server resetting the connection partway down the file -- and the tests that
+// hit it SKIPPED, which in a lane whose job is to prove something is worse than
+// failing: two of these were quietly not running at all and the lane was green.
+// Now the pair is shared, and a server that cannot be reached is a failure.
+var (
+	pairOnce  sync.Once
+	pairOwner *Window
+	pairAsker *Window
+	pairErr   error
+)
+
 func twoWindows(t *testing.T) (owner, asker *Window) {
 	t.Helper()
-	a, err := Open(Config{Title: "clipboard owner", Width: 120, Height: 80})
-	if err != nil {
-		t.Skipf("no X server: %v", err)
+	pairOnce.Do(func() {
+		a, err := Open(Config{Title: "clipboard owner", Width: 120, Height: 80})
+		if err != nil {
+			pairErr = err
+			return
+		}
+		b, err := Open(Config{Title: "clipboard asker", Width: 120, Height: 80})
+		if err != nil {
+			_ = a.Close()
+			pairErr = err
+			return
+		}
+		pairOwner, pairAsker = a.(*Window), b.(*Window)
+	})
+	if pairErr != nil {
+		t.Fatalf("opening a window on the X server this lane provides: %v", pairErr)
 	}
-	b, err := Open(Config{Title: "clipboard asker", Width: 120, Height: 80})
-	if err != nil {
-		_ = a.Close()
-		t.Fatalf("second window: %v", err)
+	// Each test starts from nobody owning the selection AND from an empty
+	// queue on both connections. The second half matters as much as the first:
+	// a test that deliberately leaves a request unanswered (the silent-owner
+	// one) leaves it sitting in the owner's socket, and the next test's pump
+	// answers THAT instead of its own -- which is how this fixture first sent a
+	// paste an answer meant for the test before it.
+	pairOwner.clipOwned, pairOwner.clipText = false, ""
+	if a, ok := pairOwner.clipAtoms(); ok {
+		_ = pairOwner.conn.SetSelectionOwner(0, a.clipboard, x11.CurrentTime)
 	}
-	t.Cleanup(func() { _ = a.Close(); _ = b.Close() })
-	return a.(*Window), b.(*Window)
+	drain(pairOwner)
+	drain(pairAsker)
+	return pairOwner, pairAsker
+}
+
+// drain reads whatever is already queued and throws it away.
+func drain(w *Window) {
+	for {
+		ready, supported := w.conn.WaitReadable(80 * time.Millisecond)
+		if !supported || !ready {
+			return
+		}
+		if _, err := w.conn.NextEvent(); err != nil {
+			return
+		}
+	}
+}
+
+// claim copies text and waits for the server to have processed the claim.
+//
+// The round trip is not politeness. The owner and the asker are on DIFFERENT
+// connections, and X orders requests within a connection, not between two: a
+// paste issued 76 microseconds after a copy asked a server that had not yet
+// seen the claim, and was told nobody owned the selection. Real applications
+// never race that closely, but a test does.
+func claim(t *testing.T, owner *Window, text string) {
+	t.Helper()
+	owner.SetClipboardText(text)
+	a, ok := owner.clipAtoms()
+	if !ok {
+		t.Fatal("could not intern the clipboard atoms")
+	}
+	who, err := owner.conn.GetSelectionOwner(a.clipboard)
+	if err != nil {
+		t.Fatalf("confirming the claim: %v", err)
+	}
+	if who != owner.win {
+		t.Fatalf("after copying, the selection is owned by %#x, not us (%#x)", who, owner.win)
+	}
 }
 
 // pump answers selection requests on the owner's connection for a while, which
@@ -53,6 +124,8 @@ func pump(t *testing.T, w *Window, d time.Duration) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		handled := 0
+		defer func() { t.Logf("pump handled %d selection events", handled) }()
 		deadline := time.Now().Add(d)
 		for time.Now().Before(deadline) {
 			ready, supported := w.conn.WaitReadable(50 * time.Millisecond)
@@ -66,7 +139,11 @@ func pump(t *testing.T, w *Window, d time.Duration) chan struct{} {
 			if err != nil {
 				return
 			}
-			w.handleSelectionEvent(ev)
+			if w.handleSelectionEvent(ev) {
+				handled++
+			} else {
+				t.Logf("pump saw a non-selection event, code %d", ev.Code)
+			}
 		}
 	}()
 	return done
@@ -77,7 +154,7 @@ func TestLiveX11ClipboardCrossesTwoWindows(t *testing.T) {
 	owner, asker := twoWindows(t)
 
 	const text = "go-widgets clipboard — accentué, 日本語, 🎯"
-	owner.SetClipboardText(text)
+	claim(t, owner, text)
 	stop := pump(t, owner, 3*time.Second)
 
 	if got := asker.ClipboardText(); got != text {
@@ -93,7 +170,7 @@ func TestLiveX11ClipboardOwnerReadsItsOwnText(t *testing.T) {
 	skipUnlessX11(t)
 	owner, _ := twoWindows(t)
 
-	owner.SetClipboardText("mine")
+	claim(t, owner, "mine")
 	if got := owner.ClipboardText(); got != "mine" {
 		t.Errorf("the owner read %q of its own text", got)
 	}
@@ -122,7 +199,7 @@ func TestLiveX11ClipboardDoesNotHangOnASilentOwner(t *testing.T) {
 	skipUnlessX11(t)
 	owner, asker := twoWindows(t)
 
-	owner.SetClipboardText("never answered") // claimed, but nothing will pump
+	claim(t, owner, "never answered") // claimed, but nothing will pump
 
 	start := time.Now()
 	got := asker.ClipboardText()
@@ -145,12 +222,11 @@ func TestLiveX11ClipboardKeepsEventsThatArriveDuringAPaste(t *testing.T) {
 	skipUnlessX11(t)
 	owner, asker := twoWindows(t)
 
-	owner.SetClipboardText("text")
+	claim(t, owner, "text")
 	stop := pump(t, owner, 3*time.Second)
 
-	// An Expose the asker has not read yet: its window was just mapped.
 	if got := asker.ClipboardText(); got != "text" {
-		t.Fatalf("paste read %q", got)
+		t.Errorf("paste read %q", got)
 	}
 	<-stop
 

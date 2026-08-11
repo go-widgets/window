@@ -199,6 +199,15 @@ func (w *Window) handleSelectionEvent(ev x11.Event) bool {
 		w.answerSelectionRequest(ev, a)
 		return true
 	case xcodeSelectionClear:
+		// Somebody else copied -- usually. A SelectionClear names the ownership
+		// it ends, and one from an ownership we have SINCE REPLACED would
+		// otherwise wipe text we own right now: copy, lose the selection, copy
+		// again quickly, and the stale clear lands after the new claim. Asking
+		// the server who owns it now is one round trip on a rare event, and it
+		// cannot be fooled by an event's age.
+		if owner, err := w.conn.GetSelectionOwner(a.clipboard); err == nil && owner == w.win {
+			return true // still ours: this clear is about an ownership that is over
+		}
 		w.clipOwned, w.clipText = false, ""
 		return true
 	}

@@ -201,10 +201,14 @@ jobs:
         with:
           go-version: stable
       - name: Install X utilities
-        run: sudo apt-get update && sudo apt-get install -y xvfb x11-apps xdotool imagemagick
+        run: sudo apt-get update && sudo apt-get install -y xvfb x11-apps xdotool imagemagick dbus
       - name: Run live integration test under Xvfb
         env:
           WINDOW_X11_INTEGRATION: "1"
+        # dbus is here for the desktop-appearance proof, which starts its own
+        # private session bus: the unit tests answer Settings.Read from a
+        # hand-made object and never touch serialisation, which is exactly where
+        # a variant-wrapped variant can lie.
         run: xvfb-run -s "-screen 0 1024x768x24" go test -tags=integration -run TestLiveX11 -v ./...
       - name: Upload the captured window + SHM measurement as build artifacts
         if: always()
