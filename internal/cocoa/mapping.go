@@ -234,6 +234,14 @@ func MapMouseDown(x, y int, m Mods) toolkit.Event {
 	return m.apply(toolkit.Event{Kind: toolkit.EventClick, X: x, Y: y})
 }
 
+// MapSecondaryClick turns a secondary (right / two-finger / Control-click) press
+// at the given view-local pixel into an EventSecondaryClick — the gesture that
+// opens a context menu. It is a press with no paired release: a menu opens on
+// the down, and there is no secondary-drag to track.
+func MapSecondaryClick(x, y int, m Mods) toolkit.Event {
+	return m.apply(toolkit.Event{Kind: toolkit.EventSecondaryClick, X: x, Y: y})
+}
+
 // MapMouseUp turns a mouse-button release into an EventMouseUp.
 func MapMouseUp(x, y int, m Mods) toolkit.Event {
 	return m.apply(toolkit.Event{Kind: toolkit.EventMouseUp, X: x, Y: y})
