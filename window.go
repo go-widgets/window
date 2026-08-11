@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/dnd"
 	"github.com/go-widgets/window/internal/x11"
 )
 
@@ -106,6 +107,7 @@ type Window struct {
 
 	root   toolkit.Widget
 	dmg    DamageRenderer // non-nil when root opts into incremental present
+	dnd    *dnd.Controller
 	closed bool
 
 	// originX/originY are the window's position, kept for the accessibility
@@ -336,6 +338,10 @@ func (w *Window) resize(nw, nh int) {
 func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
 	w.dmg, _ = root.(DamageRenderer)
+	if w.dnd == nil {
+		w.dnd = dnd.New()
+	}
+	w.dnd.Bind(root)
 	// Initial frame: paint the whole framebuffer, then present the full surface
 	// for the window's first map. When the root is incremental, draw through it
 	// so its full-surface seed damage is consumed here — the first interaction
@@ -362,7 +368,9 @@ func (w *Window) Run(root toolkit.Widget) error {
 		}
 		for _, ev := range out.events {
 			if w.root != nil {
-				w.root.OnEvent(ev)
+				for _, dev := range w.dnd.Process(ev) {
+					w.root.OnEvent(dev)
+				}
 			}
 		}
 		if out.repaint || out.resize || len(out.events) > 0 {

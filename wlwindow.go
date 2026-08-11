@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/dnd"
 	"github.com/go-widgets/window/internal/wayland"
 )
 
@@ -47,6 +48,7 @@ type wlWindow struct {
 	theme *toolkit.Theme
 	root  toolkit.Widget
 	dmg   DamageRenderer // non-nil when root opts into incremental present
+	dnd   *dnd.Controller
 
 	// bufDamage[i] is the region pool buffer i still owes relative to the live
 	// framebuffer — the pixels changed while it was NOT the attached buffer,
@@ -561,6 +563,10 @@ func (w *wlWindow) applyResize() {
 func (w *wlWindow) Run(root toolkit.Widget) error {
 	w.root = root
 	w.dmg, _ = root.(DamageRenderer)
+	if w.dnd == nil {
+		w.dnd = dnd.New()
+	}
+	w.dnd.Bind(root)
 	if err := w.paintInitial(); err != nil {
 		return err
 	}
@@ -579,7 +585,9 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 		}
 		if w.root != nil {
 			for _, ev := range w.pending {
-				w.root.OnEvent(ev)
+				for _, dev := range w.dnd.Process(ev) {
+					w.root.OnEvent(dev)
+				}
 			}
 		}
 		if w.repaint || len(w.pending) > 0 {

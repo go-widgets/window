@@ -45,6 +45,7 @@ import (
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/dnd"
 )
 
 // Win32 DLLs and the procedures the backend calls, resolved lazily on first use.
@@ -217,6 +218,7 @@ type Window struct {
 
 	root   toolkit.Widget
 	dmg    damageRenderer
+	dnd    *dnd.Controller
 	closed bool
 }
 
@@ -376,6 +378,10 @@ func (w *Window) sizeAndCenter() {
 func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
 	w.dmg, _ = root.(damageRenderer)
+	if w.dnd == nil {
+		w.dnd = dnd.New()
+	}
+	w.dnd.Bind(root)
 	// Seed the first frame: paint the whole framebuffer (through the incremental
 	// renderer when the root opts in, so its whole-surface seed damage is
 	// consumed here) and force an immediate full present.
@@ -594,7 +600,9 @@ func (w *Window) onDpiChanged(newDPI uint32) {
 // dirtied.
 func (w *Window) dispatch(ev toolkit.Event) {
 	if w.root != nil {
-		w.root.OnEvent(ev)
+		for _, dev := range w.dnd.Process(ev) {
+			w.root.OnEvent(dev)
+		}
 	}
 	w.paintFrame(false)
 }

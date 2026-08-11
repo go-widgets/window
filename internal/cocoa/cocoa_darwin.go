@@ -37,6 +37,7 @@ import (
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/dnd"
 )
 
 // nsPoint / nsSize / nsRect mirror the CoreGraphics geometry structs; purego
@@ -161,6 +162,7 @@ type Window struct {
 	root       toolkit.Widget
 	dmg        damageRenderer
 	buttonHeld bool
+	dnd        *dnd.Controller
 
 	closed bool
 }
@@ -432,7 +434,9 @@ func mainScreenVisible() (w, h float64) {
 // dirtied.
 func (w *Window) dispatch(ev toolkit.Event) {
 	if w.root != nil {
-		w.root.OnEvent(ev)
+		for _, dev := range w.dnd.Process(ev) {
+			w.root.OnEvent(dev)
+		}
 	}
 	w.paintFrame(false)
 }
@@ -540,6 +544,10 @@ func (w *Window) Run(root toolkit.Widget) error {
 func (w *Window) bindAndSeed(root toolkit.Widget) {
 	w.root = root
 	w.dmg, _ = root.(damageRenderer)
+	if w.dnd == nil {
+		w.dnd = dnd.New()
+	}
+	w.dnd.Bind(root)
 	if w.dmg != nil {
 		w.drawIncremental()
 	} else {
