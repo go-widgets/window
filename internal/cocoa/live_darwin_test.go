@@ -236,6 +236,9 @@ func TestLiveCocoaWindow(t *testing.T) {
 		// A right press must reach the root as a secondary click (the context-menu
 		// gesture), travelling the -rightMouseDown: callback and mapping.go decode.
 		win.postMouse(app, evtRightMouseDown, loc)
+		// A bare pointer move (no button) must reach the root as EventMouseMove —
+		// the hover the window now opts into with setAcceptsMouseMovedEvents.
+		win.postMouse(app, evtMouseMoved, loc)
 
 		// Synthesise a printable key 'a' (keyCode 0 on ANSI → printable path).
 		win.postKey(app, evtKeyDown, "a", 0)
@@ -295,6 +298,9 @@ func TestLiveCocoaWindow(t *testing.T) {
 	}
 	if !root.has(toolkit.EventSecondaryClick, "") {
 		t.Fatalf("no EventSecondaryClick dispatched to root after a right press; got %+v", root.events)
+	}
+	if !root.has(toolkit.EventMouseMove, "") {
+		t.Fatalf("no EventMouseMove dispatched to root after a bare pointer move; got %+v", root.events)
 	}
 	if !root.has(toolkit.EventKeyDown, "a") {
 		t.Fatalf("no EventKeyDown 'a' dispatched to root; got %+v", root.events)
