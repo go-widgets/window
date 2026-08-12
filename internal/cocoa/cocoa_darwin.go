@@ -71,6 +71,7 @@ const (
 	evtLeftMouseDown  = 1
 	evtLeftMouseUp    = 2
 	evtRightMouseDown = 3
+	evtMouseMoved     = 5
 	evtKeyDown        = 10
 	evtKeyUp          = 11
 )
@@ -95,6 +96,7 @@ var (
 	selSetContentView       = objc.RegisterName("setContentView:")
 	selContentView          = objc.RegisterName("contentView")
 	selMakeKeyAndOrderFront = objc.RegisterName("makeKeyAndOrderFront:")
+	selSetAcceptsMouseMoved = objc.RegisterName("setAcceptsMouseMovedEvents:")
 	selMakeFirstResponder   = objc.RegisterName("makeFirstResponder:")
 	selCenter               = objc.RegisterName("center")
 	selSetDelegate          = objc.RegisterName("setDelegate:")
@@ -562,6 +564,12 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScal
 	view := objc.ID(vc).Send(selAlloc).Send(selInitWithFrame, rect)
 	view.Send(selRetain)
 	win.Send(selSetContentView, view)
+	// Ask AppKit to deliver -mouseMoved: as the pointer moves over the window,
+	// not just while a button is held. Without this a hover never reaches the
+	// view, so widgets that highlight what the pointer is over (a context menu's
+	// rows, hoverable controls) stay dark and wheel routing has no fresh pointer
+	// position between notches.
+	win.Send(selSetAcceptsMouseMoved, true)
 
 	deleg := objc.ID(dc).Send(selAlloc).Send(selInit)
 	deleg.Send(selRetain)
