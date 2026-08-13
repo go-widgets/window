@@ -350,3 +350,55 @@ func TestCstr(t *testing.T) {
 		t.Errorf("cstr no NUL = %q", got)
 	}
 }
+
+// Wayland refuses to let a client act on the user's behalf out of nowhere:
+// taking the clipboard quotes the serial of the input event that justifies it.
+// Every event carrying one used to be decoded and thrown away, so there was
+// nothing to quote.
+func TestSeatRecordsInputSerials(t *testing.T) {
+	c := NewConn(&stubTransport{}, binary.LittleEndian)
+	seat := &Seat{conn: c, id: 7}
+
+	if got := seat.LastSerial(); got != 0 {
+		t.Errorf("a seat nobody has touched reports serial %d, want 0", got)
+	}
+
+	p := &Pointer{conn: c, id: 8, seat: seat}
+	k := &Keyboard{conn: c, id: 9, seat: seat, keymap: &Keymap{codeSyms: map[uint32][]string{}}}
+
+	// A pointer enter carries a serial: serial, surface, x, y.
+	e := newEncoder(c.order)
+	e.putU32(4242)
+	e.putU32(1)
+	e.putFixed(0)
+	e.putFixed(0)
+	if err := p.handle(pointerEvtEnter, newDecoder(c.order, e.buf)); err != nil {
+		t.Fatalf("pointer enter: %v", err)
+	}
+	if got := seat.LastSerial(); got != 4242 {
+		t.Errorf("after a pointer enter the seat reports %d, want 4242", got)
+	}
+
+	// A keyboard event supersedes it: the latest interaction is the one that
+	// justifies the next request.
+	e = newEncoder(c.order)
+	e.putU32(5555)
+	e.putU32(1)
+	if err := k.handle(keyboardEvtLeave, newDecoder(c.order, e.buf)); err != nil {
+		t.Fatalf("keyboard leave: %v", err)
+	}
+	if got := seat.LastSerial(); got != 5555 {
+		t.Errorf("after a keyboard event the seat reports %d, want 5555", got)
+	}
+
+	// A zero is not a serial the compositor issued, and must not erase a real
+	// one — quoting 0 gets a request refused.
+	seat.noteSerial(0)
+	if got := seat.LastSerial(); got != 5555 {
+		t.Errorf("a zero serial overwrote a real one: %d", got)
+	}
+
+	// A device with no seat is not a crash.
+	(&Pointer{}).noteSerial(1)
+	(&Keyboard{}).noteSerial(1)
+}
