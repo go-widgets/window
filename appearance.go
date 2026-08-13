@@ -37,7 +37,9 @@ type Appearance struct {
 // toolkit.NewTrueTypeFont, and an error when the platform has no such file to
 // offer.
 //
-// Implemented today by the macOS (Cocoa) back-end.
+// Implemented by macOS (Cocoa), Windows (the registry's personalisation keys)
+// and both Linux back-ends, which read the same XDG desktop portal — the desktop
+// look is not a property of the display server carrying the pixels.
 type AppearanceReader interface {
 	Appearance() Appearance
 	SystemFontTTF() ([]byte, error)

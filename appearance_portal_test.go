@@ -145,8 +145,33 @@ func TestAppearanceWithoutAPortal(t *testing.T) {
 	if got := w.Appearance(); got.Dark || got.HasAccent {
 		t.Errorf("a desktop with no portal reported %+v", got)
 	}
-	if _, ok := w.portalObject(); ok {
+	if _, ok := w.portal.object(); ok {
 		t.Error("a failed connection was retried")
+	}
+}
+
+// Both Linux back-ends answer the capability, and they answer it the same way:
+// the desktop's look does not depend on which display server carries the pixels.
+// A wlWindow that forwarded to its own uninitialised state, or not at all, would
+// leave a sway session reading light on a dark desktop.
+func TestBothLinuxBackendsReadTheSamePortal(t *testing.T) {
+	x, wl := &Window{}, &wlWindow{}
+	x.portal.tried, wl.portal.tried = true, true // no bus on either
+
+	if got := wl.Appearance(); got.Dark || got.HasAccent {
+		t.Errorf("wayland with no portal reported %+v", got)
+	}
+	// The cache is the wlWindow's own, and it is the one Appearance consults --
+	// a forward to a different (or missing) portalConn would not see this.
+	wl.portal.cached, wl.portal.at = Appearance{Dark: true}, time.Now()
+	if got := wl.Appearance(); !got.Dark {
+		t.Error("the wayland window does not read its own portal state")
+	}
+	if got := x.Appearance(); got.Dark {
+		t.Error("the two back-ends share one cache")
+	}
+	if _, err := wl.SystemFontTTF(); !errors.Is(err, errNoSystemFont) {
+		t.Errorf("wayland SystemFontTTF error = %v, want the explanation", err)
 	}
 }
 

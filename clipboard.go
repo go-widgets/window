@@ -29,7 +29,9 @@ package window
 // implement this, the assertion fails, and the toolkit's in-process clipboard
 // stays in place — copy/paste still works within the app.
 //
-// Implemented today by the macOS (Cocoa) back-end, through NSPasteboard.
+// Implemented by every back-end that has a pasteboard to reach: macOS through
+// NSPasteboard, Windows through the Win32 clipboard, X11 through selection
+// ownership and Wayland through wl_data_device.
 type Clipboard interface {
 	// ClipboardText returns the pasteboard's plain-text contents, or "" when it
 	// holds no text (an image, a file promise, or nothing at all).

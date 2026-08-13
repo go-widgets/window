@@ -14,13 +14,16 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// The X11 half of the AppearanceReader capability.
+// The Linux half of the AppearanceReader capability, shared by both back-ends.
 //
-// There is nothing to ask X11 itself. Dark mode and an accent colour are
-// desktop-environment settings, not display-server ones, and the X protocol has
-// no opinion about either. The answer lives behind the XDG desktop portal, on
-// the session bus, which is also what a sandboxed application can reach — so
-// this works the same inside a Flatpak as outside one.
+// There is nothing to ask X11 or Wayland itself. Dark mode and an accent colour
+// are desktop-environment settings, not display-server ones, and neither
+// protocol has an opinion about either. The answer lives behind the XDG desktop
+// portal, on the session bus, which is also what a sandboxed application can
+// reach — so this works the same inside a Flatpak as outside one, and the same
+// under sway as under X11. That is why the reading is a method on the portal
+// state rather than on a window: the two back-ends share it exactly, and
+// duplicating it would be duplicating a D-Bus client for no reason.
 //
 // A desktop with no portal (a bare window manager, a minimal container) is not
 // a broken desktop. It reports no preference, and an application that asked
@@ -45,19 +48,18 @@ const (
 // what it costs.
 const appearanceCacheFor = 500 * time.Millisecond
 
-// Appearance reports the desktop's colour scheme and accent colour. Implements
-// the AppearanceReader capability.
-func (w *Window) Appearance() Appearance {
-	if !w.portal.at.IsZero() && time.Since(w.portal.at) < appearanceCacheFor {
-		return w.portal.cached
+// appearance reads the desktop's colour scheme and accent colour, cached.
+func (p *portalConn) appearance() Appearance {
+	if !p.at.IsZero() && time.Since(p.at) < appearanceCacheFor {
+		return p.cached
 	}
-	ap := w.readAppearance()
-	w.portal.cached, w.portal.at = ap, time.Now()
+	ap := p.read()
+	p.cached, p.at = ap, time.Now()
 	return ap
 }
 
-func (w *Window) readAppearance() Appearance {
-	obj, ok := w.portalObject()
+func (p *portalConn) read() Appearance {
+	obj, ok := p.object()
 	if !ok {
 		return Appearance{}
 	}
@@ -92,21 +94,21 @@ func appearanceFrom(obj dbus.BusObject) Appearance {
 	return ap
 }
 
-// portalObject returns the portal, connecting once. A failure is remembered:
-// a desktop without a portal will not grow one while the window is open, and
-// retrying every poll would spend a connection attempt per frame proving it.
-func (w *Window) portalObject() (dbus.BusObject, bool) {
-	bus, _ := w.portal.bus.(*dbus.Conn)
+// object returns the portal, connecting once. A failure is remembered: a desktop
+// without a portal will not grow one while the window is open, and retrying
+// every poll would spend a connection attempt per frame proving it.
+func (p *portalConn) object() (dbus.BusObject, bool) {
+	bus, _ := p.bus.(*dbus.Conn)
 	if bus == nil {
-		if w.portal.tried {
+		if p.tried {
 			return nil, false
 		}
-		w.portal.tried = true
+		p.tried = true
 		var err error
 		if bus, err = dbus.SessionBus(); err != nil {
 			return nil, false
 		}
-		w.portal.bus = bus
+		p.bus = bus
 	}
 	return bus.Object(portalService, dbus.ObjectPath(portalPath)), true
 }
@@ -146,14 +148,10 @@ func unitByte(v float64) uint8 {
 // errNoSystemFont is what SystemFontTTF returns here, and the wording is the
 // point: this is not a missing feature, it is a difference in what the
 // platforms offer.
-var errNoSystemFont = errors.New("window: X11 desktops name a font rather than providing one; resolve it with a font library")
-
-// SystemFontTTF reports that there is no such file to hand over. Implements the
-// AppearanceReader capability.
 //
 // macOS has one system face at a known path, so it can be read and used. A
 // Linux desktop instead names a family ("Cantarell 11") and leaves finding it
 // to fontconfig, which is a font library's job and not a window's. Returning an
 // error says so; returning some arbitrary file found on disk would be worse
 // than saying nothing.
-func (w *Window) SystemFontTTF() ([]byte, error) { return nil, errNoSystemFont }
+var errNoSystemFont = errors.New("window: Linux desktops name a font rather than providing one; resolve it with a font library")
