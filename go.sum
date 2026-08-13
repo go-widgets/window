@@ -4,6 +4,8 @@ github.com/go-images/images v0.0.0-20260811115337-bc5d586f8e38 h1:p+DjIujiwUvBiy
 github.com/go-images/images v0.0.0-20260811115337-bc5d586f8e38/go.mod h1:nWwQCf77xG1GhaSD3rvlp7FNjjDhz47vrztyeBvIerk=
 github.com/go-macos/objc v0.1.1 h1:fcuSplZNWzpZjimxMN3HkDHW7XnHFaGaEDIwrTbhdxs=
 github.com/go-macos/objc v0.1.1/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
+github.com/go-mswin/win32 v0.1.0 h1:A5Qfrix2eACXXskaIALrwu2+OWpmkRrpdw68yp8EoSw=
+github.com/go-mswin/win32 v0.1.0/go.mod h1:ypmW4zosl3mXhy0O39EDbHk+AUjgaXGyFgY5UpX3AxI=
 github.com/go-opentype/bidi v0.2.1 h1:7xCGqywPYxmwSfPBgP1Ewrp2Iwg2S03NeKxGWTz2guo=
 github.com/go-opentype/bidi v0.2.1/go.mod h1:PaWZ9P93jwQaXsEvAoSxvJ3P70S9f8TuFGDstTvcfmM=
 github.com/go-opentype/fonts v0.6.0 h1:pUKITjwC/gZg+XNCqP5eGLi8RHu2RAIcDrr6yp1VKMU=

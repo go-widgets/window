@@ -1,0 +1,24 @@
+go-widgets/window win32 backend on go-mswin/win32 — equivalence proof on the
+Win11 ARM64 QEMU VM (build 26200), 2026-08-13.
+
+cmd/windowdemo cross-compiled here (GOOS=windows GOARCH=arm64) and run in the
+VM's interactive session; UI Automation driven IN THAT SESSION (per-session).
+
+  BEFORE (win32-gomswin-before-2026-08-13.png): the migrated backend opens a
+  titled, framed window "go-widgets/window demo" and blits the toolkit
+  framebuffer through win32.StretchDIBitsBGRA — "Hello from go-widgets/window",
+  the subtitle, the "Click me" button and "clicks: 0" all render crisply, i.e.
+  BGRA channel order and top-down orientation are correct through the shared
+  helper.
+
+  EVENT: UIA finds the window ("WINDOW_FOUND"), invokes the "Click me" button
+  ("CLICK_INVOKED") — replayed as a real MapMouseDown/MapMouseUp by the
+  a11y bridge into the toolkit tree — and reads the label back as "clicks: 1".
+
+  AFTER (win32-gomswin-after-2026-08-13.png): the counter now reads "clicks: 1"
+  and only the button row + counter repainted (the damage-region InvalidateRect
+  + partial StretchDIBitsBGRA blit), i.e. the incremental-present path still
+  works after the migration.
+
+Behaviour is equivalent to the pre-migration backend: window creation, the
+message pump, event dispatch, full and incremental blit all verified live.
