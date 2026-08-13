@@ -11,9 +11,11 @@
 // over a top-down 32bpp BITMAPINFO in WM_PAINT, and decodes native WM_MOUSEMOVE/
 // WM_LBUTTONDOWN/WM_RBUTTONDOWN/WM_*BUTTONUP/WM_MOUSEWHEEL/WM_KEYDOWN/WM_KEYUP/
 // WM_CHAR messages through mapping.go into toolkit.Event. The whole path reaches
-// the Win32 API through the process' own user32/gdi32/kernel32 DLLs via
-// syscall.NewLazyDLL + syscall.SyscallN and a syscall.NewCallback WNDPROC — no
-// cgo — so it links with CGO_ENABLED=0.
+// the Win32 API through github.com/go-mswin/win32 (the shared, pure-Go CGO=0
+// bindings on golang.org/x/sys/windows) — its lazy DLL handles, the
+// class/window/pump procedures, the WNDCLASSEXW/MSG/RECT/POINT types and the
+// BGRA StretchDIBits blit — plus a win32.NewCallback WNDPROC, so it links with
+// CGO_ENABLED=0.
 //
 // DPI model. The toolkit lays out and paints in the framebuffer's coordinate
 // space, which is kept at the window's LOGICAL point size (DIPs) so the UI
@@ -40,31 +42,30 @@ package win32
 import (
 	"fmt"
 	"sync"
-	"syscall"
 	"unsafe"
 
+	"github.com/go-mswin/win32"
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/window/internal/dnd"
 )
 
-// Win32 DLLs and the procedures the backend calls, resolved lazily on first use.
+// The shared Win32 surface — the user32/gdi32/kernel32 lazy DLLs, the nine
+// window/class/pump procedures (RegisterClassExW, CreateWindowExW,
+// DefWindowProcW, GetMessageW, TranslateMessage, DispatchMessageW,
+// PostQuitMessage, LoadCursorW, GetModuleHandleW), the WNDCLASSEXW/MSG/RECT/POINT
+// types and the top-down BGRA StretchDIBits blit — now comes from
+// github.com/go-mswin/win32 (the Windows peer of go-macos/objc) instead of being
+// hand-rolled here. user32 and kernel32 alias win32's shared lazy DLL handles so
+// the accessibility and clipboard siblings in this package keep binding their
+// own procedures off them unchanged.
 var (
-	user32   = syscall.NewLazyDLL("user32.dll")
-	gdi32    = syscall.NewLazyDLL("gdi32.dll")
-	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	user32   = win32.User32
+	kernel32 = win32.Kernel32
 
-	procRegisterClassExW           = user32.NewProc("RegisterClassExW")
-	procCreateWindowExW            = user32.NewProc("CreateWindowExW")
-	procDefWindowProcW             = user32.NewProc("DefWindowProcW")
-	procGetMessageW                = user32.NewProc("GetMessageW")
-	procTranslateMessage           = user32.NewProc("TranslateMessage")
-	procDispatchMessageW           = user32.NewProc("DispatchMessageW")
-	procPostQuitMessage            = user32.NewProc("PostQuitMessage")
-	procDestroyWindow              = user32.NewProc("DestroyWindow")
+	// Window-specific procedures, bound off the shared user32 handle.
 	procShowWindow                 = user32.NewProc("ShowWindow")
 	procUpdateWindow               = user32.NewProc("UpdateWindow")
-	procLoadCursorW                = user32.NewProc("LoadCursorW")
 	procBeginPaint                 = user32.NewProc("BeginPaint")
 	procEndPaint                   = user32.NewProc("EndPaint")
 	procInvalidateRect             = user32.NewProc("InvalidateRect")
@@ -76,11 +77,10 @@ var (
 	procSystemParametersInfoForDpi = user32.NewProc("SystemParametersInfoForDpi")
 	procMapVirtualKeyW             = user32.NewProc("MapVirtualKeyW")
 	procGetKeyState                = user32.NewProc("GetKeyState")
-
-	procStretchDIBits = gdi32.NewProc("StretchDIBits")
-
-	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
 )
+
+// kernel32 aliases win32.Kernel32 for clipboard_windows.go in this package.
+var _ = kernel32
 
 // Win32 message and style constants (winuser.h).
 const (
@@ -100,20 +100,15 @@ const (
 	wmMouseWheel  = 0x020A
 	wmDpiChanged  = 0x02E0
 
-	wsOverlappedWindow = 0x00CF0000                        // WS_OVERLAPPEDWINDOW (titled, resizable, min/max)
-	swShow             = 5                                 // SW_SHOW
-	cwUseDefault       = ^uintptr(0) &^ (^uintptr(0) >> 1) // 0x80000000 (CW_USEDEFAULT), unused after sizing
+	wsOverlappedWindow = 0x00CF0000  // WS_OVERLAPPEDWINDOW (titled, resizable, min/max)
+	swShow             = 5           // SW_SHOW
+	cwUseDefault       = -0x80000000 // CW_USEDEFAULT ((int)0x80000000); the window is repositioned by sizeAndCenter regardless
 
 	idcArrow = 32512 // IDC_ARROW
 
 	// SetWindowPos flags: don't touch Z-order or activation while (re)sizing.
 	swpNoZOrder   = 0x0004
 	swpNoActivate = 0x0010
-
-	// GDI StretchDIBits: BI_RGB compression, DIB_RGB_COLORS, SRCCOPY raster op.
-	biRGB        = 0
-	dibRGBColors = 0
-	srcCopy      = 0x00CC0020
 
 	// SystemParametersInfoForDpi: SPI_GETWORKAREA returns the usable monitor
 	// rectangle (excluding the taskbar) in physical pixels.
@@ -131,64 +126,11 @@ const (
 	vkRWin    = 0x5C // right ⊞ Windows/logo key
 )
 
-// rect mirrors Win32 RECT (left, top, right, bottom).
-type rect struct{ left, top, right, bottom int32 }
-
-// point mirrors Win32 POINT.
-type point struct{ x, y int32 }
-
-// msg mirrors Win32 MSG.
-type msg struct {
-	hwnd     uintptr
-	message  uint32
-	wParam   uintptr
-	lParam   uintptr
-	time     uint32
-	pt       point
-	lPrivate uint32
-}
-
-// paintStruct mirrors Win32 PAINTSTRUCT; only hdc and rcPaint are read.
-type paintStruct struct {
-	hdc         uintptr
-	fErase      int32
-	rcPaint     rect
-	fRestore    int32
-	fIncUpdate  int32
-	rgbReserved [32]byte
-}
-
-// wndClassExW mirrors Win32 WNDCLASSEXW.
-type wndClassExW struct {
-	cbSize        uint32
-	style         uint32
-	lpfnWndProc   uintptr
-	cbClsExtra    int32
-	cbWndExtra    int32
-	hInstance     uintptr
-	hIcon         uintptr
-	hCursor       uintptr
-	hbrBackground uintptr
-	lpszMenuName  *uint16
-	lpszClassName *uint16
-	hIconSm       uintptr
-}
-
-// bitmapInfoHeader mirrors Win32 BITMAPINFOHEADER. A negative biHeight requests
-// a top-down DIB (row 0 at the top), matching the toolkit framebuffer.
-type bitmapInfoHeader struct {
-	biSize          uint32
-	biWidth         int32
-	biHeight        int32
-	biPlanes        uint16
-	biBitCount      uint16
-	biCompression   uint32
-	biSizeImage     uint32
-	biXPelsPerMeter int32
-	biYPelsPerMeter int32
-	biClrUsed       uint32
-	biClrImportant  uint32
-}
+// The RECT/POINT/MSG/WNDCLASSEXW/PAINTSTRUCT/BITMAPINFOHEADER structs this
+// backend used to declare now come from github.com/go-mswin/win32 (win32.Rect,
+// win32.Point, win32.WndClassExW, win32.PaintStruct); the message loop uses
+// win32.Pump and the blit uses win32.StretchDIBitsBGRA, which builds the DIB
+// header internally.
 
 // damageRenderer is the OPT-IN incremental-present capability, declared
 // structurally so this backend needs no import of the parent window package
@@ -229,7 +171,7 @@ type Window struct {
 // app owns one message loop and one window here.
 var active *Window
 
-// wndProcOnce installs the WNDPROC callback exactly once (syscall.NewCallback
+// wndProcOnce installs the WNDPROC callback exactly once (win32.NewCallback
 // allocates a non-collectable trampoline, so it must not be created per window).
 var (
 	wndProcOnce sync.Once
@@ -252,25 +194,25 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 		theme = toolkit.DefaultDark()
 	}
 
-	hInstance, _, _ := procGetModuleHandleW.Call(0)
-	className, err := syscall.UTF16PtrFromString("GoWidgetsWindowClass")
+	hInstance := uintptr(win32.GetModuleHandle(nil))
+	className, err := win32.UTF16PtrFromString("GoWidgetsWindowClass")
 	if err != nil {
 		return nil, err
 	}
-	cursor, _, _ := procLoadCursorW.Call(0, uintptr(idcArrow))
+	cursor := win32.LoadCursor(0, uintptr(idcArrow))
 
-	wndProcOnce.Do(func() { wndProcCB = syscall.NewCallback(wndProc) })
+	wndProcOnce.Do(func() { wndProcCB = win32.NewCallback(wndProc) })
 
-	wc := wndClassExW{
-		cbSize:        uint32(unsafe.Sizeof(wndClassExW{})),
-		style:         0x0003, // CS_HREDRAW|CS_VREDRAW: repaint on resize
-		lpfnWndProc:   wndProcCB,
-		hInstance:     hInstance,
-		hCursor:       cursor,
-		lpszClassName: className,
+	wc := win32.WndClassExW{
+		CbSize:        uint32(unsafe.Sizeof(win32.WndClassExW{})),
+		Style:         0x0003, // CS_HREDRAW|CS_VREDRAW: repaint on resize
+		LpfnWndProc:   wndProcCB,
+		HInstance:     win32.HINSTANCE(hInstance),
+		HCursor:       cursor,
+		LpszClassName: className,
 	}
-	if r, _, e := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); r == 0 {
-		return nil, fmt.Errorf("win32: RegisterClassExW: %w", e)
+	if _, err := win32.RegisterClassEx(&wc); err != nil {
+		return nil, err
 	}
 
 	w := &Window{
@@ -282,25 +224,22 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 	}
 	active = w
 
-	titlePtr, err := syscall.UTF16PtrFromString(title)
+	titlePtr, err := win32.UTF16PtrFromString(title)
 	if err != nil {
 		return nil, err
 	}
 	// Create the window first (unsized): its DPI is not known until it exists on
 	// a monitor. The client is sized to the logical/physical target immediately
 	// afterwards via SetWindowPos.
-	hwnd, _, e := procCreateWindowExW.Call(
-		0,
-		uintptr(unsafe.Pointer(className)),
-		uintptr(unsafe.Pointer(titlePtr)),
-		uintptr(wsOverlappedWindow),
-		cwUseDefault, cwUseDefault, 640, 480,
-		0, 0, hInstance, 0,
+	hwnd, err := win32.CreateWindowEx(
+		0, className, titlePtr, uint32(wsOverlappedWindow),
+		int32(cwUseDefault), int32(cwUseDefault), 640, 480,
+		0, 0, win32.HINSTANCE(hInstance), nil,
 	)
-	if hwnd == 0 {
-		return nil, fmt.Errorf("win32: CreateWindowExW: %w", e)
+	if err != nil {
+		return nil, err
 	}
-	w.hwnd = hwnd
+	w.hwnd = uintptr(hwnd)
 
 	// Now the DPI is known: pick a readable logical size (default from the work
 	// area if the caller gave none) and size the physical client to match.
@@ -312,8 +251,8 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 	w.applySize(width, height, w.scale)
 	w.sizeAndCenter()
 
-	procShowWindow.Call(hwnd, uintptr(swShow))
-	procUpdateWindow.Call(hwnd)
+	procShowWindow.Call(w.hwnd, uintptr(swShow))
+	procUpdateWindow.Call(w.hwnd)
 	return w, nil
 }
 
@@ -328,14 +267,14 @@ func (w *Window) windowScale() float64 {
 // On any failure it returns (0,0) so DefaultContentSize falls back to a fixed size.
 func (w *Window) workAreaLogical() (float64, float64) {
 	dpi, _, _ := procGetDpiForWindow.Call(w.hwnd)
-	var r rect
+	var r win32.Rect
 	ok, _, _ := procSystemParametersInfoForDpi.Call(
 		uintptr(spiGetWorkArea), 0, uintptr(unsafe.Pointer(&r)), 0, dpi)
 	if ok == 0 {
 		return 0, 0
 	}
-	physW := int(r.right - r.left)
-	physH := int(r.bottom - r.top)
+	physW := int(r.Right - r.Left)
+	physH := int(r.Bottom - r.Top)
 	scale := ScaleForDpi(uint32(dpi))
 	return float64(LogicalFromPhysical(physW, scale)), float64(LogicalFromPhysical(physH, scale))
 }
@@ -357,19 +296,19 @@ func (w *Window) applySize(logicalW, logicalH int, scale float64) {
 // centres it in the monitor work area.
 func (w *Window) sizeAndCenter() {
 	dpi, _, _ := procGetDpiForWindow.Call(w.hwnd)
-	r := rect{left: 0, top: 0, right: int32(w.physW), bottom: int32(w.physH)}
+	r := win32.Rect{Left: 0, Top: 0, Right: int32(w.physW), Bottom: int32(w.physH)}
 	procAdjustWindowRectExForDpi.Call(
 		uintptr(unsafe.Pointer(&r)), uintptr(wsOverlappedWindow), 0, 0, dpi)
-	outerW := int(r.right - r.left)
-	outerH := int(r.bottom - r.top)
+	outerW := int(r.Right - r.Left)
+	outerH := int(r.Bottom - r.Top)
 
 	// Centre in the work area; fall back to (0,0) origin if it is unavailable.
 	x, y := 0, 0
-	var wa rect
+	var wa win32.Rect
 	if ok, _, _ := procSystemParametersInfoForDpi.Call(
 		uintptr(spiGetWorkArea), 0, uintptr(unsafe.Pointer(&wa)), 0, dpi); ok != 0 {
-		x = int(wa.left) + CenterOffset(int(wa.right-wa.left), outerW)
-		y = int(wa.top) + CenterOffset(int(wa.bottom-wa.top), outerH)
+		x = int(wa.Left) + CenterOffset(int(wa.Right-wa.Left), outerW)
+		y = int(wa.Top) + CenterOffset(int(wa.Bottom-wa.Top), outerH)
 	}
 	procSetWindowPos.Call(w.hwnd, 0, uintptr(x), uintptr(y),
 		uintptr(outerW), uintptr(outerH), uintptr(swpNoZOrder|swpNoActivate))
@@ -396,15 +335,9 @@ func (w *Window) Run(root toolkit.Widget) error {
 	w.invalidateAll()
 	procUpdateWindow.Call(w.hwnd)
 
-	var m msg
-	for {
-		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
-		if int32(r) <= 0 { // 0 = WM_QUIT, -1 = error
-			return nil
-		}
-		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
-		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
-	}
+	// The GetMessage/TranslateMessage/DispatchMessage loop lives in win32.Pump;
+	// it returns nil on WM_QUIT (WM_DESTROY -> PostQuitMessage).
+	return win32.Pump()
 }
 
 // wndProc is the window procedure. It routes each message the backend cares about
@@ -413,8 +346,7 @@ func (w *Window) Run(root toolkit.Widget) error {
 func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	w := active
 	if w == nil || w.hwnd != hwnd {
-		r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
-		return r
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	}
 	switch message {
 	case wmGetObject:
@@ -424,8 +356,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if ret, ok := w.a11yGetObject(wParam, lParam); ok {
 			return ret
 		}
-		r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
-		return r
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmMove:
 		// Only the UI thread may ask the window where it is; the accessibility
 		// bridge reads the answer from a cache.
@@ -479,15 +410,14 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.dispatchAll(MapCharDown(rune(uint16(wParam)), keyMods()))
 		return 0
 	case wmClose:
-		procDestroyWindow.Call(hwnd)
+		win32.DestroyWindow(win32.HWND(hwnd))
 		return 0
 	case wmDestroy:
 		w.closed = true
-		procPostQuitMessage.Call(0)
+		win32.PostQuitMessage(0)
 		return 0
 	default:
-		r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
-		return r
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	}
 }
 
@@ -503,12 +433,12 @@ func (w *Window) clientPoint(lParam uintptr) (int, int) {
 // coordinates. Without a live window it degrades to treating the coordinates as
 // client pixels (the wheel target only needs to be inside the surface).
 func (w *Window) screenPoint(lParam uintptr) (int, int) {
-	pt := point{x: int32(int16(loWord(uint32(lParam)))), y: int32(int16(hiWord(uint32(lParam))))}
+	pt := win32.Point{X: int32(int16(loWord(uint32(lParam)))), Y: int32(int16(hiWord(uint32(lParam))))}
 	// ScreenToClient maps the screen point into client pixels in place.
 	if proc := user32.NewProc("ScreenToClient"); proc.Find() == nil {
 		proc.Call(w.hwnd, uintptr(unsafe.Pointer(&pt)))
 	}
-	return ClientCoords(int(pt.x), int(pt.y), w.scale)
+	return ClientCoords(int(pt.X), int(pt.Y), w.scale)
 }
 
 // keyMods reads the current Shift/Ctrl state for a keyboard message (WM_KEYDOWN/
@@ -530,7 +460,7 @@ func keyMods() Mods {
 // onPaint blits the current DIB into the update region with StretchDIBits,
 // up-sampling the logical framebuffer to the physical client area.
 func (w *Window) onPaint() {
-	var ps paintStruct
+	var ps win32.PaintStruct
 	hdc, _, _ := procBeginPaint.Call(w.hwnd, uintptr(unsafe.Pointer(&ps)))
 	if hdc == 0 {
 		return
@@ -540,27 +470,10 @@ func (w *Window) onPaint() {
 	physW, physH := w.physW, w.physH
 	dib := w.dib
 	w.mu.Unlock()
-	if len(dib) != 0 && bw > 0 && bh > 0 {
-		bmi := bitmapInfoHeader{
-			biSize:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
-			biWidth:       int32(bw),
-			biHeight:      -int32(bh), // negative → top-down (row 0 at top)
-			biPlanes:      1,
-			biBitCount:    32,
-			biCompression: biRGB,
-		}
-		// Blit the whole logical framebuffer stretched over the whole physical
-		// client. The paint DC is clipped to ps.rcPaint (the InvalidateRect'd
-		// damage), so only the damaged pixels are actually written to the screen.
-		procStretchDIBits.Call(
-			hdc,
-			0, 0, uintptr(physW), uintptr(physH), // dest rect (physical client)
-			0, 0, uintptr(bw), uintptr(bh), // src rect (logical framebuffer)
-			uintptr(unsafe.Pointer(&dib[0])),
-			uintptr(unsafe.Pointer(&bmi)),
-			uintptr(dibRGBColors), uintptr(srcCopy),
-		)
-	}
+	// Blit the whole top-down 32-bpp BGRA framebuffer stretched over the whole
+	// physical client. The paint DC is clipped to ps.RcPaint (the InvalidateRect'd
+	// damage), so only the damaged pixels are actually written to the screen.
+	win32.StretchDIBitsBGRA(win32.HDC(hdc), 0, 0, int32(physW), int32(physH), int32(bw), int32(bh), dib)
 	procEndPaint.Call(w.hwnd, uintptr(unsafe.Pointer(&ps)))
 }
 
@@ -690,7 +603,7 @@ func (w *Window) invalidateRects(rects []toolkit.Rect) {
 	}
 	for _, dr := range rects {
 		x, y, rw, rh := InvalidRect(dr, w.scale)
-		r := rect{left: int32(x), top: int32(y), right: int32(x + rw), bottom: int32(y + rh)}
+		r := win32.Rect{Left: int32(x), Top: int32(y), Right: int32(x + rw), Bottom: int32(y + rh)}
 		procInvalidateRect.Call(w.hwnd, uintptr(unsafe.Pointer(&r)), 0)
 	}
 }
@@ -706,7 +619,7 @@ func (w *Window) Close() error {
 	}
 	w.closed = true
 	if w.hwnd != 0 {
-		procDestroyWindow.Call(w.hwnd)
+		win32.DestroyWindow(win32.HWND(w.hwnd))
 		w.hwnd = 0
 	}
 	if active == w {
