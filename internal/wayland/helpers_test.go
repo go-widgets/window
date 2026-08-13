@@ -22,6 +22,10 @@ type stubTransport struct {
 	readErr  error
 	writeErr error
 	writes   [][]byte
+	// wroteFDs records the descriptors sent with each write, so a test can
+	// check that a request which is meaningless without one actually carried
+	// it — wl_data_offer.receive is nothing but a descriptor.
+	wroteFDs [][]int
 	closeErr error
 	closed   bool
 }
@@ -32,6 +36,7 @@ func (s *stubTransport) write(msg []byte, fds []int) error {
 	}
 	cp := append([]byte(nil), msg...)
 	s.writes = append(s.writes, cp)
+	s.wroteFDs = append(s.wroteFDs, append([]int(nil), fds...))
 	return nil
 }
 
