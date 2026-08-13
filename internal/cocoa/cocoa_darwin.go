@@ -247,6 +247,8 @@ func registerClasses() (objc.Class, objc.Class, error) {
 			[]objc.MethodDef{
 				{Cmd: objc.RegisterName("windowShouldClose:"), Fn: windowShouldClose},
 				{Cmd: objc.RegisterName("windowDidResize:"), Fn: windowDidResize},
+				{Cmd: objc.RegisterName("windowDidChangeScreen:"), Fn: windowDidChangeScreen},
+				{Cmd: objc.RegisterName("windowDidChangeBackingProperties:"), Fn: windowDidChangeBackingProperties},
 			})
 	})
 	return viewClass, delegClass, classesErr
@@ -433,16 +435,40 @@ func windowDidResize(_ objc.ID, _ objc.SEL, _ objc.ID) {
 // refreshed (diagnostics) and the surface re-presented so AppKit re-samples the
 // current frame at the new density.
 func viewDidChangeBackingProperties(_ objc.ID, _ objc.SEL) {
-	w := active
-	if w == nil {
-		return
+	if w := active; w != nil {
+		w.followBackingChange()
 	}
+}
+
+// windowDidChangeScreen fires whenever the window is dragged onto a different
+// screen — the reliable signal for a Retina ↔ non-Retina move. The view-level
+// -viewDidChangeBackingProperties can miss it (a soft window carries no density
+// of its own, and AppKit does not always route that view callback on a bare
+// screen move, e.g. an external panel with the lid open), so the NSWindow
+// delegate catches the same event a second way and nothing is missed.
+func windowDidChangeScreen(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	if w := active; w != nil {
+		w.followBackingChange()
+	}
+}
+
+// windowDidChangeBackingProperties is the NSWindow-delegate pendant of the view
+// callback, caught in addition to it for the same belt-and-braces reason.
+func windowDidChangeBackingProperties(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	if w := active; w != nil {
+		w.followBackingChange()
+	}
+}
+
+// followBackingChange refreshes the recorded backing factor after a display
+// change and, for a panel-following window, re-scales the framebuffer to the new
+// density. Without this a window dragged from a 1x panel to a 2x one kept the
+// resolution of whichever display it opened on for the rest of the session,
+// silently, since nothing about a soft window says which of the two produced it.
+// A window that is not following (a fixed render scale) just re-presents so
+// AppKit re-samples the current frame at the new density.
+func (w *Window) followBackingChange() {
 	w.updateBacking()
-	// A window that asked to FOLLOW the panel follows it HERE. Without this it
-	// got the resolution of whichever display it happened to open on and kept
-	// it: dragged from a 1x panel to a 2x one it stayed at 1x for the rest of
-	// the session, silently, since nothing about a soft window says which of
-	// the two settings produced it.
 	if w.follow && w.backing != w.scale && w.win != 0 {
 		w.scale = w.backing
 		cv := w.win.Send(selContentView)
