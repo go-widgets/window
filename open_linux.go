@@ -143,10 +143,15 @@ func authFilePathEnv() string {
 	return ""
 }
 
-// The X11 back-end carries the OS clipboard, through selection ownership.
-// Asserting it where the capability is declared stops a rename inside the
+// Both Linux back-ends carry the OS clipboard — X11 through selection
+// ownership, Wayland through wl_data_device — and both read the desktop's
+// appearance from the XDG portal, which is display-server-independent.
+// Asserting them where the capability is declared stops a rename inside a
 // back-end from silently turning w.(window.Clipboard) into a failed assertion.
 var (
 	_ Clipboard        = (*Window)(nil)
 	_ AppearanceReader = (*Window)(nil)
+
+	_ Clipboard        = (*wlWindow)(nil)
+	_ AppearanceReader = (*wlWindow)(nil)
 )

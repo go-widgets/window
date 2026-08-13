@@ -18,3 +18,24 @@ type portalConn struct {
 	cached Appearance
 	at     time.Time
 }
+
+// The AppearanceReader capability for both Linux back-ends, forwarded to the
+// shared portal client. The wrappers are here, untagged, so that the two windows
+// answer identically on every target: the desktop's look does not depend on
+// which display server is carrying the pixels.
+
+// Appearance reports the desktop's colour scheme and accent colour. Implements
+// the AppearanceReader capability.
+func (w *Window) Appearance() Appearance { return w.portal.appearance() }
+
+// SystemFontTTF reports that there is no font file to hand over. Implements the
+// AppearanceReader capability.
+func (w *Window) SystemFontTTF() ([]byte, error) { return nil, errNoSystemFont }
+
+// Appearance reports the desktop's colour scheme and accent colour. Implements
+// the AppearanceReader capability.
+func (w *wlWindow) Appearance() Appearance { return w.portal.appearance() }
+
+// SystemFontTTF reports that there is no font file to hand over. Implements the
+// AppearanceReader capability.
+func (w *wlWindow) SystemFontTTF() ([]byte, error) { return nil, errNoSystemFont }

@@ -25,6 +25,7 @@ import (
 // testable without a display server.
 type wlWindow struct {
 	conn     *wayland.Conn
+	registry *wayland.Registry
 	surface  *wayland.Surface
 	xdgSurf  *wayland.XdgSurface
 	toplevel *wayland.XdgToplevel
@@ -33,6 +34,19 @@ type wlWindow struct {
 	pointer  *wayland.Pointer
 	keyboard *wayland.Keyboard
 	inputErr error // latched error from dynamic input hot-plug
+
+	// Clipboard state, bound on first use — see clipboard_wayland.go. clipText
+	// is what we last offered and clipOwned whether the compositor still counts
+	// us as the owner, because the only way to read our own selection would be
+	// to ask ourselves through the dispatch we are standing in.
+	ddm             *wayland.DataDeviceManager
+	dataDev         *wayland.DataDevice
+	clipSource      *wayland.DataSource
+	clipText        string
+	clipOwned       bool
+	clipUnavailable bool // this session has no wl_data_device_manager
+
+	portal portalConn // desktop appearance, shared with the X11 back-end
 
 	pool     *wayland.ShmPool
 	buffers  [2]*wayland.Buffer
@@ -110,6 +124,9 @@ func newWaylandWindow(conn *wayland.Conn, cfg Config) (*wlWindow, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Kept, not just used: the clipboard binds its global on first use rather
+	// than at bring-up, so it needs the registry to still be reachable then.
+	w.registry = reg
 	if err := conn.Roundtrip(); err != nil {
 		return nil, err
 	}
