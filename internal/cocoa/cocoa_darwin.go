@@ -504,6 +504,24 @@ func mainScreenVisible() (w, h float64) {
 	return vf.Size.W, vf.Size.H
 }
 
+// VisibleScreenSize returns the main screen's usable area (menu bar and Dock
+// excluded) in LOGICAL points, with ok=false when no screen is available. It
+// loads the AppKit frameworks on first use, so — unlike the internal size
+// defaulting in NewScaled — it is safe to call before any window exists: a
+// caller can query the screen up front and pass a height back through
+// Config.Height, which NewScaled then honours verbatim (no readability clamp is
+// applied to an explicit size).
+func VisibleScreenSize() (w, h int, ok bool) {
+	if err := loadFrameworks(); err != nil {
+		return 0, 0, false
+	}
+	vw, vh := mainScreenVisible()
+	if vw <= 0 || vh <= 0 {
+		return 0, 0, false
+	}
+	return int(vw), int(vh), true
+}
+
 // dispatch delivers one toolkit event to the root and re-presents the frame it
 // dirtied.
 func (w *Window) dispatch(ev toolkit.Event) {
