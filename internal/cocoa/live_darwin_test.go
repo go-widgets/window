@@ -494,3 +494,44 @@ func allUniform(img image.Image) bool {
 	}
 	return true
 }
+
+// TestScaleFollowsBackingChange proves a panel-following window re-scales to the
+// new backing factor when a display change is signalled, and that all three
+// callbacks that route there run against a live window without panicking. A real
+// retina<->non-retina move cannot be synthesised in a test, so it forces a stale
+// scale and lets followBackingChange catch up — the same path the delegate fires.
+func TestScaleFollowsBackingChange(t *testing.T) {
+	theme := toolkit.DefaultDark()
+	var (
+		win *Window
+		err error
+	)
+	callOnMain(func() { win, err = NewScaled("scale-follow proof", 200, 150, theme, -1) })
+	if err != nil {
+		t.Fatalf("NewScaled(follow): %v", err)
+	}
+	defer callOnMain(func() { _ = win.Close() })
+
+	callOnMain(func() {
+		// A following window opens at the backing scale; simulate a just-completed
+		// move to a different-density panel by forcing a stale scale, then let the
+		// backing-change callback reconcile it.
+		win.follow = true
+		win.scale = win.backing + 1
+		win.followBackingChange()
+	})
+	if win.scale != win.backing {
+		t.Errorf("scale did not follow the backing change: scale=%v backing=%v", win.scale, win.backing)
+	}
+
+	callOnMain(func() {
+		// Every callback that routes to followBackingChange runs with the live
+		// window as active without panicking; a non-following window re-presents
+		// instead of re-scaling.
+		viewDidChangeBackingProperties(0, 0)
+		windowDidChangeScreen(0, 0, 0)
+		windowDidChangeBackingProperties(0, 0, 0)
+		win.follow = false
+		win.followBackingChange()
+	})
+}
