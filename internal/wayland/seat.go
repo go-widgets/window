@@ -4,7 +4,10 @@
 
 package wayland
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // Seat capability bits (wl_seat.capability).
 const (
@@ -22,12 +25,61 @@ type Seat struct {
 	caps uint32
 	name string
 
+	// serial is the most recent serial the compositor stamped on an input
+	// event from this seat.
+	//
+	// Wayland does not let a client act on the user's behalf out of nowhere:
+	// requests like wl_data_device.set_selection — taking ownership of the
+	// clipboard — must quote the serial of the input event that justifies
+	// them, and a compositor is entitled to ignore a stale or invented one.
+	// Every event carrying a serial was decoded and discarded here, so there
+	// was nothing to quote.
+	mu     sync.Mutex
+	serial uint32
+
 	// OnCapabilities, if set, is invoked every time the compositor updates
 	// the seat's capability mask — including after bring-up, so a device
 	// that appears later (e.g. a keyboard hot-plugged, or a virtual keyboard
 	// attached to the seat) can be obtained then. It enables dynamic input
 	// hot-plug rather than a one-shot read at connection time.
 	OnCapabilities func(caps uint32)
+}
+
+// noteSerial forwards a pointer event's serial to the seat.
+func (p *Pointer) noteSerial(v uint32) {
+	if p.seat != nil {
+		p.seat.noteSerial(v)
+	}
+}
+
+// noteSerial forwards a keyboard event's serial to the seat.
+func (k *Keyboard) noteSerial(v uint32) {
+	if k.seat != nil {
+		k.seat.noteSerial(v)
+	}
+}
+
+// noteSerial records a serial seen on an input event.
+func (s *Seat) noteSerial(v uint32) {
+	if v == 0 {
+		return // 0 is not a serial the compositor issued
+	}
+	s.mu.Lock()
+	s.serial = v
+	s.mu.Unlock()
+}
+
+// LastSerial is the most recent input serial from this seat, or 0 when the user
+// has not interacted with the window yet.
+//
+// A caller quoting 0 should expect to be refused rather than obeyed: a
+// compositor grants clipboard ownership on the strength of a real event, which
+// is what stops a background application from taking the clipboard while the
+// user is elsewhere.
+func (s *Seat) LastSerial() uint32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.serial
 }
 
 const seatIfaceVersion = 5
@@ -106,7 +158,7 @@ func (s *Seat) GetPointer() (*Pointer, error) {
 	if err := s.conn.send(s.id, seatReqGetPointer, e.buf, nil); err != nil {
 		return nil, err
 	}
-	p := &Pointer{conn: s.conn, id: id}
+	p := &Pointer{conn: s.conn, id: id, seat: s}
 	s.conn.register(id, p.handle)
 	return p, nil
 }
@@ -119,7 +171,7 @@ func (s *Seat) GetKeyboard() (*Keyboard, error) {
 	if err := s.conn.send(s.id, seatReqGetKeyboard, e.buf, nil); err != nil {
 		return nil, err
 	}
-	k := &Keyboard{conn: s.conn, id: id, keymap: &Keymap{codeSyms: map[uint32][]string{}}}
+	k := &Keyboard{conn: s.conn, id: id, seat: s, keymap: &Keymap{codeSyms: map[uint32][]string{}}}
 	s.conn.register(id, k.handle)
 	return k, nil
 }
@@ -157,6 +209,8 @@ const (
 type Pointer struct {
 	conn *Conn
 	id   uint32
+	// seat is where the serial of every event goes; see Seat.serial.
+	seat *Seat
 
 	OnEnter  func(x, y Fixed)
 	OnLeave  func()
@@ -181,7 +235,7 @@ const pointerReqRelease = 1
 func (p *Pointer) handle(opcode uint16, d *decoder) error {
 	switch opcode {
 	case pointerEvtEnter:
-		d.getU32() // serial
+		p.noteSerial(d.getU32())
 		d.getU32() // surface
 		x := d.getFixed()
 		y := d.getFixed()
@@ -192,7 +246,7 @@ func (p *Pointer) handle(opcode uint16, d *decoder) error {
 			p.OnEnter(x, y)
 		}
 	case pointerEvtLeave:
-		d.getU32() // serial
+		p.noteSerial(d.getU32())
 		d.getU32() // surface
 		if !d.ok {
 			return fmt.Errorf("wayland: truncated wl_pointer.leave")
@@ -211,7 +265,7 @@ func (p *Pointer) handle(opcode uint16, d *decoder) error {
 			p.OnMotion(x, y)
 		}
 	case pointerEvtButton:
-		d.getU32() // serial
+		p.noteSerial(d.getU32())
 		d.getU32() // time
 		button := d.getU32()
 		state := d.getU32()
@@ -262,8 +316,10 @@ const (
 // Keyboard is a wl_keyboard device. It ingests the xkb keymap, tracks
 // modifier state and delivers key press/release through OnKey.
 type Keyboard struct {
-	conn   *Conn
-	id     uint32
+	conn *Conn
+	id   uint32
+	// seat is where the serial of every event goes; see Seat.serial.
+	seat   *Seat
 	keymap *Keymap
 	mods   uint32
 
@@ -305,7 +361,7 @@ func (k *Keyboard) handle(opcode uint16, d *decoder) error {
 			k.OnEnter()
 		}
 	case keyboardEvtLeave:
-		d.getU32() // serial
+		k.noteSerial(d.getU32())
 		d.getU32() // surface
 		if !d.ok {
 			return fmt.Errorf("wayland: truncated wl_keyboard.leave")
@@ -314,7 +370,7 @@ func (k *Keyboard) handle(opcode uint16, d *decoder) error {
 			k.OnLeave()
 		}
 	case keyboardEvtKey:
-		d.getU32() // serial
+		k.noteSerial(d.getU32())
 		d.getU32() // time
 		key := d.getU32()
 		state := d.getU32()
@@ -325,7 +381,7 @@ func (k *Keyboard) handle(opcode uint16, d *decoder) error {
 			k.OnKey(key, state == StatePressed)
 		}
 	case keyboardEvtModifiers:
-		d.getU32() // serial
+		k.noteSerial(d.getU32())
 		dep := d.getU32()
 		lat := d.getU32()
 		loc := d.getU32()
