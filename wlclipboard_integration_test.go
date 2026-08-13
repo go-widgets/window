@@ -20,18 +20,31 @@
 package window
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-widgets/window/internal/wayland"
 )
 
-// Reading the selection is a privilege of the KEYBOARD-FOCUSED client on a
-// wlroots compositor: the offer is sent to whoever has focus, and to a client
-// that gains it. So the reader is opened second and mapped, which is what makes
-// sway focus it — an unmapped surface is not a view and is never focused, and a
-// reader that never gained focus would fail here for a reason that has nothing to
-// do with the clipboard.
+// Two facts about a real wlroots compositor shape this whole test, and the first
+// run found them both by failing.
+//
+// A COPY needs a real input serial. wlroots rejects set_selection whose serial
+// does not postdate the seat's last selection, and an untouched client's serial
+// is zero, so zero is refused — silently, since the request has no reply. A
+// client that has never been interacted with therefore cannot take the
+// clipboard, which is a deliberate anti-hijacking rule and not a bug to work
+// around. So the writer is given a real pointer button through a virtual pointer
+// on a THIRD connection, and copies only once its seat has recorded a serial.
+//
+// A PASTE is a privilege of the keyboard-FOCUSED client: the offer is sent to
+// whoever has focus and to whoever gains it. So the reader is opened second and
+// presents a frame, because an unmapped surface is not a view and is never
+// focused — a reader that never gained focus would fail here for a reason that
+// has nothing to do with the clipboard.
 func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 	if os.Getenv("WINDOW_WAYLAND_INTEGRATION") == "" {
 		t.Skip("set WINDOW_WAYLAND_INTEGRATION=1 (under a Wayland compositor) to enable")
@@ -41,32 +54,84 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 	}
 	const text = "presse-papiers traversé par le compositeur"
 
-	// --- The writer. ---------------------------------------------------------
-	writer := openLiveWayland(t, "gw-clip-writer")
-	if _, ok := writer.clipboard(); !ok {
-		t.Fatal("this compositor advertises no wl_data_device_manager, so the lane cannot prove the clipboard")
-	}
-	writer.SetClipboardText(text)
-	if err := writer.conn.Roundtrip(); err != nil {
-		t.Fatalf("the writer could not hand its source over: %v", err)
-	}
-	if !writer.clipOwned {
-		t.Fatal("the writer does not believe it owns the selection it just set")
+	// Both clients report what happened to them here. A compositor that refuses a
+	// request answers with a protocol error and nothing else, so a loop that just
+	// returned on a dispatch error would turn the one message that explains the
+	// failure into twenty seconds of silence.
+	diag := make(chan string, 32)
+	say := func(format string, args ...any) {
+		select {
+		case diag <- fmt.Sprintf(format, args...):
+		default:
+		}
 	}
 
-	// From here the writer belongs to its own goroutine, which is the only thing
-	// that touches it: a source is asked for its bytes through an EVENT, so a
-	// client that stops dispatching stops being able to answer a paste. This is
-	// the application's event loop, reduced to the part that matters.
+	// --- The writer, which owns itself from the first line. ------------------
+	//
+	// Everything it touches happens on its own goroutine, including the copy: a
+	// source is asked for its bytes through an EVENT, so a client that stops
+	// dispatching stops being able to answer a paste. This is the application's
+	// event loop, reduced to what the proof needs.
+	writer := openLiveWayland(t, "gw-clip-writer")
+	copied := make(chan string, 1) // "" once it has copied, or the reason it could not
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
+		writer.root = &patternRoot{}
+		if _, ok := writer.clipboard(); !ok {
+			copied <- "this compositor advertises no wl_data_device_manager, so the lane cannot prove the clipboard"
+			return
+		}
+		if err := writer.paintFrame(); err != nil {
+			copied <- "the writer could not present a frame: " + err.Error()
+			return
+		}
+		done, echoed := false, false
 		for {
 			if err := writer.conn.Dispatch(); err != nil {
-				return // the connection went away with the test
+				say("the writer's connection ended: %v", err)
+				return
 			}
+			if err := writer.flushAck(); err != nil {
+				say("the writer could not ack a configure: %v", err)
+				return
+			}
+			if writer.needResize {
+				writer.applyResize()
+			}
+			if writer.repaint {
+				writer.repaint = false
+				if err := writer.paintFrame(); err != nil {
+					say("the writer could not repaint: %v", err)
+					return
+				}
+			}
+			// The compositor announces the selection to the focused client, which
+			// while the writer is alone IS the writer -- so its own device seeing an
+			// offer appear is the compositor saying it accepted the copy. Nothing is
+			// read from it: asking ourselves is the deadlock this design avoids.
+			if done && !echoed && writer.dataDev.Selection() != nil {
+				echoed = true
+				say("the compositor announced our own selection back to us, so it accepted the copy")
+			}
+			if done || writer.seat == nil || writer.seat.LastSerial() == 0 {
+				continue // not yet touched by the user, so not yet allowed to copy
+			}
+			writer.SetClipboardText(text)
+			if !writer.clipOwned {
+				copied <- "the writer does not believe it owns the selection it just set"
+				return
+			}
+			done = true
+			say("the writer copied quoting serial %d", writer.seat.LastSerial())
+			copied <- ""
 		}
 	}()
+
+	// The pointer button that earns the writer its serial. It is injected until
+	// the writer reports having copied: the device is persistent, so a button
+	// sent before the window bound its pointer is simply superseded by the next.
+	injectUntilCopied(t, copied)
 
 	// --- The reader. ---------------------------------------------------------
 	reader := openLiveWayland(t, "gw-clip-reader")
@@ -95,9 +160,11 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 		}
 		for {
 			if err := reader.conn.Dispatch(); err != nil {
-				return // the connection went away with the test
+				say("the reader's connection ended: %v", err)
+				return
 			}
 			if err := reader.flushAck(); err != nil {
+				say("the reader could not ack a configure: %v", err)
 				return
 			}
 			if reader.needResize {
@@ -106,6 +173,7 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 			if reader.repaint {
 				reader.repaint = false
 				if err := reader.paintFrame(); err != nil {
+					say("the reader could not repaint: %v", err)
 					return
 				}
 			}
@@ -136,6 +204,7 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 			t.Errorf("the offer advertises %v, want %v", p.mimes, want)
 		}
 	case <-time.After(20 * time.Second):
+		reportDiagnostics(t, diag)
 		t.Fatal("the compositor never announced our selection to the other client")
 	}
 
@@ -149,6 +218,116 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 	case <-writerDone:
 	case <-time.After(2 * time.Second):
 		t.Log("the writer's dispatch loop did not exit promptly")
+	}
+	reportDiagnostics(t, diag)
+}
+
+// reportDiagnostics prints what the two clients had to say, on the way past.
+// Drained rather than closed, so it can be read once on failure and again at the
+// end without either read losing the other's lines.
+func reportDiagnostics(t *testing.T, diag <-chan string) {
+	t.Helper()
+	for {
+		select {
+		case line := <-diag:
+			t.Logf("live clipboard: %s", line)
+		default:
+			return
+		}
+	}
+}
+
+// injectUntilCopied attaches a virtual pointer on its own connection and clicks
+// until the writer reports what happened, then reports its verdict.
+//
+// The pointer is what makes an untouched client eligible for the clipboard at
+// all. Attaching one also makes the otherwise device-less headless seat advertise
+// a pointer, which the window picks up through the ordinary hot-plug path, so the
+// serial arrives the same way a user's click would.
+func injectUntilCopied(t *testing.T, copied <-chan string) {
+	t.Helper()
+	inj, err := dialCompositor()
+	if err != nil {
+		t.Fatalf("dial compositor (injector): %v", err)
+	}
+	defer inj.Close()
+	reg, err := inj.Display().GetRegistry()
+	if err != nil {
+		t.Fatalf("injector get_registry: %v", err)
+	}
+	if err := inj.Roundtrip(); err != nil {
+		t.Fatalf("injector roundtrip: %v", err)
+	}
+	for _, iface := range []string{"zwlr_virtual_pointer_manager_v1", "zwp_virtual_keyboard_manager_v1"} {
+		if _, ok := reg.Find(iface); !ok {
+			t.Fatalf("this compositor has no %s, so no client here can ever be granted the "+
+				"clipboard: wlroots refuses a set_selection quoting serial 0", iface)
+		}
+	}
+	seat, err := reg.Seat()
+	if err != nil {
+		t.Fatalf("injector seat: %v", err)
+	}
+	vpm, err := reg.VirtualPointerManager()
+	if err != nil {
+		t.Fatalf("virtual pointer manager: %v", err)
+	}
+	vkm, err := reg.VirtualKeyboardManager()
+	if err != nil {
+		t.Fatalf("virtual keyboard manager: %v", err)
+	}
+	if err := inj.Roundtrip(); err != nil {
+		t.Fatalf("injector roundtrip: %v", err)
+	}
+	ptr, err := vpm.CreatePointer(seat)
+	if err != nil {
+		t.Fatalf("create virtual pointer: %v", err)
+	}
+	defer ptr.Destroy()
+	// A keyboard as well as a pointer, because the seat's KEYBOARD focus is what
+	// decides who is told about a selection, and a seat with no keyboard at all
+	// has nobody to tell.
+	kbd, err := vkm.CreateKeyboard(seat)
+	if err != nil {
+		t.Fatalf("create virtual keyboard: %v", err)
+	}
+	defer kbd.Destroy()
+	fd, size := usKeymapFD(t)
+	if err := kbd.Keymap(wayland.KeymapFormatXkbV1, fd, size); err != nil {
+		t.Fatalf("upload keymap: %v", err)
+	}
+	if err := inj.Roundtrip(); err != nil {
+		t.Fatalf("injector roundtrip after device setup: %v", err)
+	}
+
+	const evKeyA = 30 // Linux KEY_A (evdev keycode)
+	tms := uint32(1)
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		_ = kbd.Key(tms, evKeyA, wayland.StatePressed)
+		_ = kbd.Key(tms+1, evKeyA, wayland.StateReleased)
+		_ = ptr.MotionAbsolute(tms+2, 100, 100, 800, 600)
+		_ = ptr.Frame()
+		_ = ptr.Button(tms+3, wayland.BtnLeft, wayland.StatePressed)
+		_ = ptr.Frame()
+		_ = ptr.Button(tms+4, wayland.BtnLeft, wayland.StateReleased)
+		_ = ptr.Frame()
+		tms += 10
+		if err := inj.Roundtrip(); err != nil {
+			t.Fatalf("injector roundtrip during injection: %v", err)
+		}
+		select {
+		case why := <-copied:
+			if why != "" {
+				t.Fatal(why)
+			}
+			t.Log("live clipboard: the writer took the selection quoting a real input serial")
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the writer never received an input serial, so it was never allowed to copy")
+		}
 	}
 }
 

@@ -204,6 +204,29 @@ func newClipWindow(t *testing.T, s *clipServer) (*wlWindow, *clipServer) {
 	return &wlWindow{conn: conn, registry: reg, seat: seat}, s
 }
 
+// bindDevice binds the window's data device and waits for the compositor to have
+// SEEN it.
+//
+// The round trip is not politeness. get_data_device is a request like any other,
+// and an offer aimed at a device the compositor has not created yet names an
+// object that does not exist -- the client discards the event, and every
+// assertion downstream reads as "the clipboard held nothing". Which is exactly
+// what three of these tests were quietly proving: they expected "" and got it,
+// for the wrong reason. So the device id the compositor recorded is asserted
+// here, where a missing round trip can only fail.
+func bindDevice(t *testing.T, w *wlWindow, s *clipServer) {
+	t.Helper()
+	bindDevice(t, w, s)
+	if err := w.conn.Roundtrip(); err != nil {
+		t.Fatalf("roundtrip after get_data_device: %v", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.devID == 0 {
+		t.Fatal("the compositor never saw get_data_device, so nothing can be offered to it")
+	}
+}
+
 // A copy declares both text types in preference order, hands the source over
 // quoting the seat's serial, and then actually produces the bytes when asked.
 func TestWaylandClipboardCopyProducesTheBytes(t *testing.T) {
@@ -302,9 +325,7 @@ func TestWaylandClipboardPastesAnotherClientsText(t *testing.T) {
 	}}
 	w, s := newClipWindow(t, s)
 
-	if _, ok := w.clipboard(); !ok { // the device must exist before an offer can land on it
-		t.Fatal("no data device")
-	}
+	bindDevice(t, w, s) // the device must exist before an offer can land on it
 	s.offerText(t, "text/html", clipMimeUTF8, clipMimePlain)
 	if err := w.conn.Roundtrip(); err != nil {
 		t.Fatalf("roundtrip: %v", err)
@@ -343,9 +364,7 @@ func TestWaylandClipboardMimeChoice(t *testing.T) {
 // a type the other client never promised.
 func TestWaylandClipboardIgnoresNonText(t *testing.T) {
 	w, s := newClipWindow(t, &clipServer{})
-	if _, ok := w.clipboard(); !ok {
-		t.Fatal("no data device")
-	}
+	bindDevice(t, w, s)
 	s.offerText(t, "image/png")
 	if err := w.conn.Roundtrip(); err != nil {
 		t.Fatalf("roundtrip: %v", err)
@@ -367,9 +386,7 @@ func TestWaylandClipboardDoesNotHangOnASilentPeer(t *testing.T) {
 	defer func() { clipboardReadWait = old }()
 
 	w, s := newClipWindow(t, &clipServer{}) // answerReceive nil: promises, never writes
-	if _, ok := w.clipboard(); !ok {
-		t.Fatal("no data device")
-	}
+	bindDevice(t, w, s)
 	s.offerText(t, clipMimeUTF8)
 	if err := w.conn.Roundtrip(); err != nil {
 		t.Fatalf("roundtrip: %v", err)
@@ -489,9 +506,7 @@ func TestWaylandClipboardSendAfterTheWindowIsGone(t *testing.T) {
 // be quiet rather than fatal: the window is closing anyway.
 func TestWaylandClipboardOnADeadConnection(t *testing.T) {
 	w, s := newClipWindow(t, &clipServer{})
-	if _, ok := w.clipboard(); !ok {
-		t.Fatal("no data device")
-	}
+	bindDevice(t, w, s)
 	s.offerText(t, clipMimeUTF8)
 	if err := w.conn.Roundtrip(); err != nil {
 		t.Fatalf("roundtrip: %v", err)
@@ -514,9 +529,7 @@ func TestWaylandClipboardOnADeadConnection(t *testing.T) {
 // which is exactly why the seam exists.
 func TestWaylandClipboardWhenAPipeCannotBeMade(t *testing.T) {
 	w, s := newClipWindow(t, &clipServer{})
-	if _, ok := w.clipboard(); !ok {
-		t.Fatal("no data device")
-	}
+	bindDevice(t, w, s)
 	s.offerText(t, clipMimeUTF8)
 	if err := w.conn.Roundtrip(); err != nil {
 		t.Fatalf("roundtrip: %v", err)
