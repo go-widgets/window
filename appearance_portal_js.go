@@ -8,16 +8,12 @@ package window
 
 import "errors"
 
-// In the browser there is no session bus and no desktop to ask. The X11 Window
-// still compiles here -- it is untagged, so every target builds it -- and these
-// keep it honest rather than pretending js/wasm has a desktop appearance. The
-// wasmbox backend is what actually runs on this target.
+// In the browser there is no session bus and no desktop to ask. Both Linux
+// windows still compile here -- they are untagged, so every target builds them --
+// and these keep them honest rather than pretending js/wasm has a desktop
+// appearance. The wasmbox backend is what actually runs on this target.
 
 var errNoSystemFont = errors.New("window: no system font on this platform")
 
-// Appearance reports no preference. Implements the AppearanceReader capability.
-func (w *Window) Appearance() Appearance { return Appearance{} }
-
-// SystemFontTTF reports that there is none. Implements the AppearanceReader
-// capability.
-func (w *Window) SystemFontTTF() ([]byte, error) { return nil, errNoSystemFont }
+// appearance reports no preference.
+func (p *portalConn) appearance() Appearance { return Appearance{} }
