@@ -216,7 +216,9 @@ func newClipWindow(t *testing.T, s *clipServer) (*wlWindow, *clipServer) {
 // here, where a missing round trip can only fail.
 func bindDevice(t *testing.T, w *wlWindow, s *clipServer) {
 	t.Helper()
-	bindDevice(t, w, s)
+	if _, ok := w.clipboard(); !ok {
+		t.Fatal("no data device")
+	}
 	if err := w.conn.Roundtrip(); err != nil {
 		t.Fatalf("roundtrip after get_data_device: %v", err)
 	}
