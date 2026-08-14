@@ -7,6 +7,7 @@ package window
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
@@ -49,6 +50,14 @@ type wlWindow struct {
 
 	portal portalConn // desktop appearance, shared with the X11 back-end
 
+	// fbmu guards the shared-memory pool and everything that writes into it.
+	//
+	// Close may be called from any goroutine -- an application closes its window
+	// from a menu item, a signal handler, a shutdown path -- and it UNMAPS the
+	// pool. A run loop painting into that mapping at the same time takes a
+	// segmentation fault, not an error: it happened, in CI, in PackARGB8888. The
+	// mutex is uncontended in the ordinary case, since only the run loop paints.
+	fbmu     sync.Mutex
 	pool     *wayland.ShmPool
 	buffers  [2]*wayland.Buffer
 	poolData []byte
@@ -469,7 +478,9 @@ func (w *wlWindow) ensureBuffers() error {
 // attaches it, marks whole-surface buffer damage, requests a frame-throttle
 // callback and commits.
 func (w *wlWindow) present() error {
-	if !w.configured {
+	w.fbmu.Lock()
+	defer w.fbmu.Unlock()
+	if !w.configured || w.closed {
 		return nil
 	}
 	if err := w.ensureBuffers(); err != nil {
@@ -513,7 +524,9 @@ func (w *wlWindow) drawIncremental() []toolkit.Rect {
 // but marks as surface damage only this frame's rectangles (the pixels that
 // differ from what is currently on screen). frame must be non-empty.
 func (w *wlWindow) presentDamaged(frame []toolkit.Rect) error {
-	if !w.configured {
+	w.fbmu.Lock()
+	defer w.fbmu.Unlock()
+	if !w.configured || w.closed {
 		return nil
 	}
 	if err := w.ensureBuffers(); err != nil {
@@ -677,8 +690,15 @@ func (w *wlWindow) paintFrame() error {
 func (w *wlWindow) Size() (int, int) { return w.w, w.h }
 
 // Close destroys the pool and closes the connection (idempotent).
+// Close destroys the pool and closes the connection (idempotent).
+//
+// Safe from any goroutine: the pool is unmapped under fbmu, so a run loop
+// painting into it finishes its frame first and finds the window closed on the
+// next one.
 func (w *wlWindow) Close() error {
+	w.fbmu.Lock()
 	if w.closed {
+		w.fbmu.Unlock()
 		return nil
 	}
 	w.closed = true
@@ -686,6 +706,7 @@ func (w *wlWindow) Close() error {
 		_ = w.pool.Destroy()
 		w.pool = nil
 	}
+	w.fbmu.Unlock()
 	return w.conn.Close()
 }
 

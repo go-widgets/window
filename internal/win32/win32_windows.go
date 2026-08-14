@@ -442,7 +442,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		win32.DestroyWindow(win32.HWND(hwnd))
 		return 0
 	case wmDestroy:
+		// The teardown, on the thread that owns the window -- which is the only
+		// thread allowed to do it, and is why Close only posts.
 		w.closed = true
+		w.hwnd = 0
+		if active == w {
+			active = nil
+		}
 		win32.PostQuitMessage(0)
 		return 0
 	default:
@@ -642,17 +648,18 @@ func (w *Window) invalidateRects(rects []toolkit.Rect) {
 func (w *Window) Size() (int, int) { return w.w, w.h }
 
 // Close destroys the window. Safe to call more than once.
+// Close asks the window to go away. Safe from any goroutine.
+//
+// It POSTS WM_CLOSE rather than calling DestroyWindow, because a window may
+// only be destroyed by the thread that created it: DestroyWindow from another
+// thread does nothing at all, and an application closing its window from a
+// menu handler or a shutdown path would find the pump still running for ever.
+// Posting puts the request on the queue the UI thread is already reading, which
+// then destroys the window, clears the fields and stops the pump -- the same
+// path the title bar's close button takes.
 func (w *Window) Close() error {
-	if w.closed {
-		return nil
-	}
-	w.closed = true
-	if w.hwnd != 0 {
-		win32.DestroyWindow(win32.HWND(w.hwnd))
-		w.hwnd = 0
-	}
-	if active == w {
-		active = nil
+	if hwnd := w.hwnd; hwnd != 0 {
+		win32.PostMessage(win32.HWND(hwnd), wmClose, 0, 0)
 	}
 	return nil
 }
