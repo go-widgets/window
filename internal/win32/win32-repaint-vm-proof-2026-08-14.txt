@@ -1,0 +1,41 @@
+go-widgets/window — the Repainter capability on Windows, proven on the Win11
+ARM64 QEMU VM (build 26200), 2026-08-14.
+
+TestLiveWin32RepaintFromAnotherGoroutine, cross-compiled here (GOOS=windows
+GOARCH=arm64) and run as a scheduled task in the VM's INTERACTIVE session — a
+window created from session 0 is on no desktop and nothing could be captured
+from it. The two captures are QEMU monitor screendumps taken FROM THE HOST while
+the test held each state, so nothing about them passes through the code under
+test.
+
+The window paints one flat colour per frame: frame 1 red, frame 2 blue. Nothing
+touched the mouse or the keyboard at any point.
+
+  IDLE (win32-repaint-idle-2026-08-14.png), captured ~7s in, during the 6-second
+  hold: the window is RED. The test asserts the frame count did not move across
+  the whole hold —
+
+    IDLE_HOLD_BEGIN frames=1 (the window is RED and must stay red)
+    IDLE_HOLD_END   frames=1
+
+  — which is what makes the capture below evidence rather than coincidence: a
+  window that repainted on a timer would reach blue on its own.
+
+  AFTER (win32-repaint-after-2026-08-14.png), captured ~14s in, after a single
+  Repaint() from a goroutine that is NOT the one pumping messages:
+
+    REPAINTED frames=2 (the window is now BLUE)
+
+Measured on the captures themselves (ppmcount over the raw screendumps, 800x600):
+
+  idle : red 76800 pixels, bounding box (8,31)-(327,270); blue 1 (a desktop pixel)
+  after: red 0 pixels;     blue 76801, same box plus that one desktop pixel
+
+76800 = 320x240 = exactly the window's client area. It was wholly red, then
+wholly blue, with no input at all.
+
+Mechanism: PostMessage of a private WM_APP message onto the window's queue,
+which is the one sanctioned way into another thread's message loop; the pump
+picks it up on the UI thread and paints there, so nothing crosses a thread that
+is not allowed to. One wakeup is in flight at a time — Windows coalesces
+WM_PAINT for us but not WM_APP.
