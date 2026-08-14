@@ -56,4 +56,5 @@ var (
 	_ Backend          = windowsBackend{}
 	_ AppearanceReader = windowsBackend{}
 	_ Clipboard        = (*win32.Window)(nil)
+	_ Repainter        = (*win32.Window)(nil)
 )
