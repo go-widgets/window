@@ -34,6 +34,7 @@ var _ io.ReadWriteCloser = (*fakeTransport)(nil)
 const (
 	atomWMProtocols    = 0x100
 	atomWMDeleteWindow = 0x101
+	atomRepaint        = 0x102 // _GO_WIDGETS_REPAINT, the Repainter wakeup
 )
 
 // setupReply builds a success connection-setup reply (LE): one screen, one
@@ -170,6 +171,7 @@ func serverScript(events ...[]byte) []byte {
 	out := setupReply()
 	out = append(out, internReply(atomWMProtocols)...)
 	out = append(out, internReply(atomWMDeleteWindow)...)
+	out = append(out, internReply(atomRepaint)...)
 	out = append(out, keymapReply(2, []uint32{0x61, 0x41, 0xff0d, 0})...) // kc8=a/A, kc9=Return
 	for _, e := range events {
 		out = append(out, e...)
@@ -198,6 +200,7 @@ func dialFakeWithKeymap(t *testing.T, cfg Config, perCode byte, syms []uint32, e
 	script := setupReply()
 	script = append(script, internReply(atomWMProtocols)...)
 	script = append(script, internReply(atomWMDeleteWindow)...)
+	script = append(script, internReply(atomRepaint)...)
 	script = append(script, keymapReply(perCode, syms)...)
 	for _, e := range events {
 		script = append(script, e...)

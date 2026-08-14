@@ -164,6 +164,11 @@ type Window struct {
 	wmProtocols    uint32
 	wmDeleteWindow uint32
 
+	// The Repainter capability: the atom our own wakeup ClientMessage carries,
+	// and the flag that keeps at most one of them in flight. See repaint_x11.go.
+	repaintAtom uint32
+	repaint     repaintState
+
 	root   toolkit.Widget
 	dmg    DamageRenderer // non-nil when root opts into incremental present
 	dnd    *dnd.Controller
@@ -257,6 +262,11 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 	if err := conn.SetWMProtocols(w.win, w.wmProtocols, w.wmDeleteWindow); err != nil {
 		return nil, err
 	}
+	// The Repainter capability's own message type. A server that will not intern
+	// it is not a reason to refuse the window -- the application simply repaints
+	// on input, as it did before the capability existed -- so the error is kept
+	// rather than returned, and Repaint answers by doing nothing.
+	w.repaintAtom, _ = conn.InternAtom(repaintAtomName, false)
 
 	if err := conn.CreateGC(w.gc, w.win); err != nil {
 		return nil, err
