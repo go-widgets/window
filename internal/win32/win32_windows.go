@@ -165,6 +165,28 @@ type Window struct {
 	dmg    damageRenderer
 	dnd    *dnd.Controller
 	closed bool
+
+	// The Repainter capability: at most one posted wakeup in flight. See
+	// repaint.go for why the flag is ours and not the message queue's.
+	repaint repaintFlag
+}
+
+// Repaint asks the message loop for a frame. Implements the window.Repainter
+// capability; safe to call from any goroutine, returns without waiting.
+//
+// PostMessage is the one sanctioned way into another thread's message queue,
+// and it is why this needs no lock: the pump picks the message up on the UI
+// thread, which is the only thread allowed to touch a window.
+func (w *Window) Repaint() {
+	if w.hwnd == 0 || !w.repaint.arm() {
+		return // no window yet, or a wakeup is already on its way
+	}
+	if !win32.PostMessage(win32.HWND(w.hwnd), WMAppRepaint, 0, 0) {
+		// The queue is gone, which means the window is going away and the pump
+		// is about to stop. A flag left armed would silence a later Repaint if
+		// it were not.
+		w.repaint.disarm()
+	}
 }
 
 // active is the single live window the WNDPROC callback routes to. A native GUI
@@ -366,6 +388,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		return 1 // the framebuffer paints every pixel; skip the flicker-y erase
 	case wmPaint:
 		w.onPaint()
+		return 0
+	case WMAppRepaint:
+		// Somebody outside the message loop asked for a frame. It carries no
+		// input and reaches no widget: the whole content of the message is that
+		// the tree may have changed under us.
+		w.repaint.take()
+		w.paintFrame(false)
 		return 0
 	case wmSize:
 		w.onSize(int(loWord(uint32(lParam))), int(hiWord(uint32(lParam))))
