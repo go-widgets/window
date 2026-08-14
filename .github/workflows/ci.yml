@@ -46,6 +46,16 @@ jobs:
           fi
       - name: Test (whole module)
         run: CGO_ENABLED=0 go test ./...
+      - name: Race (the window package itself)
+        # The back-ends' own package is where the concurrency lives -- Repaint
+        # and Close are documented as callable from any goroutine, and the paint
+        # loop runs in another one -- and it was the ONE package the race
+        # detector never saw: the gate below covers internal/* only. A Close
+        # racing a frame unmaps the memory that frame is writing into, which is a
+        # segmentation fault rather than a wrong pixel, and it reached main.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -timeout 300s .
       - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa + internal/win32)
         shell: bash
         # -race needs cgo, so this step (and only this step) enables it. All five
