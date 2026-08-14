@@ -1,0 +1,42 @@
+go-widgets/window — Close from another goroutine, on the Win11 ARM64 QEMU VM
+(build 26200), 2026-08-14. A before/after pair, both from the same test.
+
+TestLiveWin32RepaintFromAnotherGoroutine closes its window from the goroutine
+that drives the timing, which is NOT the one pumping messages. That is the whole
+point of the test's shutdown, and it is also how an application closes a window:
+from a menu handler, a completed fetch, a shutdown path.
+
+BEFORE (Close called DestroyWindow directly):
+
+    === RUN   TestLiveWin32RepaintFromAnotherGoroutine
+        IDLE_HOLD_BEGIN frames=1 (the window is RED and must stay red)
+        IDLE_HOLD_END   frames=1
+        REPAINTED       frames=2 (the window is now BLUE)
+
+  ...and nothing further. No DONE, no PASS. Forty minutes later:
+
+    PS> Get-Process win32live
+      Id ProcessName
+      -- -----------
+    7476 win32live
+
+  The window was still open and the pump still running. A window may only be
+  destroyed by the thread that created it, so DestroyWindow from another thread
+  does nothing at all -- silently, since its return value is a BOOL nobody was
+  reading.
+
+AFTER (Close posts WM_CLOSE; the teardown moved into WM_DESTROY):
+
+    === RUN   TestLiveWin32RepaintFromAnotherGoroutine
+        IDLE_HOLD_BEGIN frames=1 (the window is RED and must stay red)
+        IDLE_HOLD_END   frames=1
+        REPAINTED       frames=2 (the window is now BLUE)
+        DONE frames=2 pid=8672
+    --- PASS: TestLiveWin32RepaintFromAnotherGoroutine (14.19s)
+    PASS
+    ---
+    PROCESS EXITED
+
+Posting puts the request on the queue the UI thread is already reading, which is
+the same path the title bar's close button takes; the thread that owns the
+window is then the one that destroys it.
