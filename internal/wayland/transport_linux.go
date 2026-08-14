@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"syscall"
+	"time"
 )
 
 // oobSize is the ancillary-data buffer size: room for many SCM_RIGHTS fds
@@ -46,6 +47,23 @@ func (t *unixTransport) write(msg []byte, fds []int) error {
 	}
 	_, _, err := t.c.WriteMsgUnix(msg, oob, nil)
 	return err
+}
+
+// interruptRead sets a read deadline in the past, which makes a read blocked in
+// the runtime poller return os.ErrDeadlineExceeded at once. Implements the
+// interrupter seam behind [Conn.Wake].
+//
+// Buffered bytes are untouched: a message split across the interruption is
+// completed by the next read, because reassembly lives in rbuf and not in the
+// kernel.
+func (t *unixTransport) interruptRead() error {
+	return t.c.SetReadDeadline(deadlineNow())
+}
+
+// resumeReads clears the deadline, restoring a blocking read. Leaving it in the
+// past would turn the event loop into a spin.
+func (t *unixTransport) resumeReads() error {
+	return t.c.SetReadDeadline(time.Time{})
 }
 
 // read returns the next complete message, pulling more bytes (and fds)
