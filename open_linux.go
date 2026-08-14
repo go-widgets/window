@@ -151,6 +151,7 @@ func authFilePathEnv() string {
 var (
 	_ Clipboard        = (*Window)(nil)
 	_ AppearanceReader = (*Window)(nil)
+	_ Repainter        = (*Window)(nil)
 
 	_ Clipboard        = (*wlWindow)(nil)
 	_ AppearanceReader = (*wlWindow)(nil)

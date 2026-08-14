@@ -85,6 +85,12 @@ func (w *Window) mapEvent(xe x11.Event) outcome {
 		if xe.Format == 32 && xe.Atom == w.wmProtocols && xe.Data32 == w.wmDeleteWindow {
 			return outcome{quit: true}
 		}
+		// Our own wakeup, sent by Repaint from another goroutine. It carries no
+		// input and reaches no widget: its whole content is that somebody wants a
+		// frame.
+		if w.tookRepaint(xe.Atom, xe.Format) {
+			return outcome{repaint: true}
+		}
 		return outcome{}
 	default:
 		return outcome{}
