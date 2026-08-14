@@ -5,6 +5,7 @@
 package window
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/go-widgets/painter"
@@ -603,7 +604,14 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 	}
 	for !w.quit {
 		if err := w.conn.Dispatch(); err != nil {
-			return err
+			// Not an event but an interruption: somebody outside this loop asked
+			// for a frame. It carries nothing else, so the only thing to do with
+			// it is to paint.
+			if errors.Is(err, wayland.ErrWoken) {
+				w.repaint = true
+			} else {
+				return err
+			}
 		}
 		if w.inputErr != nil {
 			return w.inputErr
