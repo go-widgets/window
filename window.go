@@ -23,6 +23,8 @@ package window
 import (
 	"errors"
 	"fmt"
+	"sync"
+
 	"github.com/go-widgets/window/internal/atspi"
 
 	"github.com/go-widgets/painter"
@@ -160,6 +162,14 @@ type Window struct {
 	theme *toolkit.Theme
 
 	keymap *x11.Keymap
+
+	// fbmu guards the MIT-SHM segment and everything that writes into it.
+	//
+	// Close may be called from any goroutine and it UNMAPS the segment; a run
+	// loop mirroring a damaged rect into that mapping at the same time takes a
+	// segmentation fault rather than an error. Uncontended in the ordinary case,
+	// since only the run loop paints.
+	fbmu sync.Mutex
 
 	wmProtocols    uint32
 	wmDeleteWindow uint32
@@ -299,7 +309,9 @@ func (w *Window) setupSHM() {
 // framebuffer size, detaching any previous one. On any failure it disables the
 // SHM path (seg stays/reverts to nil) rather than erroring.
 func (w *Window) ensureSegment() {
-	if w.shm == nil {
+	w.fbmu.Lock()
+	defer w.fbmu.Unlock()
+	if w.shm == nil || w.closed {
 		return
 	}
 	if w.seg != nil {
@@ -325,8 +337,14 @@ func (w *Window) ensureSegment() {
 func (w *Window) Size() (int, int) { return w.w, w.h }
 
 // Close closes the window's connection to the server.
+//
+// Safe from any goroutine: the shared segment is detached under fbmu, so a run
+// loop mirroring pixels into it finishes its frame first and finds the window
+// closed on the next one.
 func (w *Window) Close() error {
+	w.fbmu.Lock()
 	if w.closed {
+		w.fbmu.Unlock()
 		return nil
 	}
 	w.closed = true
@@ -335,6 +353,7 @@ func (w *Window) Close() error {
 		_ = w.seg.Close()
 		w.seg = nil
 	}
+	w.fbmu.Unlock()
 	return w.conn.Close()
 }
 
@@ -388,6 +407,11 @@ func (w *Window) presentRect(x, y, rw, rh int) error {
 	}
 	if rw <= 0 || rh <= 0 {
 		return nil
+	}
+	w.fbmu.Lock()
+	defer w.fbmu.Unlock()
+	if w.closed {
+		return nil // the segment is gone; so is the window
 	}
 	if w.seg != nil {
 		// SHM path: mirror the damaged rect into the shared segment, then blit

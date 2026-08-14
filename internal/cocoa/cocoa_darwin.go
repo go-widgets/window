@@ -238,6 +238,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 				{Cmd: objc.RegisterName("keyUp:"), Fn: viewKeyUp},
 				{Cmd: objc.RegisterName("viewDidChangeBackingProperties"), Fn: viewDidChangeBackingProperties},
 				{Cmd: selRepaintNow, Fn: viewRepaintNow},
+				{Cmd: selCloseNow, Fn: viewCloseNow},
 			}, a11yMethods()...))
 		if classesErr != nil {
 			return
@@ -565,6 +566,23 @@ func viewRepaintNow(_ objc.ID, _ objc.SEL) {
 	}
 }
 
+// selCloseNow is a selector of our own, for the same reason as selRepaintNow:
+// the teardown is more than -[NSWindow close] and has to happen in one hop.
+var selCloseNow = objc.RegisterName("goWidgetsCloseNow")
+
+// viewCloseNow is the main-thread half of Close.
+func viewCloseNow(_ objc.ID, _ objc.SEL) {
+	w := active
+	if w == nil || w.closed {
+		return
+	}
+	w.closed = true
+	if w.win != 0 {
+		w.win.Send(selClose)
+	}
+	active = nil
+}
+
 // New creates the NSApplication, an NSWindow with a flipped content view and a
 // window delegate, presents an initial blank frame and returns the window ready
 // for Run. It must be called on the process main OS thread (the parent Open
@@ -820,17 +838,19 @@ func (w *Window) resize(nw, nh int, scale float64) {
 func (w *Window) Size() (int, int) { return w.w, w.h }
 
 // Close releases the window. Safe to call more than once.
+// Close closes the window. Safe from any goroutine.
+//
+// AppKit may only be touched from the main thread, so the work is performed
+// there -- an application closing its window from a fetch's completion, a menu
+// handler or a shutdown path would otherwise be sending -close from whichever
+// thread happened to be running. waitUntilDone is NO for the same reason as in
+// Repaint: the caller asked for the window to go, not to be blocked until it
+// has gone.
 func (w *Window) Close() error {
-	if w.closed {
+	if w == nil || w.view == 0 {
 		return nil
 	}
-	w.closed = true
-	if w.win != 0 {
-		w.win.Send(selClose)
-	}
-	if active == w {
-		active = nil
-	}
+	w.view.Send(selPerformOnMain, selCloseNow, objc.ID(0), false)
 	return nil
 }
 
