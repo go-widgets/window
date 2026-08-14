@@ -20,6 +20,7 @@
 package window
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -74,9 +75,16 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 	// event loop, reduced to what the proof needs.
 	writer := openLiveWayland(t, "gw-clip-writer")
 	copied := make(chan string, 1) // "" once it has copied, or the reason it could not
+	stopWriter := make(chan struct{})
 	writerDone := make(chan struct{})
 	go func() {
-		defer close(writerDone)
+		// The window belongs to this goroutine from here to the last line, INCLUDING
+		// its teardown. Closing it from the test goroutine unmapped the shared-memory
+		// pool while this one was painting into it, which is a segmentation fault
+		// rather than a test failure -- and it took a compositor relayout (the other
+		// window closing) to make it likely enough to see. A window is closed by
+		// whoever is drawing it.
+		defer func() { _ = writer.Close(); close(writerDone) }()
 		writer.root = &patternRoot{}
 		if _, ok := writer.clipboard(); !ok {
 			copied <- "this compositor advertises no wl_data_device_manager, so the lane cannot prove the clipboard"
@@ -88,7 +96,15 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 		}
 		done, echoed := false, false
 		for {
+			select {
+			case <-stopWriter:
+				return
+			default:
+			}
 			if err := writer.conn.Dispatch(); err != nil {
+				if errors.Is(err, wayland.ErrWoken) {
+					continue // somebody asked us to come back to the top; that is all
+				}
 				say("the writer's connection ended: %v", err)
 				return
 			}
@@ -142,10 +158,12 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 		err   string
 	}
 	got := make(chan paste, 1)
+	readerDone := make(chan struct{})
 	go func() {
-		// Everything the reader touches happens here -- painting, acking and
-		// binding its data device -- so nothing about it is shared with the test
-		// goroutine. This is the run loop, reduced to what the proof needs.
+		// Everything the reader touches happens here -- painting, acking, binding
+		// its data device and closing -- so nothing about it is shared with the
+		// test goroutine.
+		defer func() { _ = reader.Close(); close(readerDone) }()
 		reader.root = &patternRoot{}
 		if _, ok := reader.clipboard(); !ok {
 			got <- paste{err: "the reader's compositor advertises no wl_data_device_manager"}
@@ -160,6 +178,9 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 		}
 		for {
 			if err := reader.conn.Dispatch(); err != nil {
+				if errors.Is(err, wayland.ErrWoken) {
+					continue
+				}
 				say("the reader's connection ended: %v", err)
 				return
 			}
@@ -208,15 +229,20 @@ func TestLiveWaylandClipboardCrossesTwoClients(t *testing.T) {
 		t.Fatal("the compositor never announced our selection to the other client")
 	}
 
-	if err := reader.Close(); err != nil {
-		t.Logf("closing the reader: %v", err)
+	// Shutting down is the capability paying for itself: the writer is blocked in
+	// a dispatch with nothing coming, and Repaint is exactly the interruption that
+	// gets it back to the top of its loop, where it sees the stop and tears its own
+	// window down.
+	select {
+	case <-readerDone:
+	case <-time.After(5 * time.Second):
+		t.Log("the reader's loop did not exit promptly")
 	}
-	if err := writer.Close(); err != nil {
-		t.Logf("closing the writer: %v", err)
-	}
+	close(stopWriter)
+	writer.Repaint()
 	select {
 	case <-writerDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Log("the writer's dispatch loop did not exit promptly")
 	}
 	reportDiagnostics(t, diag)
