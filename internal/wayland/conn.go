@@ -5,6 +5,7 @@
 package wayland
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -27,6 +28,8 @@ type Conn struct {
 
 	display *Display
 	err     error // latched fatal protocol error (from wl_display.error)
+
+	wake wakeState // the Wake/ErrWoken interruption; see wake.go
 }
 
 // displayID is the well-known object id of the wl_display singleton; it is
@@ -97,11 +100,27 @@ func (c *Conn) recvFD() (int, bool) { return c.t.popFD() }
 // event for it) are read and discarded. A latched protocol error is
 // returned in preference to anything else.
 func (c *Conn) Dispatch() error {
+	// A wake that arrived while a Roundtrip owned the connection: it could not be
+	// reported then without abandoning the round trip, so it is reported now,
+	// before going back to the socket. Only the public entry point consults it --
+	// a Roundtrip that consumed its OWN deferred wake would loop for ever without
+	// once reading the socket.
+	if c.wake.deferred.CompareAndSwap(true, false) {
+		return ErrWoken
+	}
+	return c.dispatch()
+}
+
+// dispatch reads and delivers one event, without the deferred-wake check.
+func (c *Conn) dispatch() error {
 	if c.err != nil {
 		return c.err
 	}
 	msg, err := c.t.read()
 	if err != nil {
+		if c.tookWake(err) {
+			return ErrWoken
+		}
 		return err
 	}
 	d := newDecoder(c.order, msg)
@@ -131,7 +150,16 @@ func (c *Conn) Roundtrip() error {
 		return err
 	}
 	for !cb.done {
-		if err := c.Dispatch(); err != nil {
+		if err := c.dispatch(); err != nil {
+			// A wake is not a reason to abandon a round trip -- the compositor
+			// still owes us the callback, and returning here would leave the
+			// caller believing its requests had been processed. It is held over
+			// for the next Dispatch instead, so the repaint it asked for is late
+			// rather than lost.
+			if errors.Is(err, ErrWoken) {
+				c.wake.deferred.Store(true)
+				continue
+			}
 			return err
 		}
 	}
