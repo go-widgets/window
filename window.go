@@ -25,8 +25,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/go-widgets/window/internal/atspi"
-
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/window/internal/dnd"
@@ -499,18 +497,10 @@ func (w *Window) Run(root toolkit.Widget) error {
 // surface is re-blitted with no redraw).
 func (w *Window) paintFrame(resize, expose bool) error {
 	// The frame about to be shown and the tree a screen reader reads are
-	// published from the same place, so the description never lags the pixels.
-	// Activation replays an ordinary click, so every click behaviour comes free.
-	// Apply anything a screen reader asked for since the last frame, HERE, on
-	// the thread that owns the widget tree — the bridge only records the
-	// request. Replaying it as an ordinary click means every behaviour a click
-	// has is had by an accessibility action, with no second path to drift.
-	for _, p := range atspi.TakePending() {
-		if w.root != nil {
-			w.root.OnEvent(toolkit.Event{Kind: toolkit.EventClick, X: p.X, Y: p.Y})
-		}
-	}
-	atspi.Publish(w.root, w.title, w.originX, w.originY)
+	// refreshed from the same place, so the description never lags the pixels.
+	// The window knows its own position, so extents are reported in real screen
+	// coordinates. Shared with the Wayland back-end — see refreshA11y.
+	refreshA11y(w.root, w.title, w.originX, w.originY)
 	if w.dmg == nil {
 		w.draw()
 		return w.present()
