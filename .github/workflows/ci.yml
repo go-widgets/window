@@ -312,13 +312,13 @@ jobs:
           export DISPLAY=:97
           Xvfb :97 -screen 0 1400x900x24 &
           for i in $(seq 1 60); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.5; done
-          # The desktop's own statement of its scale. Everything reads this.
-          # -nocpp because xrdb preprocesses its input by default and a runner
-          # has no cpp: without it the merge silently stores nothing, which is
-          # exactly what happened the first time this lane ran.
-          echo "Xft.dpi: 192" | xrdb -nocpp -merge
+          # The desktop's own statement of its scale, written the way xrdb writes
+          # it: the RESOURCE_MANAGER property of the root window. xrdb itself was
+          # tried first and stored nothing at all on a runner -- silently, twice,
+          # with and without -nocpp -- so the property is set directly rather
+          # than through a tool whose failure is invisible.
+          xprop -root -f RESOURCE_MANAGER 8s -set RESOURCE_MANAGER "Xft.dpi:192"
           echo "--- the database the server now holds:"
-          xrdb -query
           xprop -root RESOURCE_MANAGER
           WINDOW_X11_HIDPI=1 go test -tags=integration -run TestLiveXHiDPI -v ./...
       - name: Upload the capture as a build artifact
