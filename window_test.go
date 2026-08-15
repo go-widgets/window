@@ -32,9 +32,10 @@ func (f *fakeTransport) Close() error                { f.closed = true; return n
 var _ io.ReadWriteCloser = (*fakeTransport)(nil)
 
 const (
-	atomWMProtocols    = 0x100
-	atomWMDeleteWindow = 0x101
-	atomRepaint        = 0x102 // _GO_WIDGETS_REPAINT, the Repainter wakeup
+	atomWMProtocols     = 0x100
+	atomWMDeleteWindow  = 0x101
+	atomRepaint         = 0x102 // _GO_WIDGETS_REPAINT, the Repainter wakeup
+	atomResourceManager = 0x103 // RESOURCE_MANAGER, where a desktop publishes Xft.dpi
 )
 
 // setupReply builds a success connection-setup reply (LE): one screen, one
@@ -469,4 +470,54 @@ func TestMapKeyModifierAndUnmapped(t *testing.T) {
 	if out := w.mapEvent(x11.Event{Code: 2, Detail: 9}); len(out.events) != 0 || out.repaint {
 		t.Fatalf("unmapped key should deliver nothing and not repaint: %+v", out)
 	}
+}
+
+// propertyReply builds a GetProperty reply carrying data as 8-bit values, which
+// is how the X resource database is published.
+func propertyReply(data string) []byte {
+	n := len(data)
+	padded := (n + 3) &^ 3
+	pkt := make([]byte, 32+padded)
+	pkt[0] = 1 // reply
+	pkt[1] = 8 // format: 8-bit values
+	le.PutUint32(pkt[4:8], uint32(padded/4))
+	le.PutUint32(pkt[8:12], 31)         // type: STRING
+	le.PutUint32(pkt[12:16], 0)         // bytes-after
+	le.PutUint32(pkt[16:20], uint32(n)) // value length, in format units
+	copy(pkt[32:], data)
+	return pkt
+}
+
+// dialFakeWithResources is dialFake for a server that also answers the
+// RESOURCE_MANAGER lookup a NativeScale window makes before it creates itself.
+//
+// An empty db means the atom does not exist at all, which is what a server that
+// has never had a desktop on it reports -- and the overwhelming majority of X11
+// sessions never publish an Xft.dpi.
+func dialFakeWithResources(t *testing.T, cfg Config, db string) (*Window, *fakeTransport) {
+	t.Helper()
+	script := setupReply()
+	if cfg.RenderScale == NativeScale {
+		if db == "" {
+			script = append(script, internReply(0)...) // no such atom
+		} else {
+			script = append(script, internReply(atomResourceManager)...)
+			script = append(script, propertyReply(db)...)
+		}
+	}
+	script = append(script, internReply(atomWMProtocols)...)
+	script = append(script, internReply(atomWMDeleteWindow)...)
+	script = append(script, internReply(atomRepaint)...)
+	script = append(script, keymapReply(2, []uint32{0x61, 0x41, 0xff0d, 0})...)
+
+	ft := &fakeTransport{in: bytes.NewReader(script)}
+	conn, err := x11.Handshake(ft, le, "", nil)
+	if err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+	w, err := newWindow(conn, cfg)
+	if err != nil {
+		t.Fatalf("newWindow: %v", err)
+	}
+	return w, ft
 }
