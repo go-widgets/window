@@ -28,7 +28,10 @@ import (
 // Open+Run from main (as cmd/windowdemo does), matching the Cocoa backend.
 func Open(cfg Config) (Backend, error) {
 	runtime.LockOSThread()
-	w, err := win32.New(cfg.Title, cfg.Width, cfg.Height, cfg.Theme)
+	// NativeScale asks for the panel's own pixels rather than a logical
+	// framebuffer the OS up-samples. Opt-in, as on every other back-end: it
+	// changes what Size reports and what a point is worth to the widget tree.
+	w, err := win32.NewScaled(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale == NativeScale)
 	if err != nil {
 		return nil, err
 	}
@@ -57,4 +60,5 @@ var (
 	_ AppearanceReader = windowsBackend{}
 	_ Clipboard        = (*win32.Window)(nil)
 	_ Repainter        = (*win32.Window)(nil)
+	_ Scaler           = (*win32.Window)(nil)
 )

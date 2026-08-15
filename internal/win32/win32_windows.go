@@ -40,8 +40,10 @@
 package win32
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"github.com/go-mswin/win32"
@@ -156,9 +158,13 @@ type Window struct {
 	dib  []byte     // BGRA mirror for StretchDIBits, same size
 	w, h int        // logical-point framebuffer size
 
-	scale      float64 // physical device pixels per logical point (dpi/96)
-	physW      int     // physical client width  (= w*scale)
-	physH      int     // physical client height (= h*scale)
+	scale float64 // physical device pixels per logical point (dpi/96)
+	// native asks for the framebuffer to BE the physical client rather than the
+	// logical one: the caller wants the panel's own pixels and will scale its own
+	// drawing. See NewNative and the DPI model at the top of this file.
+	native     bool
+	physW      int // physical client width  (= w*scale)
+	physH      int // physical client height (= h*scale)
 	buttonHeld bool
 
 	root   toolkit.Widget
@@ -206,6 +212,18 @@ var (
 // be called on the goroutine that will run the message loop; the parent Open
 // pins that goroutine with runtime.LockOSThread.
 func New(title string, width, height int, theme *toolkit.Theme) (*Window, error) {
+	return NewScaled(title, width, height, theme, false)
+}
+
+// NewScaled is New with the choice of what the framebuffer measures.
+//
+// native false is the default model: the framebuffer is the window's LOGICAL
+// size and the OS up-samples it, which keeps a UI readable at 200% without the
+// toolkit knowing anything about DPI. native true gives a framebuffer the size
+// of the physical client -- the panel's own pixels, sharp rather than
+// up-sampled -- and hands the caller the job of laying out for it, which is
+// what a root that asks RenderScale does.
+func NewScaled(title string, width, height int, theme *toolkit.Theme, native bool) (*Window, error) {
 	// Per-Monitor-V2 DPI awareness: the window is notified of per-monitor DPI and
 	// its non-client frame scales, so GetDpiForWindow reports the true monitor
 	// DPI and the content stays readable. Best-effort: ignored on the rare build
@@ -233,7 +251,11 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 		HCursor:       cursor,
 		LpszClassName: className,
 	}
-	if _, err := win32.RegisterClassEx(&wc); err != nil {
+	// A class name is per PROCESS and this one is fixed, so a second window --
+	// after the first was closed, which is an ordinary thing for an application
+	// to do -- finds it already registered. That is not a failure: the class it
+	// would have created is the class that is already there. Anything else is.
+	if _, err := win32.RegisterClassEx(&wc); err != nil && !errors.Is(err, syscall.Errno(errClassAlreadyExists)) {
 		return nil, err
 	}
 
@@ -243,6 +265,7 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 		hInstance: hInstance,
 		className: className,
 		scale:     1,
+		native:    native,
 	}
 	active = w
 
@@ -278,6 +301,24 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 	return w, nil
 }
 
+// RenderScale reports how many framebuffer pixels this window allocates per
+// logical point, which is the parent package's Scaler capability.
+//
+// One in the default model, whatever the monitor's DPI: the framebuffer really
+// is a logical point per pixel there, and the up-sampling happens after it. It
+// is the monitor's scale only for a native window, where the framebuffer is the
+// physical client.
+func (w *Window) RenderScale() float64 {
+	if !w.native || w.scale < 1 {
+		return 1
+	}
+	return w.scale
+}
+
+// errClassAlreadyExists is ERROR_CLASS_ALREADY_EXISTS, which RegisterClassExW
+// returns when this process has registered the class before.
+const errClassAlreadyExists = 1410
+
 // windowScale reads the window's current DPI and converts it to the render scale.
 func (w *Window) windowScale() float64 {
 	dpi, _, _ := procGetDpiForWindow.Call(w.hwnd)
@@ -301,16 +342,26 @@ func (w *Window) workAreaLogical() (float64, float64) {
 	return float64(LogicalFromPhysical(physW, scale)), float64(LogicalFromPhysical(physH, scale))
 }
 
-// applySize sets the logical framebuffer size and derived physical client size
-// at the given scale, allocating the RGBA framebuffer and its BGRA DIB mirror.
+// applySize sets the framebuffer size and the derived physical client size at
+// the given scale, allocating the RGBA framebuffer and its BGRA DIB mirror.
+//
+// The framebuffer is the LOGICAL size by default, which is what keeps a UI
+// readable at 200% without the toolkit knowing anything about DPI. A native
+// window instead gets a framebuffer the size of the physical client: the same
+// window on the same screen, drawn at the panel's own resolution, which is
+// sharper and is the caller's business to lay out for.
 func (w *Window) applySize(logicalW, logicalH int, scale float64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.w, w.h, w.scale = logicalW, logicalH, scale
+	w.scale = scale
 	w.physW = PhysicalFromLogical(logicalW, scale)
 	w.physH = PhysicalFromLogical(logicalH, scale)
-	w.buf = make([]byte, 4*logicalW*logicalH)
-	w.dib = make([]byte, 4*logicalW*logicalH)
+	w.w, w.h = logicalW, logicalH
+	if w.native {
+		w.w, w.h = w.physW, w.physH
+	}
+	w.buf = make([]byte, 4*w.w*w.h)
+	w.dib = make([]byte, 4*w.w*w.h)
 }
 
 // sizeAndCenter resizes the window so its CLIENT area is exactly physW×physH
@@ -461,7 +512,20 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 func (w *Window) clientPoint(lParam uintptr) (int, int) {
 	px := int(int16(loWord(uint32(lParam))))
 	py := int(int16(hiWord(uint32(lParam))))
-	return ClientCoords(px, py, w.scale)
+	return ClientCoords(px, py, w.frameScale())
+}
+
+// frameScale is the divisor between physical client pixels and the framebuffer.
+//
+// A native window's framebuffer IS the physical client, so a mouse position
+// needs no conversion at all -- dividing it by the DPI scale would put every
+// click at half the coordinate the user aimed at, on the one configuration
+// where nothing about the framebuffer is logical.
+func (w *Window) frameScale() float64 {
+	if w.native {
+		return 1
+	}
+	return w.scale
 }
 
 // screenPoint converts a WM_MOUSEWHEEL screen-coordinate lParam to framebuffer
@@ -473,7 +537,7 @@ func (w *Window) screenPoint(lParam uintptr) (int, int) {
 	if proc := user32.NewProc("ScreenToClient"); proc.Find() == nil {
 		proc.Call(w.hwnd, uintptr(unsafe.Pointer(&pt)))
 	}
-	return ClientCoords(int(pt.X), int(pt.Y), w.scale)
+	return ClientCoords(int(pt.X), int(pt.Y), w.frameScale())
 }
 
 // keyMods reads the current Shift/Ctrl state for a keyboard message (WM_KEYDOWN/
@@ -521,7 +585,13 @@ func (w *Window) onSize(physW, physH int) {
 	lw := LogicalFromPhysical(physW, w.scale)
 	lh := LogicalFromPhysical(physH, w.scale)
 	w.mu.Lock()
+	// Against the framebuffer's own units: a native window's is the physical
+	// client, so comparing its logical size to it would report every resize as a
+	// change and reallocate on each WM_SIZE.
 	same := lw == w.w && lh == w.h
+	if w.native {
+		same = physW == w.w && physH == w.h
+	}
 	w.mu.Unlock()
 	if same {
 		return

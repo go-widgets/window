@@ -1,0 +1,37 @@
+go-widgets/window — HiDPI on Windows, on the Win11 ARM64 QEMU VM (build 26200)
+at 200% display scaling, 2026-08-15.
+
+The machine was put at 200% for this by setting, in the DESKTOP user's hive
+(HKEY_USERS\<sid>\Control Panel\Desktop, not the ssh user's), LogPixels = 192
+and Win8DpiScaling = 1, then rebooting. GetDpiForWindow then reports 192, i.e.
+two device pixels per logical point.
+
+The same window, twice, in two runs of the same binary -- this back-end is
+single-window by design, so one model per process:
+
+    MEASURE native=false scale=2 framebuffer=320x240 physical=640x480 RenderScale=1
+    MEASURE native=true  scale=2 framebuffer=640x480 physical=640x480 RenderScale=2
+
+Both PASS. The default framebuffer is the LOGICAL size and the OS up-samples it;
+the native one is the physical client and is presented 1:1.
+
+That the pixels are really there, and not merely allocated, is measured on the
+compositor's own output. The window paints alternating ONE-PIXEL vertical
+stripes, because four flat quadrants would prove nothing -- an up-sampled flat
+colour is pixel-identical to the real thing, while a stripe cannot survive being
+doubled. QEMU screendumps of the running desktop, measured along the scanline
+through the window:
+
+    native=true   row 58: 640 stripe pixels in 640 runs, median run = 1 px
+    native=false  row 58: 640 stripe pixels in 320 runs, median run = 2 px
+
+640 runs where the caller asked for 320 points: the window is drawn at the
+panel's resolution. The control, on the same machine at the same moment, shows
+the doubling that was there before.
+
+One honest note about the instrument: the first capture of the control found no
+stripes at all, because it was taken before the window had mapped. Two captures
+five seconds apart, both showing 320 runs, is what settled it -- a single empty
+capture is a timing artefact, not a result.
+
+win32-hidpi-native-2026-08-15.png is the native capture.
