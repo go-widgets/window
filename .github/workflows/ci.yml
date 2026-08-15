@@ -303,8 +303,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - name: Install an X server, a resource-database tool and capture tools
-        run: sudo apt-get update && sudo apt-get install -y xvfb x11-xserver-utils x11-utils xdotool imagemagick
+      - name: Install an X server and capture tools
+        run: sudo apt-get update && sudo apt-get install -y xvfb xdotool imagemagick
       - name: Run the HiDPI proof under a 192 dpi desktop
         shell: bash
         run: |
@@ -312,14 +312,9 @@ jobs:
           export DISPLAY=:97
           Xvfb :97 -screen 0 1400x900x24 &
           for i in $(seq 1 60); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.5; done
-          # The desktop's own statement of its scale, written the way xrdb writes
-          # it: the RESOURCE_MANAGER property of the root window. xrdb itself was
-          # tried first and stored nothing at all on a runner -- silently, twice,
-          # with and without -nocpp -- so the property is set directly rather
-          # than through a tool whose failure is invisible.
-          xprop -root -f RESOURCE_MANAGER 8s -set RESOURCE_MANAGER "Xft.dpi:192"
-          echo "--- the database the server now holds:"
-          xprop -root RESOURCE_MANAGER
+          # The desktop's dpi is published by the TEST, not here: xrdb and then
+          # xprop were both asked to do it and both stored nothing at all,
+          # silently, which is a setup that can fail without failing the proof.
           WINDOW_X11_HIDPI=1 go test -tags=integration -run TestLiveXHiDPI -v ./...
       - name: Upload the capture as a build artifact
         if: always()

@@ -27,7 +27,47 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-widgets/window/internal/x11"
 )
+
+// publishXftDPI writes an X resource database naming the dpi onto the root
+// window, which is where a desktop environment publishes it and where every
+// toolkit reads it.
+//
+// It borrows a window's connection: this package dials the server in one place
+// and a test has no business dialling it in another.
+func publishXftDPI(t *testing.T, dpi int) {
+	t.Helper()
+	b, err := Open(Config{Title: "gw-xhidpi-setup", Class: "gwwindow", Width: 1, Height: 1})
+	if err != nil {
+		t.Fatalf("Open (to publish the resource): %v", err)
+	}
+	defer b.Close()
+	w, ok := b.(*Window)
+	if !ok {
+		t.Fatalf("Open selected %T, want the X11 back-end", b)
+	}
+	atom, err := w.conn.InternAtom(resourceManagerAtom, false)
+	if err != nil {
+		t.Fatalf("intern %s: %v", resourceManagerAtom, err)
+	}
+	db := fmt.Sprintf("Xft.dpi:\t%d\n", dpi)
+	root := w.conn.Setup().Screens[0].Root
+	if err := w.conn.ChangeProperty(root, atom, x11.AtomString, 8, len(db), []byte(db)); err != nil {
+		t.Fatalf("publishing %s: %v", resourceManagerAtom, err)
+	}
+	// Read it back through a round trip, so a failure here is about the property
+	// and not about a request still sitting in a buffer.
+	_, _, got, err := w.conn.GetProperty(root, atom, 0, false, 4096)
+	if err != nil {
+		t.Fatalf("reading %s back: %v", resourceManagerAtom, err)
+	}
+	if !strings.Contains(string(got), "Xft.dpi") {
+		t.Fatalf("the server holds %q after publishing, want an Xft.dpi resource", got)
+	}
+	t.Logf("the desktop now publishes: %q", strings.TrimSpace(string(got)))
+}
 
 // xdotoolGeometry asks the SERVER how big the window is, which is a different
 // route to the answer than the one under test.
@@ -86,14 +126,13 @@ func TestLiveXHiDPIWindowIsBiggerInPixels(t *testing.T) {
 	requireTool(t, "xdotool")
 	requireTool(t, "import")
 
-	// What the desktop actually published, read a different way. Without this the
-	// failure below cannot tell "the code does not read Xft.dpi" from "the lane
-	// never set it" -- and the first run of this lane was the second.
-	db, err := exec.Command("xprop", "-root", "RESOURCE_MANAGER").Output()
-	if err != nil || !strings.Contains(string(db), "Xft.dpi") {
-		t.Fatalf("this server publishes no Xft.dpi, so the lane is not a 192 dpi desktop: %q (%v)", db, err)
-	}
-	t.Logf("the desktop publishes: %s", strings.TrimSpace(string(db)))
+	// The test publishes the desktop's dpi itself, rather than leaving it to the
+	// lane. Two attempts at having xrdb and then xprop do it stored NOTHING and
+	// said nothing about it, and a proof whose setup can fail silently is a
+	// proof that can pass for the wrong reason. This goes through the real
+	// server -- ChangeProperty on the root window, which is exactly what xrdb
+	// does -- and is then read back through the code under test.
+	publishXftDPI(t, 192)
 
 	native, nativeID, _ := openStriped(t, "native", NativeScale)
 	defer native.Close()
