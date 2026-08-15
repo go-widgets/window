@@ -74,6 +74,10 @@ type wlWindow struct {
 	dmg   DamageRenderer // non-nil when root opts into incremental present
 	dnd   *dnd.Controller
 
+	// title names the application object on the accessibility bus (the toplevel
+	// title is what the user already knows the window by). See refreshA11y.
+	title string
+
 	// bufDamage[i] is the region pool buffer i still owes relative to the live
 	// framebuffer — the pixels changed while it was NOT the attached buffer,
 	// plus this frame's damage. Because the two pool buffers alternate, a buffer
@@ -139,6 +143,9 @@ func newWaylandWindow(conn *wayland.Conn, cfg Config) (*wlWindow, error) {
 		h:     cfg.Height,
 		theme: theme,
 		buf:   make([]byte, 4*cfg.Width*cfg.Height),
+		// The accessibility bus names the application object; the toplevel title
+		// is what the user already knows it by.
+		title: cfg.Title,
 	}
 
 	reg, err := conn.Display().GetRegistry()
@@ -698,6 +705,13 @@ func (w *wlWindow) paintInitial() error { return w.paintFrame() }
 // through the same path: the root reports whole-surface damage and the recreated
 // pool buffers each owe the whole surface, so the frame is packed in full.
 func (w *wlWindow) paintFrame() error {
+	// Refresh the accessibility view from the same place we present pixels, so a
+	// screen reader never lags the frame. A Wayland client cannot know where it
+	// sits on screen, so the origin is (0,0) and extents are window-relative —
+	// atspi.ScreenRect is written to accept that. Shared with X11 — see
+	// refreshA11y. Done before the configure gate below so the tree is published
+	// and activations are applied even on frames that cannot yet present.
+	refreshA11y(w.root, w.title, 0, 0)
 	if w.dmg == nil {
 		w.draw()
 		return w.present()
