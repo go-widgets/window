@@ -97,3 +97,13 @@ func lastWrite(t *testing.T, st *stubTransport, order ByteOrder) (uint32, uint16
 	}
 	return decodeWrite(order, st.writes[len(st.writes)-1])
 }
+
+// decoderOf builds a decoder over the given 32-bit words, so a handler can be
+// driven directly with the arguments an event would have carried.
+func decoderOf(order ByteOrder, words ...uint32) *decoder {
+	e := newEncoder(order)
+	for _, w := range words {
+		e.putU32(w)
+	}
+	return newDecoder(order, e.buf)
+}

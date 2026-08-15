@@ -192,7 +192,7 @@ func TestWlPresentBeforeConfigure(t *testing.T) {
 }
 
 func TestWlWindowApplyResize(t *testing.T) {
-	w := &wlWindow{w: 10, h: 10, buf: make([]byte, 4*10*10)}
+	w := &wlWindow{w: 10, h: 10, logW: 10, logH: 10, buf: make([]byte, 4*10*10)}
 	w.pendingW, w.pendingH, w.needResize = 30, 20, true
 	w.applyResize()
 	if w.w != 30 || w.h != 20 || len(w.buf) != 4*30*20 || !w.repaint || w.needResize {

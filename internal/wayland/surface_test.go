@@ -31,8 +31,28 @@ func TestCompositorAndSurface(t *testing.T) {
 	if surf.ID() == 0 {
 		t.Error("surface id should be nonzero")
 	}
-	if err := surf.handle(surfaceEvtEnter, nil); err != nil {
+	// enter/leave name the output the surface is shown on, which is how a window
+	// learns whose scale applies to it. A handler that dropped them left every
+	// HiDPI screen upscaling a half-resolution buffer.
+	var entered, left uint32
+	surf.OnEnter = func(out uint32) { entered = out }
+	surf.OnLeave = func(out uint32) { left = out }
+	if err := surf.handle(surfaceEvtEnter, decoderOf(order, 0x51)); err != nil {
 		t.Errorf("surface.handle enter = %v", err)
+	}
+	if entered != 0x51 {
+		t.Errorf("enter reported output %#x, want 0x51", entered)
+	}
+	if err := surf.handle(surfaceEvtLeave, decoderOf(order, 0x51)); err != nil {
+		t.Errorf("surface.handle leave = %v", err)
+	}
+	if left != 0x51 {
+		t.Errorf("leave reported output %#x, want 0x51", left)
+	}
+	// An unknown opcode is not an error: a compositor may send events from a
+	// newer version of the interface than we bound.
+	if err := surf.handle(99, decoderOf(order)); err != nil {
+		t.Errorf("surface.handle unknown = %v", err)
 	}
 
 	// Attach with a buffer marks it not-released; nil detaches.
