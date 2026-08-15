@@ -288,6 +288,42 @@ jobs:
           path: live-wayland-capture.png
           if-no-files-found: warn
 
+  # Live HiDPI proof on X11: an Xvfb whose desktop publishes Xft.dpi, which is
+  # where every toolkit reads the scale from (X11 itself has no notion of one).
+  # The ordinary X11 lane deliberately has no Xft.dpi at all, so this runs
+  # separately and filters on TestLiveXHiDPI. The window's size is checked
+  # against the SERVER's own answer via xdotool, which owes nothing to the code
+  # under test, and the capture shows the pixels are really drawn and not merely
+  # allocated.
+  live-x11-hidpi:
+    name: live X11 (HiDPI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Install an X server, a resource-database tool and capture tools
+        run: sudo apt-get update && sudo apt-get install -y xvfb x11-xserver-utils xdotool imagemagick
+      - name: Run the HiDPI proof under a 192 dpi desktop
+        shell: bash
+        run: |
+          set -x
+          export DISPLAY=:97
+          Xvfb :97 -screen 0 1400x900x24 &
+          for i in $(seq 1 60); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.5; done
+          # The desktop's own statement of its scale. Everything reads this.
+          echo "Xft.dpi: 192" | xrdb -merge
+          xrdb -query
+          WINDOW_X11_HIDPI=1 go test -tags=integration -run TestLiveXHiDPI -v ./...
+      - name: Upload the capture as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-x11-hidpi-capture
+          path: live-x11-hidpi-native.png
+          if-no-files-found: warn
+
   # Live HiDPI proof: a SECOND headless sway, configured with `output HEADLESS-1
   # scale 2`, because the lane above deliberately runs at scale 1 and its pixel
   # assertions are written for it. The window paints alternating one-pixel

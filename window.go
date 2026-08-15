@@ -171,6 +171,11 @@ type Window struct {
 	// since only the run loop paints.
 	fbmu sync.Mutex
 
+	// scale is framebuffer pixels per logical point: 1 unless the caller asked
+	// for NativeScale and the desktop published an Xft.dpi. X11 events are in
+	// pixels already, so nothing but the initial size depends on it.
+	scale int
+
 	wmProtocols    uint32
 	wmDeleteWindow uint32
 
@@ -228,14 +233,25 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 		return nil, err
 	}
 
+	// NativeScale asks for the screen's own resolution rather than one pixel per
+	// point. It is opt-in because it changes what Size reports and what a point
+	// is worth to the widget tree; a caller that does not ask keeps exactly the
+	// window it had. See scale_x11.go.
+	scale := 1
+	if cfg.RenderScale == NativeScale {
+		scale = desktopScale(conn, screen.Root)
+	}
+	pxW, pxH := cfg.Width*scale, cfg.Height*scale
+
 	w := &Window{
 		conn:  conn,
 		pres:  pres,
 		depth: depth,
-		w:     cfg.Width,
-		h:     cfg.Height,
+		scale: scale,
+		w:     pxW,
+		h:     pxH,
 		theme: theme,
-		buf:   make([]byte, 4*cfg.Width*cfg.Height),
+		buf:   make([]byte, 4*pxW*pxH),
 		// The accessibility bus names the application object; the window title
 		// is what the user already knows it by.
 		title: cfg.Title,
@@ -243,8 +259,11 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 	w.win = conn.NewID()
 	w.gc = conn.NewID()
 
+	// The window is created in PIXELS, which at scale 2 is twice the points the
+	// caller asked for -- and the same physical size on the panel that reported
+	// the scale.
 	if err := conn.CreateWindow(w.win, screen.Root, 0, 0,
-		uint16(cfg.Width), uint16(cfg.Height),
+		uint16(pxW), uint16(pxH),
 		screen.BlackPixel, screen.BlackPixel, x11.DefaultEventMask); err != nil {
 		return nil, err
 	}
