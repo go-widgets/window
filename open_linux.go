@@ -73,7 +73,23 @@ func waylandSocketPath(name string) (string, error) {
 // authenticates with the matching MIT-MAGIC-COOKIE-1 from the Xauthority
 // file, creates and maps a window and returns it ready for Run.
 func openX11(cfg Config) (Backend, error) {
-	disp := cfg.Display
+	conn, err := dialAuthenticated(cfg.Display)
+	if err != nil {
+		return nil, err
+	}
+	win, err := newWindow(conn, cfg)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return win, nil
+}
+
+// dialAuthenticated opens an authenticated connection to the X server named by
+// disp (or $DISPLAY), ready for requests. It is the half of openX11 that has nothing to
+// do with windows, so something that only needs to ask the server a question
+// need not create one.
+func dialAuthenticated(disp string) (*x11.Conn, error) {
 	if disp == "" {
 		disp = os.Getenv("DISPLAY")
 	}
@@ -106,12 +122,7 @@ func openX11(cfg Config) (Backend, error) {
 		nc.Close()
 		return nil, err
 	}
-	win, err := newWindow(conn, cfg)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	return win, nil
+	return conn, nil
 }
 
 // dialDisplay connects to a local unix-domain X server, trying the

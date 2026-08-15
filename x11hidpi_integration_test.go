@@ -35,31 +35,28 @@ import (
 // window, which is where a desktop environment publishes it and where every
 // toolkit reads it.
 //
-// It borrows a window's connection: this package dials the server in one place
-// and a test has no business dialling it in another.
+// It dials the server directly: publishing a resource has nothing to do with
+// windows, and the throwaway window an earlier version opened for its connection
+// left the next Open being reset by the server.
 func publishXftDPI(t *testing.T, dpi int) {
 	t.Helper()
-	b, err := Open(Config{Title: "gw-xhidpi-setup", Class: "gwwindow", Width: 1, Height: 1})
+	conn, err := dialAuthenticated("")
 	if err != nil {
-		t.Fatalf("Open (to publish the resource): %v", err)
+		t.Fatalf("dialling the server to publish the resource: %v", err)
 	}
-	defer b.Close()
-	w, ok := b.(*Window)
-	if !ok {
-		t.Fatalf("Open selected %T, want the X11 back-end", b)
-	}
-	atom, err := w.conn.InternAtom(resourceManagerAtom, false)
+	defer conn.Close()
+	atom, err := conn.InternAtom(resourceManagerAtom, false)
 	if err != nil {
 		t.Fatalf("intern %s: %v", resourceManagerAtom, err)
 	}
 	db := fmt.Sprintf("Xft.dpi:\t%d\n", dpi)
-	root := w.conn.Setup().Screens[0].Root
-	if err := w.conn.ChangeProperty(root, atom, x11.AtomString, 8, len(db), []byte(db)); err != nil {
+	root := conn.Setup().Screens[0].Root
+	if err := conn.ChangeProperty(root, atom, x11.AtomString, 8, len(db), []byte(db)); err != nil {
 		t.Fatalf("publishing %s: %v", resourceManagerAtom, err)
 	}
 	// Read it back through a round trip, so a failure here is about the property
 	// and not about a request still sitting in a buffer.
-	_, _, got, err := w.conn.GetProperty(root, atom, 0, false, 4096)
+	_, _, got, err := conn.GetProperty(root, atom, 0, false, 4096)
 	if err != nil {
 		t.Fatalf("reading %s back: %v", resourceManagerAtom, err)
 	}
