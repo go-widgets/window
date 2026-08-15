@@ -64,6 +64,15 @@ func publishXftDPI(t *testing.T, dpi int) {
 		t.Fatalf("the server holds %q after publishing, want an Xft.dpi resource", got)
 	}
 	t.Logf("the desktop now publishes: %q", strings.TrimSpace(string(got)))
+
+	// The same question, asked the way the back-end asks it. If these two
+	// disagree the fault is in the reading and not in the desktop, and saying so
+	// here costs one line and saves a round trip through CI.
+	exists, err := conn.InternAtom(resourceManagerAtom, true)
+	t.Logf("intern(only-if-exists) = %d (err %v)", exists, err)
+	_, format, raw, err := conn.GetProperty(root, exists, 0, false, 16*1024)
+	t.Logf("GetProperty: format=%d bytes=%d err=%v value=%q", format, len(raw), err, raw)
+	t.Logf("desktopScale on this connection = %d", desktopScale(conn, root))
 }
 
 // xdotoolGeometry asks the SERVER how big the window is, which is a different
