@@ -35,16 +35,20 @@ import (
 // window, which is where a desktop environment publishes it and where every
 // toolkit reads it.
 //
-// It dials the server directly: publishing a resource has nothing to do with
-// windows, and the throwaway window an earlier version opened for its connection
-// left the next Open being reset by the server.
+// The connection is held open for the rest of the test, and that is the whole
+// lesson of this file. An X server RESETS when its last client disconnects,
+// destroying every atom and property created since the previous reset -- so a
+// tool that sets a resource and exits leaves nothing behind. xrdb was blamed
+// first, then xprop; both had done exactly what they were asked, and the server
+// had thrown it away between commands. A real session keeps a client alive for
+// the same reason.
 func publishXftDPI(t *testing.T, dpi int) {
 	t.Helper()
 	conn, err := dialAuthenticated("")
 	if err != nil {
 		t.Fatalf("dialling the server to publish the resource: %v", err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { conn.Close() })
 	atom, err := conn.InternAtom(resourceManagerAtom, false)
 	if err != nil {
 		t.Fatalf("intern %s: %v", resourceManagerAtom, err)

@@ -312,9 +312,11 @@ jobs:
           export DISPLAY=:97
           Xvfb :97 -screen 0 1400x900x24 &
           for i in $(seq 1 60); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.5; done
-          # The desktop's dpi is published by the TEST, not here: xrdb and then
-          # xprop were both asked to do it and both stored nothing at all,
-          # silently, which is a setup that can fail without failing the proof.
+          # The desktop's dpi is published by the TEST, which then keeps its
+          # connection open. An X server resets when its last client goes away,
+          # destroying every atom and property created since the last reset, so a
+          # tool that sets a resource and exits (xrdb, xprop) leaves nothing
+          # behind -- as two earlier versions of this lane found the hard way.
           WINDOW_X11_HIDPI=1 go test -tags=integration -run TestLiveXHiDPI -v ./...
       - name: Upload the capture as a build artifact
         if: always()
