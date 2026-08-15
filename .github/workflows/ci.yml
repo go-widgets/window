@@ -287,3 +287,58 @@ jobs:
           name: live-wayland-capture
           path: live-wayland-capture.png
           if-no-files-found: warn
+
+  # Live HiDPI proof: a SECOND headless sway, configured with `output HEADLESS-1
+  # scale 2`, because the lane above deliberately runs at scale 1 and its pixel
+  # assertions are written for it. The window paints alternating one-pixel
+  # stripes: four flat quadrants would prove nothing, since a 2x upscale of flat
+  # colour is pixel-identical to the real thing, while a stripe cannot survive
+  # one -- from a half-resolution buffer every stripe comes back two pixels wide.
+  # The test measures both, the second being the control.
+  live-wayland-hidpi:
+    name: live Wayland (HiDPI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Install a headless Wayland compositor + capture tools
+        run: sudo apt-get update && sudo apt-get install -y sway grim dbus
+      - name: Run the HiDPI proof under a scale-2 sway
+        shell: bash
+        run: |
+          set -x
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          cat > sway-hidpi.conf <<'CONF'
+          output HEADLESS-1 resolution 800x600 scale 2
+          default_border none
+          default_floating_border none
+          gaps inner 0
+          gaps outer 0
+          CONF
+          export WLR_BACKENDS=headless
+          export WLR_RENDERER=pixman
+          export WLR_LIBINPUT_NO_DEVICES=1
+          export LIBSEAT_BACKEND=noop
+          export WLR_HEADLESS_OUTPUTS=1
+          dbus-run-session -- sway -c sway-hidpi.conf &
+          sock=""
+          for i in $(seq 1 60); do
+            sock=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock' | head -1 || true)
+            [ -n "$sock" ] && break
+            sleep 0.5
+          done
+          if [ -z "$sock" ]; then echo "::error::sway Wayland socket never appeared"; exit 1; fi
+          export WAYLAND_DISPLAY="$(basename "$sock")"
+          WINDOW_WAYLAND_HIDPI=1 go test -tags=integration -run TestLiveWlHiDPI -v ./...
+      - name: Upload the captures as build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-hidpi-captures
+          path: |
+            live-hidpi-native.png
+            live-hidpi-logical.png
+          if-no-files-found: warn
