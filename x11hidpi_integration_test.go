@@ -69,14 +69,13 @@ func publishXftDPI(t *testing.T, dpi int) {
 	}
 	t.Logf("the desktop now publishes: %q", strings.TrimSpace(string(got)))
 
-	// The same question, asked the way the back-end asks it. If these two
-	// disagree the fault is in the reading and not in the desktop, and saying so
-	// here costs one line and saves a round trip through CI.
-	exists, err := conn.InternAtom(resourceManagerAtom, true)
-	t.Logf("intern(only-if-exists) = %d (err %v)", exists, err)
-	_, format, raw, err := conn.GetProperty(root, exists, 0, false, 16*1024)
-	t.Logf("GetProperty: format=%d bytes=%d err=%v value=%q", format, len(raw), err, raw)
-	t.Logf("desktopScale on this connection = %d", desktopScale(conn, root))
+	// The same question, asked the way the back-end asks it. When the two
+	// disagree the fault is in the reading and not in the desktop -- which is
+	// the distinction this file spent three CI runs failing to make.
+	if got := desktopScale(conn, root); got != dpi/96 {
+		t.Fatalf("the back-end reads scale %d from a %d dpi desktop it can see, want %d",
+			got, dpi, dpi/96)
+	}
 }
 
 // xdotoolGeometry asks the SERVER how big the window is, which is a different
