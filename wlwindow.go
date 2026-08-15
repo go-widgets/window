@@ -91,6 +91,14 @@ type wlWindow struct {
 	quit    bool
 	closed  bool
 
+	// The window's size in LOGICAL points, which is what the compositor
+	// configures and what input arrives in; w/h above are the framebuffer, which
+	// is logW*scale by logH*scale. See wlscale.go.
+	logW, logH int
+	scale      int                        // framebuffer pixels per logical point
+	outputs    map[uint32]*wayland.Output // every screen, by object id
+	on         map[uint32]bool            // the ones this surface is shown on
+
 	needResize         bool
 	pendingW, pendingH int
 	configured         bool
@@ -124,6 +132,9 @@ func newWaylandWindow(conn *wayland.Conn, cfg Config) (*wlWindow, error) {
 
 	w := &wlWindow{
 		conn:  conn,
+		scale: 1,
+		logW:  cfg.Width,
+		logH:  cfg.Height,
 		w:     cfg.Width,
 		h:     cfg.Height,
 		theme: theme,
@@ -185,6 +196,15 @@ func newWaylandWindow(conn *wayland.Conn, cfg Config) (*wlWindow, error) {
 		return nil, err
 	}
 	w.wireShell(cfg)
+	// NativeScale is a request to draw at the screen's own resolution rather
+	// than at one pixel per point. It is opt-in because it changes what
+	// Backend.Size reports and what a point means to the widget tree; a caller
+	// that does not ask keeps exactly the behaviour it had.
+	if cfg.RenderScale == NativeScale {
+		if err := w.followOutputScale(reg); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := w.toplevel.SetTitle(cfg.Title); err != nil {
 		return nil, err
@@ -264,7 +284,9 @@ func (w *wlWindow) wireShell(_ Config) {
 		w.repaint = true
 	}
 	w.toplevel.OnConfigure = func(cw, ch int, _ []byte) {
-		if cw > 0 && ch > 0 && (cw != w.w || ch != w.h) {
+		// The compositor speaks in logical points; the framebuffer is those
+		// times the scale.
+		if cw > 0 && ch > 0 && (cw != w.logW || ch != w.logH) {
 			w.pendingW, w.pendingH = cw, ch
 			w.needResize = true
 		}
@@ -275,10 +297,14 @@ func (w *wlWindow) wireShell(_ Config) {
 // wirePointer installs the pointer event callbacks that translate motion,
 // buttons and axis into queued toolkit events.
 func (w *wlWindow) wirePointer() {
-	w.pointer.OnEnter = func(x, y wayland.Fixed) { w.ptrX, w.ptrY = x.Int(), y.Int() }
+	// Pointer positions are surface-local LOGICAL points; the widget tree is laid
+	// out in framebuffer pixels. At scale 1 the two are the same number, which is
+	// why this multiplication is easy to forget and impossible to see in a test
+	// that never leaves scale 1.
+	w.pointer.OnEnter = func(x, y wayland.Fixed) { w.ptrX, w.ptrY = x.Int()*w.scale, y.Int()*w.scale }
 	w.pointer.OnLeave = func() {}
 	w.pointer.OnMotion = func(x, y wayland.Fixed) {
-		w.ptrX, w.ptrY = x.Int(), y.Int()
+		w.ptrX, w.ptrY = x.Int()*w.scale, y.Int()*w.scale
 		w.queue(w.translateMotion(w.mods()))
 	}
 	w.pointer.OnButton = func(button uint32, pressed bool) {
@@ -593,8 +619,8 @@ func (w *wlWindow) applyResize() {
 		w.needResize = false
 		return
 	}
-	w.w, w.h = w.pendingW, w.pendingH
-	w.buf = make([]byte, 4*w.w*w.h)
+	w.logW, w.logH = w.pendingW, w.pendingH
+	w.resizeFramebuffer()
 	w.needResize = false
 	w.repaint = true
 }

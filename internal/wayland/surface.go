@@ -49,20 +49,27 @@ func (c *Compositor) CreateSurface() (*Surface, error) {
 type Surface struct {
 	conn *Conn
 	id   uint32
+
+	// OnEnter and OnLeave report the wl_output object id a surface has appeared
+	// on or left. A window that wants the panel's own pixels has to know which
+	// panel it is on, and this is the only thing that says so.
+	OnEnter func(output uint32)
+	OnLeave func(output uint32)
 }
 
 // wl_surface request opcodes.
 const (
-	surfaceReqDestroy      = 0
-	surfaceReqAttach       = 1
-	surfaceReqDamage       = 2
-	surfaceReqFrame        = 3
-	surfaceReqCommit       = 6
-	surfaceReqDamageBuffer = 9
+	surfaceReqDestroy        = 0
+	surfaceReqAttach         = 1
+	surfaceReqDamage         = 2
+	surfaceReqFrame          = 3
+	surfaceReqCommit         = 6
+	surfaceReqSetBufferScale = 8
+	surfaceReqDamageBuffer   = 9
 )
 
-// wl_surface event opcodes (enter/leave carry a wl_output the client tracks
-// for scale/placement; this backend ignores them).
+// wl_surface event opcodes. enter/leave name the wl_output a surface is shown
+// on, which is the only way to learn WHICH screen's scale applies to it.
 const (
 	surfaceEvtEnter = 0
 	surfaceEvtLeave = 1
@@ -72,7 +79,35 @@ const (
 func (s *Surface) ID() uint32 { return s.id }
 
 // handle ignores wl_surface events (enter/leave/preferred_*).
-func (s *Surface) handle(uint16, *decoder) error { return nil }
+func (s *Surface) handle(opcode uint16, d *decoder) error {
+	switch opcode {
+	case surfaceEvtEnter:
+		if out := d.getU32(); d.ok && s.OnEnter != nil {
+			s.OnEnter(out)
+		}
+	case surfaceEvtLeave:
+		if out := d.getU32(); d.ok && s.OnLeave != nil {
+			s.OnLeave(out)
+		}
+	}
+	return nil
+}
+
+// SetBufferScale declares how many buffer pixels the surface puts in one
+// logical point.
+//
+// Without it a compositor on a scale-2 screen takes the buffer as being in
+// logical units and stretches it: the application is drawn at half the panel's
+// resolution and then blown up. With it, and a buffer allocated scale times
+// larger, the pixels are the panel's own.
+func (s *Surface) SetBufferScale(scale int) error {
+	if scale < 1 {
+		scale = 1
+	}
+	e := newEncoder(s.conn.order)
+	e.putU32(uint32(scale))
+	return s.conn.send(s.id, surfaceReqSetBufferScale, e.buf, nil)
+}
 
 // Attach binds buf as the surface's pending content at the given offset. A
 // nil buffer detaches (attaches the null object).

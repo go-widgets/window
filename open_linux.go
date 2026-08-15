@@ -156,4 +156,5 @@ var (
 	_ Clipboard        = (*wlWindow)(nil)
 	_ AppearanceReader = (*wlWindow)(nil)
 	_ Repainter        = (*wlWindow)(nil)
+	_ Scaler           = (*wlWindow)(nil)
 )
