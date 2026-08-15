@@ -304,7 +304,7 @@ jobs:
         with:
           go-version: stable
       - name: Install an X server, a resource-database tool and capture tools
-        run: sudo apt-get update && sudo apt-get install -y xvfb x11-xserver-utils xdotool imagemagick
+        run: sudo apt-get update && sudo apt-get install -y xvfb x11-xserver-utils x11-utils xdotool imagemagick
       - name: Run the HiDPI proof under a 192 dpi desktop
         shell: bash
         run: |
@@ -313,8 +313,13 @@ jobs:
           Xvfb :97 -screen 0 1400x900x24 &
           for i in $(seq 1 60); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.5; done
           # The desktop's own statement of its scale. Everything reads this.
-          echo "Xft.dpi: 192" | xrdb -merge
+          # -nocpp because xrdb preprocesses its input by default and a runner
+          # has no cpp: without it the merge silently stores nothing, which is
+          # exactly what happened the first time this lane ran.
+          echo "Xft.dpi: 192" | xrdb -nocpp -merge
+          echo "--- the database the server now holds:"
           xrdb -query
+          xprop -root RESOURCE_MANAGER
           WINDOW_X11_HIDPI=1 go test -tags=integration -run TestLiveXHiDPI -v ./...
       - name: Upload the capture as a build artifact
         if: always()

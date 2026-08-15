@@ -86,6 +86,15 @@ func TestLiveXHiDPIWindowIsBiggerInPixels(t *testing.T) {
 	requireTool(t, "xdotool")
 	requireTool(t, "import")
 
+	// What the desktop actually published, read a different way. Without this the
+	// failure below cannot tell "the code does not read Xft.dpi" from "the lane
+	// never set it" -- and the first run of this lane was the second.
+	db, err := exec.Command("xprop", "-root", "RESOURCE_MANAGER").Output()
+	if err != nil || !strings.Contains(string(db), "Xft.dpi") {
+		t.Fatalf("this server publishes no Xft.dpi, so the lane is not a 192 dpi desktop: %q (%v)", db, err)
+	}
+	t.Logf("the desktop publishes: %s", strings.TrimSpace(string(db)))
+
 	native, nativeID, _ := openStriped(t, "native", NativeScale)
 	defer native.Close()
 
