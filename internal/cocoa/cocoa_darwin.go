@@ -31,6 +31,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"time"
 	"unsafe"
 
 	objc "github.com/go-macos/objc"
@@ -191,6 +192,9 @@ type Window struct {
 	// rebuild while only pixels animate.
 	a11yShown   bool
 	lastA11ySig uint64
+	// lastA11yTime is when the tree was last republished; refreshA11y throttles
+	// rebuilds of a continuously-changing tree (a scroll) to a11yMinInterval.
+	lastA11yTime time.Time
 
 	closed bool
 }

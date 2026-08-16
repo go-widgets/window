@@ -6,6 +6,7 @@ package cocoa
 
 import (
 	"testing"
+	"time"
 
 	"github.com/go-widgets/toolkit"
 )
@@ -173,5 +174,29 @@ func TestA11yTreeSig(t *testing.T) {
 		if mut(f) == sig {
 			t.Fatalf("changing %s must change the signature", name)
 		}
+	}
+}
+
+func TestA11yShouldPublish(t *testing.T) {
+	const mi = 200 * time.Millisecond
+	// force always publishes, even an unchanged tree well within the interval.
+	if !a11yShouldPublish(true, true, 7, 7, 0, mi) {
+		t.Fatal("force must publish")
+	}
+	// The very first publish (not yet shown) always goes through.
+	if !a11yShouldPublish(false, false, 7, 0, 0, mi) {
+		t.Fatal("the first publish must go through")
+	}
+	// An unchanged tree is skipped.
+	if a11yShouldPublish(false, true, 7, 7, mi, mi) {
+		t.Fatal("an unchanged tree must be skipped")
+	}
+	// A changed tree within the interval is throttled (skipped this frame).
+	if a11yShouldPublish(false, true, 8, 7, mi-1, mi) {
+		t.Fatal("a changed tree within the interval must be throttled")
+	}
+	// A changed tree past the interval publishes.
+	if !a11yShouldPublish(false, true, 8, 7, mi, mi) {
+		t.Fatal("a changed tree past the interval must publish")
 	}
 }

@@ -19,9 +19,35 @@ import (
 	"hash/fnv"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-widgets/toolkit"
 )
+
+// a11yMinInterval bounds how often the accessibility tree is rebuilt while it is
+// CHANGING continuously (a scroll moves every element's frame every paint). Each
+// rebuild is thousands of main-thread ObjC round-trips, so republishing at 60 fps
+// floods the system accessibility server and stalls the machine; ~5 Hz keeps the
+// tree fresh enough for a screen reader (a fraction-of-a-second lag is invisible)
+// without the flood.
+const a11yMinInterval = 200 * time.Millisecond
+
+// a11yShouldPublish decides whether to (re)publish the accessibility tree this
+// frame. It always publishes on force (a resize moves the on-screen frames) and
+// on the very first publish (shown == false). Otherwise it skips an UNCHANGED
+// tree (sig == lastSig), and THROTTLES a changed one: a tree that keeps changing
+// (a scroll) is republished only once sinceLast reaches minInterval, so the
+// per-node Cocoa rebuild runs a few times a second, not every paint. A later
+// frame past the interval publishes the settled tree.
+func a11yShouldPublish(force, shown bool, sig, lastSig uint64, sinceLast, minInterval time.Duration) bool {
+	if force || !shown {
+		return true
+	}
+	if sig == lastSig {
+		return false
+	}
+	return sinceLast >= minInterval
+}
 
 // a11yTreeSig is a cheap, order-sensitive signature of the accessibility tree's
 // structure, content and geometry: every node's role, name, value and rectangle.
