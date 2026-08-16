@@ -39,6 +39,7 @@ package cocoa
 
 import (
 	"sync"
+	"time"
 
 	objc "github.com/go-macos/objc"
 )
@@ -147,20 +148,21 @@ func (w *Window) refreshA11y(force bool) {
 		return
 	}
 	// Publishing the tree is thousands of ObjC round-trips (per node, main
-	// thread), which floods the accessibility server when a continuously
-	// repainting window (a loading spinner, any animation) republishes an
-	// UNCHANGED tree every frame. Compute a cheap Go-side signature of the tree
-	// (roles + names + rects — no Cocoa calls) and skip the rebuild while it is
-	// unchanged; force it on the first publish and on a resize, where the on-
-	// screen frames genuinely move. A window drag without a content change never
-	// repainted (and so never refreshed) before this gate either, so it is no
-	// worse off.
+	// thread), which floods the accessibility server when the window repaints
+	// continuously. Compute a cheap Go-side signature of the tree (roles + names
+	// + rects — no Cocoa calls); a11yShouldPublish then (a) skips an UNCHANGED
+	// tree — a loading spinner leaves it identical — and (b) THROTTLES a changing
+	// one — a scroll moves every element's frame every paint — to a11yMinInterval,
+	// so the rebuild runs a few times a second instead of at 60 fps. force (a
+	// resize) and the first publish always go through.
 	sig := a11yTreeSig(A11yNodes(w.root))
-	if !force && w.a11yShown && sig == w.lastA11ySig {
+	now := time.Now()
+	if !a11yShouldPublish(force, w.a11yShown, sig, w.lastA11ySig, now.Sub(w.lastA11yTime), a11yMinInterval) {
 		return
 	}
 	w.a11yShown = true
 	w.lastA11ySig = sig
+	w.lastA11yTime = now
 	w.view.Send(selSetAccessibilityElement, true)
 	w.view.Send(selSetAccessibilityRole, objc.NSString("AXGroup"))
 	w.view.Send(selSetAccessibilityLabel, objc.NSString(w.title))
