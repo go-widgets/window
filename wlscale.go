@@ -78,6 +78,10 @@ func (w *wlWindow) rescale() {
 	}
 	w.scale = want
 	w.resizeFramebuffer()
+	// The scale is only knowable once the compositor says which screen the
+	// surface is on, and it changes again when the window is dragged to the
+	// other monitor -- so the toolkit is told here rather than at bring-up.
+	applyMetricScale(NativeScale, float64(w.scale))
 	// The compositor has to be told before it next reads the buffer, and the
 	// surface has to be repainted at the new size: a buffer whose scale and
 	// whose dimensions disagree is a protocol error, not a blurry window.

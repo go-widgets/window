@@ -239,6 +239,9 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 	if cfg.RenderScale == NativeScale {
 		scale = desktopScale(conn, screen.Root)
 	}
+	// The widget tree lays out in framebuffer pixels; this is what tells it how
+	// many of them a point is worth. See metricscale.go.
+	applyMetricScale(cfg.RenderScale, float64(scale))
 	pxW, pxH := cfg.Width*scale, cfg.Height*scale
 
 	w := &Window{
