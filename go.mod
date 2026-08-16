@@ -7,7 +7,7 @@ require (
 	github.com/go-mswin/win32 v0.1.0
 	github.com/go-opentype/opentype v0.5.0
 	github.com/go-widgets/painter v0.11.0
-	github.com/go-widgets/toolkit v0.163.0
+	github.com/go-widgets/toolkit v0.168.0
 	github.com/godbus/dbus/v5 v5.2.2
 )
 
