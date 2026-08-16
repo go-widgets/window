@@ -29,6 +29,7 @@ func Open(cfg Config) (Backend, error) {
 	if err != nil {
 		return nil, err
 	}
+	applyMetricScale(cfg.RenderScale, w.RenderScale())
 	return darwinBackend{w}, nil
 }
 
