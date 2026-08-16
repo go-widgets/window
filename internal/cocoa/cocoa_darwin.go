@@ -183,6 +183,15 @@ type Window struct {
 	holes       []toolkit.Rect
 	materials   []*toolkit.Material
 
+	// Accessibility publish gate: republishing the NSAccessibilityElement tree
+	// is thousands of ObjC round-trips (per node, on the main thread), so it runs
+	// only when the tree actually changed. a11yShown records that a tree has been
+	// published at least once; lastA11ySig is the signature (roles + names +
+	// rects) of that publication, compared against each frame's tree to skip the
+	// rebuild while only pixels animate.
+	a11yShown   bool
+	lastA11ySig uint64
+
 	closed bool
 }
 
@@ -775,7 +784,7 @@ func (w *Window) paintFrame(resize bool) {
 	// which on the first paint is no tree at all: such an application came up
 	// with an empty accessibility tree and, with nothing repainting it while
 	// idle, kept one.
-	defer w.refreshA11y()
+	defer w.refreshA11y(resize)
 	if w.dmg == nil {
 		w.draw()
 		w.presentFull()

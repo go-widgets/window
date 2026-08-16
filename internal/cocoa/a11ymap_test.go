@@ -137,3 +137,41 @@ func TestA11yNodesEmptyTree(t *testing.T) {
 		t.Fatalf("A11yNodes(nil) = %+v, want empty", got)
 	}
 }
+
+func TestA11yTreeSig(t *testing.T) {
+	base := []toolkit.A11yNode{
+		node(toolkit.RoleButton, "Refresh", toolkit.Rect{X: 1, Y: 2, W: 3, H: 4}),
+		node(toolkit.RoleText, "Today", toolkit.Rect{X: 5, Y: 6, W: 7, H: 8}),
+	}
+	base[1].Value = "v" // node() leaves Value empty; exercise it too
+
+	sig := a11yTreeSig(base)
+	if sig != a11yTreeSig(base) {
+		t.Fatal("signature must be stable for identical trees")
+	}
+	if a11yTreeSig(nil) == sig {
+		t.Fatal("an empty tree must not collide with a populated one")
+	}
+	if a11yTreeSig(nil) != a11yTreeSig([]toolkit.A11yNode{}) {
+		t.Fatal("nil and empty slices must hash the same")
+	}
+
+	mut := func(f func(n *toolkit.A11yNode)) uint64 {
+		cp := append([]toolkit.A11yNode(nil), base...)
+		f(&cp[0])
+		return a11yTreeSig(cp)
+	}
+	for name, f := range map[string]func(n *toolkit.A11yNode){
+		"role":  func(n *toolkit.A11yNode) { n.Role = toolkit.RoleText },
+		"name":  func(n *toolkit.A11yNode) { n.Name = "X" },
+		"value": func(n *toolkit.A11yNode) { n.Value = "x" },
+		"rectX": func(n *toolkit.A11yNode) { n.Rect.X++ },
+		"rectY": func(n *toolkit.A11yNode) { n.Rect.Y++ },
+		"rectW": func(n *toolkit.A11yNode) { n.Rect.W++ },
+		"rectH": func(n *toolkit.A11yNode) { n.Rect.H++ },
+	} {
+		if mut(f) == sig {
+			t.Fatalf("changing %s must change the signature", name)
+		}
+	}
+}

@@ -15,11 +15,42 @@
 package cocoa
 
 import (
+	"encoding/binary"
+	"hash/fnv"
 	"strconv"
 	"strings"
 
 	"github.com/go-widgets/toolkit"
 )
+
+// a11yTreeSig is a cheap, order-sensitive signature of the accessibility tree's
+// structure, content and geometry: every node's role, name, value and rectangle.
+// It touches no Cocoa API, so it is safe to recompute every frame; an unchanged
+// signature means the NSAccessibilityElements already published are still correct
+// and the per-node Cocoa rebuild (buildA11yChildren) can be skipped — the gate
+// that keeps a continuously repainting window from flooding the accessibility
+// server with identical trees.
+func a11yTreeSig(nodes []toolkit.A11yNode) uint64 {
+	h := fnv.New64a()
+	var buf [8]byte
+	putInt := func(v int) {
+		binary.LittleEndian.PutUint64(buf[:], uint64(int64(v)))
+		_, _ = h.Write(buf[:])
+	}
+	for _, n := range nodes {
+		_, _ = h.Write([]byte(n.Role))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(n.Name))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(n.Value))
+		_, _ = h.Write([]byte{0})
+		putInt(n.Rect.X)
+		putInt(n.Rect.Y)
+		putInt(n.Rect.W)
+		putInt(n.Rect.H)
+	}
+	return h.Sum64()
+}
 
 // AXRole maps a toolkit role to the NSAccessibility role a screen reader
 // announces. Anything unrecognised becomes AXGroup — AppKit's "something whose
