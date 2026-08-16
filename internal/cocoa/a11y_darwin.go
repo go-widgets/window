@@ -136,7 +136,7 @@ func PerformPressAt(ident string) bool {
 //
 // It is driven from the same place that presents pixels, so the description
 // never lags what a sighted user sees.
-func (w *Window) refreshA11y() {
+func (w *Window) refreshA11y(force bool) {
 	if w == nil || w.view == 0 || w.root == nil {
 		return
 	}
@@ -146,6 +146,21 @@ func (w *Window) refreshA11y() {
 		// interface is not.
 		return
 	}
+	// Publishing the tree is thousands of ObjC round-trips (per node, main
+	// thread), which floods the accessibility server when a continuously
+	// repainting window (a loading spinner, any animation) republishes an
+	// UNCHANGED tree every frame. Compute a cheap Go-side signature of the tree
+	// (roles + names + rects — no Cocoa calls) and skip the rebuild while it is
+	// unchanged; force it on the first publish and on a resize, where the on-
+	// screen frames genuinely move. A window drag without a content change never
+	// repainted (and so never refreshed) before this gate either, so it is no
+	// worse off.
+	sig := a11yTreeSig(A11yNodes(w.root))
+	if !force && w.a11yShown && sig == w.lastA11ySig {
+		return
+	}
+	w.a11yShown = true
+	w.lastA11ySig = sig
 	w.view.Send(selSetAccessibilityElement, true)
 	w.view.Send(selSetAccessibilityRole, objc.NSString("AXGroup"))
 	w.view.Send(selSetAccessibilityLabel, objc.NSString(w.title))
