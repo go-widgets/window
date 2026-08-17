@@ -4,7 +4,10 @@
 
 package window
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestParseDisplay(t *testing.T) {
 	cases := []struct {
@@ -58,5 +61,45 @@ func TestDisplayPaths(t *testing.T) {
 	}
 	if (display{host: "remote"}).isLocal() != false {
 		t.Fatal("remote host should not be local")
+	}
+}
+
+func TestDisplayTmpdirPath(t *testing.T) {
+	d := display{number: "7"}
+	// No $TMPDIR: nothing to try beyond the conventional locations.
+	t.Setenv("TMPDIR", "")
+	if p := d.tmpdirPath(); p != "" {
+		t.Fatalf("tmpdirPath with no TMPDIR = %q, want empty", p)
+	}
+	// $TMPDIR that resolves to /tmp is the conventional path already, so it
+	// must not produce a duplicate dial — with or without a trailing slash.
+	for _, dir := range []string{"/tmp", "/tmp/"} {
+		t.Setenv("TMPDIR", dir)
+		if p := d.tmpdirPath(); p != "" {
+			t.Fatalf("tmpdirPath with TMPDIR=%q = %q, want empty", dir, p)
+		}
+	}
+	// A relocated $TMPDIR (Android/Termux) yields its own .X11-unix socket.
+	t.Setenv("TMPDIR", "/data/data/com.termux/files/usr/tmp")
+	if p, want := d.tmpdirPath(), "/data/data/com.termux/files/usr/tmp/.X11-unix/X7"; p != want {
+		t.Fatalf("tmpdirPath = %q, want %q", p, want)
+	}
+}
+
+func TestDisplaySocketPaths(t *testing.T) {
+	d := display{number: "0"}
+	// Without a relocated $TMPDIR the candidates are the two conventional ones.
+	t.Setenv("TMPDIR", "")
+	want := []string{"/tmp/.X11-unix/X0", "@/tmp/.X11-unix/X0"}
+	if got := d.socketPaths(); !slices.Equal(got, want) {
+		t.Fatalf("socketPaths = %q, want %q", got, want)
+	}
+	// With one, it is tried FIRST: it is the only socket that exists on a
+	// system with no /tmp, and dialing it first keeps that system's start-up
+	// free of a doomed dial.
+	t.Setenv("TMPDIR", "/data/data/com.termux/files/usr/tmp")
+	want = []string{"/data/data/com.termux/files/usr/tmp/.X11-unix/X0", "/tmp/.X11-unix/X0", "@/tmp/.X11-unix/X0"}
+	if got := d.socketPaths(); !slices.Equal(got, want) {
+		t.Fatalf("socketPaths = %q, want %q", got, want)
 	}
 }
