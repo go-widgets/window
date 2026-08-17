@@ -20,7 +20,9 @@ compositor's own output. The window paints alternating ONE-PIXEL vertical
 stripes, because four flat quadrants would prove nothing -- an up-sampled flat
 colour is pixel-identical to the real thing, while a stripe cannot survive being
 doubled. QEMU screendumps of the running desktop, measured along the scanline
-through the window:
+through the window (row 58 of the 800x600 screen; the committed image is the
+window cropped out of that screendump at (13,2), so the same scanline is its
+row 56, and re-measuring it there gives the same three numbers):
 
     native=true   row 58: 640 stripe pixels in 640 runs, median run = 1 px
     native=false  row 58: 640 stripe pixels in 320 runs, median run = 2 px
