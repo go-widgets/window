@@ -26,13 +26,22 @@ touched the mouse or the keyboard at any point.
 
     REPAINTED frames=2 (the window is now BLUE)
 
-Measured on the captures themselves (ppmcount over the raw screendumps, 800x600):
+Measured on the captures themselves. The screendumps are of the whole 800x600
+VM screen; what is committed here is the window cropped out of them at (8,1),
+frame included, because the desktop around it — wallpaper, taskbar, clock — is
+not evidence of anything. The measurement is the same either way; the numbers
+below are in the committed images' own coordinates, with the screen-frame ones
+in brackets:
 
-  idle : red 76800 pixels, bounding box (8,31)-(327,270); blue 1 (a desktop pixel)
-  after: red 0 pixels;     blue 76801, same box plus that one desktop pixel
+  idle : red 76800 pixels, bounding box (0,30)-(319,269) [(8,31)-(327,270)]; blue 0
+  after: red 0 pixels;     blue 76800, the same box
 
 76800 = 320x240 = exactly the window's client area. It was wholly red, then
 wholly blue, with no input at all.
+
+(In the uncropped screendumps the "after" count was 76801: one pixel of the
+desktop behind the window happened to be the same blue. Cropping to the window
+removed it, which is why the two counts are now exactly equal.)
 
 Mechanism: PostMessage of a private WM_APP message onto the window's queue,
 which is the one sanctioned way into another thread's message loop; the pump

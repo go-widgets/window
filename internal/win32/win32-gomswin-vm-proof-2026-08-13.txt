@@ -22,3 +22,6 @@ VM's interactive session; UI Automation driven IN THAT SESSION (per-session).
 
 Behaviour is equivalent to the pre-migration backend: window creation, the
 message pump, event dispatch, full and incremental blit all verified live.
+
+Both PNGs are the window cropped out of the 800x600 QEMU screendump at (8,1),
+frame included: the desktop around it is not evidence of anything.
