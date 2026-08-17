@@ -7,6 +7,9 @@
 package window
 
 import (
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -29,6 +32,33 @@ func TestOpenErrors(t *testing.T) {
 	// A local display whose socket does not exist fails to connect.
 	if _, err := Open(Config{Display: ":987"}); err == nil {
 		t.Fatal("Open with nonexistent server should error")
+	}
+}
+
+func TestDialDisplayUsesTmpdirSocket(t *testing.T) {
+	// An X server with no /tmp to bind in — Android's, via Termux — listens in
+	// $TMPDIR/.X11-unix instead. Stand one up there and prove the dial reaches
+	// it: /tmp/.X11-unix/X931 and its abstract twin do not exist, so a
+	// connection can only have come from the $TMPDIR candidate.
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".X11-unix"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	sock := filepath.Join(dir, ".X11-unix", "X931")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen %q: %v", sock, err)
+	}
+	defer ln.Close()
+	t.Setenv("TMPDIR", dir)
+
+	nc, err := dialDisplay(display{number: "931"})
+	if err != nil {
+		t.Fatalf("dialDisplay: %v", err)
+	}
+	defer nc.Close()
+	if got := nc.RemoteAddr().String(); got != sock {
+		t.Fatalf("connected to %q, want %q", got, sock)
 	}
 }
 

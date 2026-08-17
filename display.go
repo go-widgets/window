@@ -6,6 +6,8 @@ package window
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -48,9 +50,39 @@ func parseDisplay(s string) (display, error) {
 // isLocal reports whether the display denotes a local unix-domain server.
 func (d display) isLocal() bool { return d.host == "" || d.host == "unix" }
 
-// unixPath is the filesystem socket for a local display.
+// unixPath is the filesystem socket for a local display in the conventional
+// /tmp/.X11-unix directory.
 func (d display) unixPath() string { return "/tmp/.X11-unix/X" + d.number }
 
 // abstractPath is the Linux abstract-namespace socket for a local display
 // (Go expresses the leading NUL as a leading "@").
 func (d display) abstractPath() string { return "@/tmp/.X11-unix/X" + d.number }
+
+// tmpdirPath is the filesystem socket for a local display under $TMPDIR.
+//
+// /tmp/.X11-unix is only a convention, and one an OS is free not to offer: an
+// Android system has no /tmp at all, so its X servers (Termux:X11 and the
+// Termux X.Org builds) put the socket in the private directory named by
+// $TMPDIR instead. Trying that first costs one dial on the platforms that DO
+// have /tmp, where $TMPDIR is either unset or /tmp itself — both of which
+// return "" so the caller skips the duplicate.
+func (d display) tmpdirPath() string {
+	dir := os.Getenv("TMPDIR")
+	if dir == "" || filepath.Clean(dir) == "/tmp" {
+		return ""
+	}
+	return filepath.Join(dir, ".X11-unix", "X"+d.number)
+}
+
+// socketPaths lists, in dial order, the local endpoints an X server for this
+// display may be listening on: the $TMPDIR directory when one is set and is
+// not /tmp, then the conventional filesystem socket, then the Linux abstract
+// socket. The list is never empty, so a caller that dials each in turn always
+// has a last error to report.
+func (d display) socketPaths() []string {
+	paths := make([]string, 0, 3)
+	if p := d.tmpdirPath(); p != "" {
+		paths = append(paths, p)
+	}
+	return append(paths, d.unixPath(), d.abstractPath())
+}

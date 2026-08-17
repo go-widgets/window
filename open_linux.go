@@ -125,21 +125,22 @@ func dialAuthenticated(disp string) (*x11.Conn, error) {
 	return conn, nil
 }
 
-// dialDisplay connects to a local unix-domain X server, trying the
-// filesystem socket then the Linux abstract socket. Remote (TCP) displays
-// are not supported by this sovereign backend.
+// dialDisplay connects to a local unix-domain X server, trying each endpoint
+// the display can be listening on (see [display.socketPaths]) in turn and
+// reporting the last failure. Remote (TCP) displays are not supported by this
+// sovereign backend.
 func dialDisplay(d display) (net.Conn, error) {
 	if !d.isLocal() {
 		return nil, fmt.Errorf("window: remote display %q not supported (unix sockets only)", d.host)
 	}
-	if nc, err := net.Dial("unix", d.unixPath()); err == nil {
-		return nc, nil
+	var err error
+	for _, p := range d.socketPaths() {
+		var nc net.Conn
+		if nc, err = net.Dial("unix", p); err == nil {
+			return nc, nil
+		}
 	}
-	nc, err := net.Dial("unix", d.abstractPath())
-	if err != nil {
-		return nil, fmt.Errorf("window: cannot connect to X server: %w", err)
-	}
-	return nc, nil
+	return nil, fmt.Errorf("window: cannot connect to X server: %w", err)
 }
 
 // authFilePathEnv resolves the Xauthority file location (XAUTHORITY, then
