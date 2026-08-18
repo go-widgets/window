@@ -1,13 +1,13 @@
 # go-widgets/window
 
 A **pure-Go, CGO-free** windowing backend for the
-[go-widgets](https://github.com/go-widgets) toolkit, with five interchangeable
+[go-widgets](https://github.com/go-widgets) toolkit, with six interchangeable
 backends behind one `Open`/`Run` API — **X11**, **Wayland**, **macOS
-Cocoa/AppKit**, **Windows Win32/GDI** and **wasmbox** (the
+Cocoa/AppKit**, **Windows Win32/GDI**, **Android** and **wasmbox** (the
 [wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox) browser compositor).
 `Open` auto-selects per environment: a real X11/Wayland window on Linux, a real
-NSWindow on macOS, a real Win32 window on Windows, and — when built for
-`js/wasm` — a wasmbox external client.
+NSWindow on macOS, a real Win32 window on Windows, a real Activity surface on
+Android, and — when built for `js/wasm` — a wasmbox external client.
 **One go-widgets application runs unchanged natively AND inside wasmdesk.**
 
 The macOS backend reaches AppKit through the fleet's shared purego Objective-C
@@ -78,6 +78,8 @@ backend-agnostic. The environment selects the implementation:
 | Linux, else `$DISPLAY` | X11 (`internal/x11`) | X11 core protocol over the unix socket (+ MIT-SHM) |
 | macOS (`darwin`) | **Cocoa/AppKit** (`internal/cocoa`) | NSWindow + NSView via `go-macos/objc` (purego), NSBitmapImageRep present |
 | Windows (`windows`) | **Win32/GDI** (`internal/win32`) | top-level HWND via user32/gdi32 syscalls + `NewCallback` WNDPROC, StretchDIBits BGRA present |
+| Android, `$GW_ANDROID_SOCKET` set | **Android host** ([`go-widgets/android`](https://github.com/go-widgets/android)) | framed protocol over an abstract `LocalSocket` + a memfd surface shared with the Java host |
+| Android, else | Wayland or X11, as on Linux | a shell under Termux still has a display server to dial |
 | `js/wasm` | **wasmbox** (`internal/wasmbox`) | wasmbox client protocol over a `MessagePort` + a `SharedArrayBuffer` surface |
 | other (BSD, …) | stub → `ErrUnsupported` | — |
 
@@ -120,6 +122,31 @@ damage→`InvalidateRect` conversion live in a sovereign, 100%-covered codec
 ([capture](internal/win32/win32-capture-2026-08-10.png)), with three injected
 `WM_LBUTTONDOWN`/`UP` messages driving the button's counter `0 → 3` end to end
 through the WNDPROC ([after](internal/win32/win32-input-2026-08-10.png)).
+
+### Android backend (`android`)
+
+Android is the one target where a CGO-free process **cannot own a window at
+all**: the entire graphics and input API sits behind JNI, so there is no
+syscall-level surface to claim the way X11, Wayland, Win32 and AppKit each
+offer one. The backend answers that by not trying — the application runs as the
+Go half of [`go-widgets/android`](https://github.com/go-widgets/android), where
+a thin Java host owns the `Activity` and the `SurfaceView`, and the Go side owns
+layout, widgets, theme and hit-testing. Pixels cross through a **memfd** both
+processes map (Go writes RGBA\_8888, which is Android's ARGB\_8888 byte for
+byte, so the blit is a plain copy); input, insets, IME text and the
+accessibility tree cross a framed protocol over an abstract `LocalSocket`.
+
+`GOOS=android` names **two** environments, and `Open` distinguishes them by the
+one fact only a host can produce: it exports `$GW_ANDROID_SOCKET` when it spawns
+the application. Set means an APK, and the host is dialled. Unset means a shell
+— under Termux, against Termux:X11 or a Wayland compositor — where the ordinary
+Linux path is both right and available, so `Open` falls through to it. One
+binary serves both, chosen by what is actually there rather than by a build tag.
+
+⚠ **`android/arm64` is the only Android target Go links CGO-free**; `arm`,
+`amd64` and `386` all require external cgo linking. CI asserts both halves of
+that — the one that works and the three that do not — so the day Go widens it,
+the build says so.
 
 ### wasmbox client backend (`js/wasm`)
 

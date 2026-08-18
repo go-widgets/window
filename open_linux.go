@@ -23,7 +23,10 @@ import (
 // (the modern default on contemporary Linux desktops), otherwise the X11
 // backend driven by $DISPLAY. Both are sovereign, pure-Go, CGO-free
 // implementations of their wire protocols.
-func Open(cfg Config) (Backend, error) {
+// openDisplayServer dials whichever display server this environment offers.
+// It is Open on Linux, and the FALLBACK on Android, where a go-widgets binary
+// may equally be running under Termux:X11 rather than inside an APK.
+func openDisplayServer(cfg Config) (Backend, error) {
 	if name := os.Getenv("WAYLAND_DISPLAY"); name != "" {
 		return openWayland(cfg, name)
 	}

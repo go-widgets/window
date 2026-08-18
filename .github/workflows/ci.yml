@@ -144,6 +144,7 @@ jobs:
           - { goos: linux,   goarch: loong64 }
           - { goos: linux,   goarch: ppc64le }
           - { goos: linux,   goarch: s390x }
+          - { goos: android, goarch: arm64 }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
@@ -153,6 +154,32 @@ jobs:
         run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
       - name: Vet (${{ matrix.goos }}/${{ matrix.goarch }})
         run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go vet ./...
+
+  # Android is the one GOOS where CGO-free linking is not available on every
+  # arch, and go-widgets depends on it entirely: an APK cannot host a CGO-free
+  # window, so Open there talks to the Java host over a socket instead. This
+  # job pins BOTH halves of that premise, so the day Go widens it, CI says so.
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: arm64 links CGO-free
+        run: CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build ./...
+      - name: The android tests compile
+        run: CGO_ENABLED=0 GOOS=android GOARCH=arm64 go test -c -o /dev/null .
+      - name: Every other android arch still REQUIRES cgo
+        run: |
+          for a in arm amd64 386; do
+            if CGO_ENABLED=0 GOOS=android GOARCH=$a go build ./... 2>/dev/null; then
+              echo "::error::android/$a now links CGO-free — widen the supported set"
+              exit 1
+            fi
+            echo "android/$a still requires cgo, as documented"
+          done
 
   # Validate the module on the six supported 64-bit targets, strictly CGO=0.
   # amd64/arm64 run natively; the rest run under qemu-user. This is where the
