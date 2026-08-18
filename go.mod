@@ -6,7 +6,7 @@ require (
 	github.com/go-macos/objc v0.1.1
 	github.com/go-mswin/win32 v0.1.0
 	github.com/go-opentype/opentype v0.6.0
-	github.com/go-widgets/android v0.12.1
+	github.com/go-widgets/android v0.13.1
 	github.com/go-widgets/painter v0.11.0
 	github.com/go-widgets/toolkit v0.201.0
 	github.com/godbus/dbus/v5 v5.2.2
