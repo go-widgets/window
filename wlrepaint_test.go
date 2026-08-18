@@ -189,7 +189,13 @@ func TestWaylandRepaintCoalescesAndKeepsGoing(t *testing.T) {
 	// The important half: the loop is still able to wake AFTER the burst. A
 	// deadline left in the past would have turned it into a spin, and one never
 	// cleared would have frozen it here.
-	before := root.frames()
+	//
+	// Let the burst drain FIRST. waitForFrames returns at the first frame past
+	// the threshold, so the other four Repaints may still be in flight, and one
+	// landing inside the quiet window below is indistinguishable from a spin.
+	// On a fast machine the burst is always drained by now; under qemu it is
+	// not, which is why this failed on riscv64 and nowhere else.
+	before := waitUntilQuiet(t, root)
 	time.Sleep(200 * time.Millisecond)
 	if spun := root.frames() - before; spun != 0 {
 		t.Fatalf("the loop drew %d frames with nobody asking: the read deadline was left armed", spun)
@@ -201,6 +207,26 @@ func TestWaylandRepaintCoalescesAndKeepsGoing(t *testing.T) {
 
 	close(closeReq)
 	<-done
+}
+
+// waitUntilQuiet waits for the frame count to stop moving and returns it, so a
+// caller can assert about an idle loop rather than about one still catching up.
+// Two equal samples in a row is the signal: a single one only says no frame
+// landed in that gap, which a slow emulator can produce mid-burst.
+func waitUntilQuiet(t *testing.T, root *countingWLRoot) int {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	last := -1
+	for time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		got := root.frames()
+		if got == last {
+			return got
+		}
+		last = got
+	}
+	t.Fatalf("the frame count never settled: still %d", root.frames())
+	return 0
 }
 
 // waitForFrames waits until the root has drawn at least n frames, and returns
