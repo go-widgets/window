@@ -18,8 +18,8 @@ github.com/go-opentype/shape v0.5.0 h1:jHNaOMHNBdDj5EixOevlrrsi92svMxvVMKN7GYaPf
 github.com/go-opentype/shape v0.5.0/go.mod h1:3ImRYNIj6zpwWQ/DV3BWhgMFfmzDITH6XpZw2auQHTo=
 github.com/go-typeset/bidi v0.3.0 h1:4fjGjejvjE2LzLNzY4si8PkVO321NcsKIiANhWT3jF4=
 github.com/go-typeset/bidi v0.3.0/go.mod h1:ct3cmYT8Qt1FGJQ+2QaakrUxqaP4ZysgdQQg2ym5+Xo=
-github.com/go-widgets/android v0.12.1 h1:AEg7HglJ3YkVwnoLuQw2H4j4SUjugIaVmaHRvkS19z8=
-github.com/go-widgets/android v0.12.1/go.mod h1:MsEBpJyEUhmq4yKPXIMMf+BX21NWAPQW9lfU0deDR+g=
+github.com/go-widgets/android v0.13.1 h1:lo51C5xjTEceNxK2eUDOlpWIFi+LKS5XpKMNjnJns+U=
+github.com/go-widgets/android v0.13.1/go.mod h1:MsEBpJyEUhmq4yKPXIMMf+BX21NWAPQW9lfU0deDR+g=
 github.com/go-widgets/mvvm v0.7.0 h1:I7E2Kd9H8K/vJfZClifBRCqnk0kQTjTnhjnuIdORAVk=
 github.com/go-widgets/mvvm v0.7.0/go.mod h1:BBgSa7vTeNtYCo28qeowez9RlSSvViU73CcFj5vCvJ8=
 github.com/go-widgets/painter v0.11.0 h1:xsj4zTz8B43rOZnWrx7ZsaUBMgJyvgaE/Pq2FfcG2Sw=
