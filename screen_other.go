@@ -15,3 +15,10 @@ package window
 func VisibleScreenSize() (w, h int, ok bool) {
 	return 0, 0, false
 }
+
+// Screens reports [ErrScreensUnsupported] on every non-macOS platform. The
+// information exists on all of them — RandR, wl_output, EnumDisplayMonitors —
+// so this is a gap to be filled per back-end, not a limit of the API.
+func Screens() ([]Screen, error) {
+	return nil, ErrScreensUnsupported
+}
