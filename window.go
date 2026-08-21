@@ -97,6 +97,28 @@ type Config struct {
 	//
 	// Honoured today by the macOS (Cocoa) back-end.
 	RenderScale float64
+	// Screen places the window on a particular display, as returned by
+	// [Screens]. Nil, the default, lets the platform choose -- which in practice
+	// means the display the desktop considers active.
+	//
+	// The value is re-resolved against the displays attached when Open runs, so a
+	// display unplugged in between is reported as an error rather than becoming a
+	// window at coordinates that no longer describe anything. That case is
+	// ordinary with an external panel, and routine with an XR headset.
+	//
+	// Honoured today by the macOS (Cocoa) back-end.
+	Screen *Screen
+	// Fullscreen sizes the window to cover its screen entirely, with no title bar
+	// and no frame. With Screen nil it covers the primary display.
+	//
+	// It is NOT the platform's native full-screen mode: on macOS there is no
+	// Space, no animation and no menu bar at the top edge. A borderless window at
+	// the panel's exact bounds is what an immersive surface needs -- every pixel
+	// of the display, and nothing of the desktop -- and it is what allows one to
+	// sit on an external output while the desktop carries on elsewhere.
+	//
+	// Honoured today by the macOS (Cocoa) back-end.
+	Fullscreen bool
 }
 
 // Repainter is an optional [Backend] capability: ask for a repaint from ANY

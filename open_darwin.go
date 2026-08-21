@@ -25,7 +25,19 @@ import (
 // should therefore invoke Open+Run from main (as cmd/windowdemo does).
 func Open(cfg Config) (Backend, error) {
 	runtime.LockOSThread()
-	w, err := cocoa.NewScaled(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale)
+	opts := cocoa.Options{
+		Title:       cfg.Title,
+		Width:       cfg.Width,
+		Height:      cfg.Height,
+		Theme:       cfg.Theme,
+		RenderScale: cfg.RenderScale,
+		Fullscreen:  cfg.Fullscreen,
+	}
+	if cfg.Screen != nil {
+		s := cfg.Screen.toCocoa()
+		opts.Screen = &s
+	}
+	w, err := cocoa.NewWithOptions(opts)
 	if err != nil {
 		return nil, err
 	}

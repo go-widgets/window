@@ -57,6 +57,9 @@ const (
 	styleClosable       = 1 << 1
 	styleMiniaturizable = 1 << 2
 	styleResizable      = 1 << 3
+	// styleBorderless is NSWindowStyleMaskBorderless: no title bar, no frame,
+	// nothing but content. It is what an immersive surface wants.
+	styleBorderless = 0
 )
 
 const (
@@ -609,6 +612,17 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 // display's backing factor, and a positive one is used as-is. The parent package
 // documents when each is right (window.Config.RenderScale).
 func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScale float64) (*Window, error) {
+	return NewWithOptions(Options{Title: title, Width: width, Height: height, Theme: theme, RenderScale: renderScale})
+}
+
+// NewWithOptions is the real constructor: New and NewScaled are shorthands for
+// it. See Options for what placing a window on a chosen screen involves.
+func NewWithOptions(o Options) (*Window, error) {
+	title, width, height, theme, renderScale := o.Title, o.Width, o.Height, o.Theme, o.RenderScale
+	screen, err := o.resolveScreen()
+	if err != nil {
+		return nil, err
+	}
 	if err := loadFrameworks(); err != nil {
 		return nil, err
 	}
@@ -632,6 +646,22 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScal
 
 	rect := nsRect{Size: nsSize{W: float64(width), H: float64(height)}}
 	style := uint(styleTitled | styleClosable | styleMiniaturizable | styleResizable)
+	// A fullscreen placement is a BORDERLESS window at the screen's own frame,
+	// copied verbatim from what AppKit reported. It is deliberately not macOS
+	// native full screen, which animates into its own Space and keeps a menu bar
+	// -- wrong for an immersive surface that must own every pixel of the panel.
+	if screen != nil && o.Fullscreen {
+		rect = screen.nativeFrame
+		style = styleBorderless
+		width, height = int(rect.Size.W), int(rect.Size.H)
+	} else if screen != nil {
+		// Not fullscreen, but still on a chosen display: keep the requested size
+		// and put its top-left at the screen's top-left visible corner.
+		rect.Origin = nsPoint{
+			X: screen.nativeFrame.Origin.X,
+			Y: screen.nativeFrame.Origin.Y + screen.nativeFrame.Size.H - float64(height),
+		}
+	}
 	win := objc.ID(objc.GetClass("NSWindow")).Send(selAlloc).
 		Send(selInitContentRect, rect, style, backingStoreBuffered, false)
 	win.Send(selRetain)
@@ -683,7 +713,11 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScal
 	active = w
 
 	win.Send(selSetTitle, objc.NSString(title))
-	win.Send(selCenter)
+	if screen == nil {
+		// Centring is the right default, but on a chosen screen it would undo the
+		// placement by pulling the window back to the main display.
+		win.Send(selCenter)
+	}
 	win.Send(selMakeKeyAndOrderFront, objc.ID(0))
 	win.Send(selMakeFirstResponder, view)
 	app.Send(selActivateIgnoring, true)
