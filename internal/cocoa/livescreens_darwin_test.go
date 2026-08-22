@@ -20,8 +20,11 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	objc "github.com/go-macos/objc"
+
+	"github.com/go-widgets/toolkit"
 )
 
 var (
@@ -130,4 +133,79 @@ func TestLiveFullscreenRefusesAScreenThatIsGone(t *testing.T) {
 		t.Fatal("NewWithOptions on an unattached screen returned no error; a window was placed somewhere it was not asked to be")
 	}
 	t.Logf("correctly refused: %v", err)
+}
+
+// TestLiveCloseEndsRun is the regression test for a bug that made a full-screen
+// immersive window impossible to end.
+//
+// -[NSWindow close] does not invoke -windowShouldClose:, which is the delegate
+// callback that stops the run loop; that one is only sent for a close the USER
+// initiates. So Close() used to tear the window down and leave [NSApp run]
+// spinning on an empty application, and Run never returned. A borderless
+// full-screen window has no close button, so closing itself is the ONLY way such
+// an application can end — the bug turned "stop playing" into "hang".
+func TestLiveCloseEndsRun(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the live Cocoa screen tests")
+	}
+	screens, err := Screens()
+	if err != nil {
+		t.Fatalf("Screens() = %v", err)
+	}
+
+	cases := []struct {
+		name string
+		opts Options
+	}{
+		{"titled window", Options{Title: "close-ends-run", Width: 320, Height: 200}},
+	}
+	// Also cover the case that motivated the fix, on a NON-primary display when
+	// there is one, so the test does not take over the screen being worked on.
+	for i := range screens {
+		if !screens[i].Primary {
+			cases = append(cases, struct {
+				name string
+				opts Options
+			}{
+				"borderless fullscreen on " + screens[i].Name,
+				Options{Title: "close-ends-run", Screen: &screens[i], Fullscreen: true},
+			})
+			break
+		}
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := toolkit.NewSurface(func() ([]byte, int, int) { return nil, 0, 0 })
+			done := make(chan error, 1)
+
+			// Run must be called on the reserved main thread and blocks there, so
+			// it is submitted rather than called through callOnMain: this
+			// goroutine has to stay free to time out.
+			mainfuncs <- func() {
+				w, err := NewWithOptions(tc.opts)
+				if err != nil {
+					done <- err
+					return
+				}
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					w.Close()
+				}()
+				done <- w.Run(root)
+			}
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("Run = %v", err)
+				}
+				t.Log("Run returned after Close, as it must")
+			case <-time.After(15 * time.Second):
+				// Do not let a hung main thread wedge the rest of the suite
+				// silently: say what happened.
+				t.Fatal("Run did not return within 15s of Close(); the run loop was not stopped")
+			}
+		})
+	}
 }

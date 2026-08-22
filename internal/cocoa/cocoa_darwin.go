@@ -586,7 +586,26 @@ func viewRepaintNow(_ objc.ID, _ objc.SEL) {
 // the teardown is more than -[NSWindow close] and has to happen in one hop.
 var selCloseNow = objc.RegisterName("goWidgetsCloseNow")
 
+// Posting a wake-up event needs the long NSEvent constructor; selPostEvent is
+// already declared with the other NSApplication selectors above.
+var selOtherEventType = objc.RegisterName(
+	"otherEventWithType:location:modifierFlags:timestamp:windowNumber:context:subtype:data1:data2:")
+
+// nsAppKitDefined is NSEventTypeApplicationDefined: an event the application
+// invents, which AppKit delivers and nothing acts on.
+const nsAppKitDefined = 15
+
 // viewCloseNow is the main-thread half of Close.
+//
+// It must stop the application as well as close the window. -[NSWindow close]
+// does NOT invoke -windowShouldClose:, which is the delegate callback that ends
+// the run loop -- that one is only sent for a close the USER initiates. So
+// without the -stop: here, Close() tore the window down and left [NSApp run]
+// spinning on an empty application, and Run never returned to its caller.
+//
+// That is not a corner case. A borderless full-screen window has no close
+// button and cannot be closed by the user at all, so closing itself is the ONLY
+// way such an application can end.
 func viewCloseNow(_ objc.ID, _ objc.SEL) {
 	w := active
 	if w == nil || w.closed {
@@ -597,6 +616,25 @@ func viewCloseNow(_ objc.ID, _ objc.SEL) {
 		w.win.Send(selClose)
 	}
 	active = nil
+	stopApp()
+}
+
+// stopApp ends -[NSApplication run].
+//
+// -stop: only takes effect at the end of the current event cycle, and it is not
+// enough on its own from a run-loop source: with no further event to finish
+// processing, the loop can sit idle and never notice. So a do-nothing event is
+// posted to wake it, which is the difference between Close returning promptly
+// and Close appearing to hang.
+func stopApp() {
+	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+	app.Send(selStop, objc.ID(0))
+	ev := objc.ID(objc.GetClass("NSEvent")).Send(selOtherEventType,
+		uint64(nsAppKitDefined), nsPoint{}, uint64(0), 0.0, int64(0), objc.ID(0),
+		int16(0), int64(0), int64(0))
+	if ev != 0 {
+		app.Send(selPostEvent, ev, true)
+	}
 }
 
 // New creates the NSApplication, an NSWindow with a flipped content view and a
