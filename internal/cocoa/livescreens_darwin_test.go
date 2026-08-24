@@ -209,3 +209,73 @@ func TestLiveCloseEndsRun(t *testing.T) {
 		})
 	}
 }
+
+// TestLiveBorderlessWindowCanBecomeKey is the diagnosis of a bug that made a
+// full-screen window look finished and be unusable.
+//
+// AppKit's -[NSWindow canBecomeKeyWindow] returns NO for a BORDERLESS window
+// unless a subclass says otherwise. A window that cannot become key receives no
+// keyboard events and no -mouseMoved:, so a full-screen player built on
+// Config.Fullscreen showed its picture perfectly and then ignored every key and
+// never saw the pointer — its controls could not be summoned and Escape could
+// not close it.
+//
+// The titled case is checked alongside, because a fix that made only the
+// borderless one work by breaking the other would pass a one-sided test.
+func TestLiveBorderlessWindowCanBecomeKey(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the live Cocoa screen tests")
+	}
+	selCanBecomeKey := objc.RegisterName("canBecomeKeyWindow")
+	selIsKey := objc.RegisterName("isKeyWindow")
+	selAcceptsMoved := objc.RegisterName("acceptsMouseMovedEvents")
+
+	screens, err := Screens()
+	if err != nil {
+		t.Fatalf("Screens() = %v", err)
+	}
+
+	cases := []struct {
+		name string
+		opts Options
+	}{
+		{"titled window", Options{Title: "key-window", Width: 320, Height: 200}},
+	}
+	for i := range screens {
+		if !screens[i].Primary {
+			cases = append(cases, struct {
+				name string
+				opts Options
+			}{
+				"borderless fullscreen on " + screens[i].Name,
+				Options{Title: "key-window", Screen: &screens[i], Fullscreen: true},
+			})
+			break
+		}
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var canKey, isKey, moved bool
+			callOnMain(func() {
+				w, err := NewWithOptions(tc.opts)
+				if err != nil {
+					t.Errorf("NewWithOptions = %v", err)
+					return
+				}
+				defer w.Close()
+				canKey = objc.Send[bool](w.win, selCanBecomeKey)
+				isKey = objc.Send[bool](w.win, selIsKey)
+				moved = objc.Send[bool](w.win, selAcceptsMoved)
+			})
+			t.Logf("%s: canBecomeKeyWindow=%v isKeyWindow=%v acceptsMouseMoved=%v",
+				tc.name, canKey, isKey, moved)
+			if !canKey {
+				t.Errorf("%s: canBecomeKeyWindow is false; this window can receive no keys and no pointer motion", tc.name)
+			}
+			if !moved {
+				t.Errorf("%s: acceptsMouseMovedEvents is false; hover will never reach the widget tree", tc.name)
+			}
+		})
+	}
+}

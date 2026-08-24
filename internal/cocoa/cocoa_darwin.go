@@ -217,6 +217,7 @@ var active *Window
 // classesOnce registers the view + delegate classes exactly once.
 var (
 	classesOnce sync.Once
+	windowClass objc.Class
 	viewClass   objc.Class
 	delegClass  objc.Class
 	classesErr  error
@@ -238,6 +239,24 @@ func loadFrameworks() error {
 
 func registerClasses() (objc.Class, objc.Class, error) {
 	classesOnce.Do(func() {
+		// A BORDERLESS window answers NO to -canBecomeKeyWindow unless a subclass
+		// says otherwise, and a window that cannot become key receives no keyboard
+		// events and no -mouseMoved:. A full-screen window built through
+		// Config.Fullscreen therefore showed its picture perfectly and ignored
+		// every key and the pointer entirely -- which reads as "the app is broken"
+		// rather than "AppKit has an opinion about chrome".
+		//
+		// The override is unconditional: a titled window already answers YES, so
+		// saying it again changes nothing there.
+		windowClass, classesErr = objc.RegisterClass(
+			"GoWidgetsWindow", objc.GetClass("NSWindow"),
+			[]objc.MethodDef{
+				{Cmd: objc.RegisterName("canBecomeKeyWindow"), Fn: windowCanBecomeKey},
+				{Cmd: objc.RegisterName("canBecomeMainWindow"), Fn: windowCanBecomeKey},
+			})
+		if classesErr != nil {
+			return
+		}
 		viewClass, classesErr = objc.RegisterClass(
 			"GoWidgetsWindowView", objc.GetClass("NSView"),
 			append([]objc.MethodDef{
@@ -582,6 +601,10 @@ func viewRepaintNow(_ objc.ID, _ objc.SEL) {
 	}
 }
 
+// windowCanBecomeKey answers YES for every window this package makes. See
+// registerClasses for why a borderless one needs telling.
+func windowCanBecomeKey(_ objc.ID, _ objc.SEL) bool { return true }
+
 // selCloseNow is a selector of our own, for the same reason as selRepaintNow:
 // the teardown is more than -[NSWindow close] and has to happen in one hop.
 var selCloseNow = objc.RegisterName("goWidgetsCloseNow")
@@ -700,7 +723,10 @@ func NewWithOptions(o Options) (*Window, error) {
 			Y: screen.nativeFrame.Origin.Y + screen.nativeFrame.Size.H - float64(height),
 		}
 	}
-	win := objc.ID(objc.GetClass("NSWindow")).Send(selAlloc).
+	// GoWidgetsWindow rather than NSWindow: it is the subclass that answers YES
+	// to -canBecomeKeyWindow, without which a borderless window gets no keys and
+	// no pointer motion.
+	win := objc.ID(windowClass).Send(selAlloc).
 		Send(selInitContentRect, rect, style, backingStoreBuffered, false)
 	win.Send(selRetain)
 
