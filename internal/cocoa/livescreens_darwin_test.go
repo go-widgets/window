@@ -19,6 +19,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -279,3 +282,164 @@ func TestLiveBorderlessWindowCanBecomeKey(t *testing.T) {
 		})
 	}
 }
+
+// eventRecorder is a widget that remembers every event kind it is handed. It
+// draws nothing: this test is about delivery, not appearance.
+type eventRecorder struct {
+	toolkit.Base
+	mu    sync.Mutex
+	kinds []toolkit.EventKind
+}
+
+func (r *eventRecorder) OnEvent(ev toolkit.Event) {
+	r.mu.Lock()
+	r.kinds = append(r.kinds, ev.Kind)
+	r.mu.Unlock()
+}
+
+func (r *eventRecorder) saw(k toolkit.EventKind) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, got := range r.kinds {
+		if got == k {
+			return true
+		}
+	}
+	return false
+}
+
+// deliveryCaseEnv names the one delivery case a child process should run.
+//
+// Each case needs its own process, and that is not fussiness. Closing a window
+// stops NSApp — that is precisely how a closing window ends Run — and nothing
+// restarts it, so a SECOND window in the same process is ordered front and never
+// becomes visible. It then reports that no event arrived, for a reason that has
+// nothing to do with the window under test. That false failure cost an evening
+// once; rather than leave the trap set, the parent re-runs itself per case.
+const deliveryCaseEnv = "WINDOW_COCOA_DELIVERY_CASE"
+
+// TestLiveFullscreenReceivesMouseMovedAndKeys is the protocol that should have
+// existed before a full-screen application was called finished.
+//
+// A window can display a perfect picture and be entirely deaf, and nothing about
+// the picture says so. So this posts REAL NSEvents — a mouse move and a key —
+// at a borderless full-screen window and asserts the widget tree was handed
+// them. Both shapes are checked, because a titled window that works proves
+// nothing about the one this feature exists to make.
+func TestLiveFullscreenReceivesMouseMovedAndKeys(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the live Cocoa screen tests")
+	}
+	cases, err := deliveryCases()
+	if err != nil {
+		t.Fatalf("Screens() = %v", err)
+	}
+
+	// A child process: run the one case it was given, in this process, alone.
+	if v := os.Getenv(deliveryCaseEnv); v != "" {
+		i, err := strconv.Atoi(v)
+		if err != nil || i < 0 || i >= len(cases) {
+			t.Fatalf("%s=%q does not name one of the %d cases", deliveryCaseEnv, v, len(cases))
+		}
+		runDeliveryCase(t, cases[i])
+		return
+	}
+
+	// The parent: one child per case, output passed through so a failure reads
+	// the same as it would if it had happened here.
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0],
+				"-test.run=^TestLiveFullscreenReceivesMouseMovedAndKeys$",
+				"-test.v", "-test.timeout=2m")
+			cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%d", deliveryCaseEnv, i))
+			out, err := cmd.CombinedOutput()
+			for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+				t.Log(line)
+			}
+			if err != nil {
+				t.Errorf("case %q failed in its own process: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+type deliveryCase struct {
+	name string
+	opts Options
+}
+
+// deliveryCases is the titled window, plus a borderless full-screen window on a
+// secondary display if the machine has one. The secondary is what the feature
+// exists for; the titled one is the control that says the harness itself works.
+func deliveryCases() ([]deliveryCase, error) {
+	screens, err := Screens()
+	if err != nil {
+		return nil, err
+	}
+	cases := []deliveryCase{
+		{"titled window", Options{Title: "events", Width: 480, Height: 320}},
+	}
+	for i := range screens {
+		if !screens[i].Primary {
+			cases = append(cases, deliveryCase{
+				"borderless fullscreen on " + screens[i].Name,
+				Options{Title: "events", Screen: &screens[i], Fullscreen: true},
+			})
+			break
+		}
+	}
+	return cases, nil
+}
+
+func runDeliveryCase(t *testing.T, tc deliveryCase) {
+	t.Helper()
+	root := &eventRecorder{}
+	var sawMove, sawKey bool
+	callOnMain(func() {
+		w, err := NewWithOptions(tc.opts)
+		if err != nil {
+			t.Errorf("NewWithOptions = %v", err)
+			return
+		}
+		defer w.Close()
+		w.bindAndSeed(root)
+
+		app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+		app.Send(selSetActivationPolicy, 0) // NSApplicationActivationPolicyRegular
+		app.Send(selActivateIgnoring, true)
+		// Make the window key by hand: outside a running NSApp nothing else
+		// will, and a non-key window is deaf whatever its style.
+		w.win.Send(objc.RegisterName("makeKeyAndOrderFront:"), objc.ID(0))
+		w.pumpPending(app)
+
+		bounds := objc.Send[nsRect](w.view, selBounds)
+		mid := nsPoint{X: bounds.Size.W / 2, Y: bounds.Size.H / 2}
+		w.postMouse(app, nsEventTypeMouseMoved, mid)
+		w.postKey(app, nsEventTypeKeyDown, " ", 49) // space
+
+		sawMove = root.saw(toolkit.EventMouseMove)
+		sawKey = root.saw(toolkit.EventKeyDown)
+		t.Logf("  isKey=%v isVisible=%v isMain=%v firstResponderIsView=%v appActive=%v",
+			objc.Send[bool](w.win, objc.RegisterName("isKeyWindow")),
+			objc.Send[bool](w.win, objc.RegisterName("isVisible")),
+			objc.Send[bool](w.win, objc.RegisterName("isMainWindow")),
+			objc.Send[objc.ID](w.win, objc.RegisterName("firstResponder")) == w.view,
+			objc.Send[bool](app, objc.RegisterName("isActive")))
+	})
+	t.Logf("%s: mouseMoved delivered=%v keyDown delivered=%v", tc.name, sawMove, sawKey)
+	if !sawMove {
+		t.Errorf("%s: a synthesised mouseMoved never reached the widget tree; "+
+			"an overlay that appears on pointer motion can never appear", tc.name)
+	}
+	if !sawKey {
+		t.Errorf("%s: a synthesised keyDown never reached the widget tree; "+
+			"there is no way to close this window from the keyboard", tc.name)
+	}
+}
+
+// NSEventType values used by the delivery test.
+const (
+	nsEventTypeMouseMoved = 5  // NSEventTypeMouseMoved
+	nsEventTypeKeyDown    = 10 // NSEventTypeKeyDown
+)
