@@ -12,6 +12,21 @@ permissions:
 
 # Track the latest stable Go (org convention). go.mod floor is 1.26.4.
 jobs:
+  workflows:
+    name: workflows parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A workflow that fails to PARSE reports nothing at all: no jobs run, no
+      # checks appear, and a pull request looks unexercised rather than broken.
+      # Every other lane in this file is downstream of the file itself being
+      # readable, so none of them can report that it is not. This is the only
+      # lane that would notice.
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
   # Build + vet + test the whole module CGO-free on Linux, then enforce a
   # 100% statement-coverage gate on the sovereign X11 and Wayland protocol
   # layers (wire codec, setup, Xauthority, keysym/xkb mapping,
@@ -281,7 +296,8 @@ jobs:
         shell: bash
         run: |
           set -x
-          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_RUNTIME_DIR
           chmod 700 "$XDG_RUNTIME_DIR"
           cat > sway.conf <<'CONF'
           output HEADLESS-1 resolution 800x600
@@ -298,13 +314,19 @@ jobs:
           dbus-run-session -- sway -c sway.conf &
           # Wait for sway to create its Wayland socket.
           sock=""
-          for i in $(seq 1 60); do
-            sock=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock' | head -1 || true)
+          for _ in $(seq 1 60); do
+            sock=""
+            for candidate in "$XDG_RUNTIME_DIR"/wayland-*; do
+              [ -S "$candidate" ] || continue
+              case "$candidate" in *.lock) continue;; esac
+              sock="$candidate"; break
+            done
             [ -n "$sock" ] && break
             sleep 0.5
           done
           if [ -z "$sock" ]; then echo "::error::sway Wayland socket never appeared"; exit 1; fi
-          export WAYLAND_DISPLAY="$(basename "$sock")"
+          WAYLAND_DISPLAY="$(basename "$sock")"
+          export WAYLAND_DISPLAY
           echo "using WAYLAND_DISPLAY=$WAYLAND_DISPLAY in $XDG_RUNTIME_DIR"
           WINDOW_WAYLAND_INTEGRATION=1 go test -tags=integration -run TestLiveWayland -v ./...
       - name: Upload the captured window as a build artifact
@@ -338,7 +360,7 @@ jobs:
           set -x
           export DISPLAY=:97
           Xvfb :97 -screen 0 1400x900x24 &
-          for i in $(seq 1 60); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.5; done
+          for _ in $(seq 1 60); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.5; done
           # The desktop's dpi is published by the TEST, which then keeps its
           # connection open. An X server resets when its last client goes away,
           # destroying every atom and property created since the last reset, so a
@@ -374,7 +396,8 @@ jobs:
         shell: bash
         run: |
           set -x
-          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_RUNTIME_DIR
           chmod 700 "$XDG_RUNTIME_DIR"
           cat > sway-hidpi.conf <<'CONF'
           output HEADLESS-1 resolution 800x600 scale 2
@@ -390,13 +413,19 @@ jobs:
           export WLR_HEADLESS_OUTPUTS=1
           dbus-run-session -- sway -c sway-hidpi.conf &
           sock=""
-          for i in $(seq 1 60); do
-            sock=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock' | head -1 || true)
+          for _ in $(seq 1 60); do
+            sock=""
+            for candidate in "$XDG_RUNTIME_DIR"/wayland-*; do
+              [ -S "$candidate" ] || continue
+              case "$candidate" in *.lock) continue;; esac
+              sock="$candidate"; break
+            done
             [ -n "$sock" ] && break
             sleep 0.5
           done
           if [ -z "$sock" ]; then echo "::error::sway Wayland socket never appeared"; exit 1; fi
-          export WAYLAND_DISPLAY="$(basename "$sock")"
+          WAYLAND_DISPLAY="$(basename "$sock")"
+          export WAYLAND_DISPLAY
           WINDOW_WAYLAND_HIDPI=1 go test -tags=integration -run TestLiveWlHiDPI -v ./...
       - name: Upload the captures as build artifacts
         if: always()
