@@ -4,6 +4,10 @@
 
 package x11
 
+import (
+	xproto "github.com/go-freedesktop/x11"
+)
+
 // Waking a blocked event loop, which on X11 means sending yourself an event.
 //
 // A client that is waiting for the next event is blocked on a socket read, and
@@ -25,20 +29,20 @@ package x11
 func (c *Conn) SendClientMessage(window, typeAtom, data uint32) error {
 	// A ClientMessage is 32 bytes, laid out by hand: the client sends events
 	// rarely enough that a general encoder would be more code than this.
-	ev := newEncoder(c.order)
-	ev.put8(evClientMessage)
-	ev.put8(32) // format: 32-bit data words
-	ev.put16(0) // sequence, filled in by the server
-	ev.put32(window)
-	ev.put32(typeAtom)
-	ev.put32(data)
-	for len(ev.buf) < 32 {
-		ev.put8(0) // the four unused data words
+	ev := xproto.NewEncoder(c.order)
+	ev.Put8(evClientMessage)
+	ev.Put8(32) // format: 32-bit data words
+	ev.Put16(0) // sequence, filled in by the server
+	ev.Put32(window)
+	ev.Put32(typeAtom)
+	ev.Put32(data)
+	for len(ev.Bytes()) < 32 {
+		ev.Put8(0) // the four unused data words
 	}
 
-	e := newEncoder(c.order)
-	e.put32(window)
-	e.put32(0) // event-mask 0: deliver to the window's own client
-	e.putBytes(ev.buf)
-	return c.sendRequest(opSendEvent, 0, e.buf) // propagate = 0
+	e := xproto.NewEncoder(c.order)
+	e.Put32(window)
+	e.Put32(0) // event-mask 0: deliver to the window's own client
+	e.PutBytes(ev.Bytes())
+	return c.sendRequest(opSendEvent, 0, e.Bytes()) // propagate = 0
 }

@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/go-widgets/window/internal/x11"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 // countConn wraps a *net.UnixConn, counting bytes written and supporting fd
@@ -113,7 +115,7 @@ func TestLiveX11SHMMeasure(t *testing.T) {
 	nc, dispNum := dialX11(t)
 	cc := &countConn{c: nc}
 	host, _ := os.Hostname()
-	authName, authData, _ := x11.LoadAuthCookie(authFilePathEnv(), host, dispNum)
+	authName, authData, _ := xproto.LoadAuthCookie(authFilePathEnv(), host, dispNum)
 	conn, err := x11.Handshake(cc, binary.LittleEndian, authName, authData)
 	if err != nil {
 		t.Fatalf("handshake: %v", err)
@@ -151,7 +153,7 @@ func TestLiveX11SHMMeasure(t *testing.T) {
 	if shm == nil || !shm.FDCapable {
 		t.Fatalf("server lacks MIT-SHM 1.2 fd-passing (shm=%v); cannot measure the SHM path", shm != nil)
 	}
-	seg, err := x11.NewSegment(conn.NewID(), pres.SegmentSize(W, H))
+	seg, err := xproto.NewSegment(conn.NewID(), pres.SegmentSize(W, H))
 	if err != nil {
 		t.Fatalf("new segment: %v", err)
 	}

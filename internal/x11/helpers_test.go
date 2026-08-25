@@ -9,6 +9,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 // fakeConn is an in-memory io.ReadWriteCloser: reads drain a preloaded
@@ -53,64 +55,64 @@ const (
 // additional-data block after the 8-byte header) in the given order: one
 // screen, one depth-24 TrueColor visual, one depth-24/32bpp format.
 func setupReplyBody(order ByteOrder, imageOrder uint8) []byte {
-	e := newEncoder(order)
-	e.put32(1)          // release
-	e.put32(0x04000000) // resource-id-base
-	e.put32(0x001fffff) // resource-id-mask
-	e.put32(256)        // motion-buffer-size
+	e := xproto.NewEncoder(order)
+	e.Put32(1)          // release
+	e.Put32(0x04000000) // resource-id-base
+	e.Put32(0x001fffff) // resource-id-mask
+	e.Put32(256)        // motion-buffer-size
 	vendor := "Test"
-	e.put16(uint16(len(vendor))) // vendor length
-	e.put16(0xffff)              // maximum-request-length
-	e.put8(1)                    // number of screens
-	e.put8(1)                    // number of formats
-	e.put8(imageOrder)           // image-byte-order
-	e.put8(0)                    // bitmap-format-bit-order
-	e.put8(32)                   // bitmap-format-scanline-unit
-	e.put8(32)                   // bitmap-format-scanline-pad
-	e.put8(8)                    // min-keycode
-	e.put8(9)                    // max-keycode
-	e.skip(4)                    // unused
-	e.putString(vendor)          // vendor + pad
+	e.Put16(uint16(len(vendor))) // vendor length
+	e.Put16(0xffff)              // maximum-request-length
+	e.Put8(1)                    // number of screens
+	e.Put8(1)                    // number of formats
+	e.Put8(imageOrder)           // image-byte-order
+	e.Put8(0)                    // bitmap-format-bit-order
+	e.Put8(32)                   // bitmap-format-scanline-unit
+	e.Put8(32)                   // bitmap-format-scanline-pad
+	e.Put8(8)                    // min-keycode
+	e.Put8(9)                    // max-keycode
+	e.Skip(4)                    // unused
+	e.PutString(vendor)          // vendor + pad
 
 	// One FORMAT: depth 24, 32 bpp, 32-bit scanline pad.
-	e.put8(24)
-	e.put8(32)
-	e.put8(32)
-	e.skip(5)
+	e.Put8(24)
+	e.Put8(32)
+	e.Put8(32)
+	e.Skip(5)
 
 	// One SCREEN.
-	e.put32(testRootWin)  // root
-	e.put32(0x22)         // default-colormap
-	e.put32(0x00ffffff)   // white-pixel
-	e.put32(0)            // black-pixel
-	e.put32(0)            // current-input-masks
-	e.put16(800)          // width
-	e.put16(600)          // height
-	e.put16(300)          // width-mm
-	e.put16(200)          // height-mm
-	e.put16(1)            // min-installed-maps
-	e.put16(1)            // max-installed-maps
-	e.put32(testVisualID) // root-visual
-	e.put8(0)             // backing-stores
-	e.put8(0)             // save-unders
-	e.put8(24)            // root-depth
-	e.put8(1)             // number of depths
+	e.Put32(testRootWin)  // root
+	e.Put32(0x22)         // default-colormap
+	e.Put32(0x00ffffff)   // white-pixel
+	e.Put32(0)            // black-pixel
+	e.Put32(0)            // current-input-masks
+	e.Put16(800)          // width
+	e.Put16(600)          // height
+	e.Put16(300)          // width-mm
+	e.Put16(200)          // height-mm
+	e.Put16(1)            // min-installed-maps
+	e.Put16(1)            // max-installed-maps
+	e.Put32(testVisualID) // root-visual
+	e.Put8(0)             // backing-stores
+	e.Put8(0)             // save-unders
+	e.Put8(24)            // root-depth
+	e.Put8(1)             // number of depths
 
 	// One DEPTH with one VISUALTYPE.
-	e.put8(24) // depth
-	e.skip(1)
-	e.put16(1) // number of visuals
-	e.skip(4)
-	e.put32(testVisualID)   // visual-id
-	e.put8(VisualTrueColor) // class
-	e.put8(8)               // bits-per-rgb
-	e.put16(256)            // colormap-entries
-	e.put32(0x00ff0000)     // red-mask
-	e.put32(0x0000ff00)     // green-mask
-	e.put32(0x000000ff)     // blue-mask
-	e.skip(4)
+	e.Put8(24) // depth
+	e.Skip(1)
+	e.Put16(1) // number of visuals
+	e.Skip(4)
+	e.Put32(testVisualID)   // visual-id
+	e.Put8(VisualTrueColor) // class
+	e.Put8(8)               // bits-per-rgb
+	e.Put16(256)            // colormap-entries
+	e.Put32(0x00ff0000)     // red-mask
+	e.Put32(0x0000ff00)     // green-mask
+	e.Put32(0x000000ff)     // blue-mask
+	e.Skip(4)
 
-	return e.buf
+	return e.Bytes()
 }
 
 // setupSuccess frames a full success setup reply (8-byte header + body).

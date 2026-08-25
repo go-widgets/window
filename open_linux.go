@@ -16,6 +16,8 @@ import (
 
 	"github.com/go-widgets/window/internal/wayland"
 	"github.com/go-widgets/window/internal/x11"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 // Open connects to the running display server and returns a window ready for
@@ -108,7 +110,7 @@ func dialAuthenticated(disp string) (*x11.Conn, error) {
 		return nil, err
 	}
 	host, _ := os.Hostname()
-	authName, authData, err := x11.LoadAuthCookie(authFilePathEnv(), host, d.number)
+	authName, authData, err := xproto.LoadAuthCookie(authFilePathEnv(), host, d.number)
 	if err != nil {
 		nc.Close()
 		return nil, err
