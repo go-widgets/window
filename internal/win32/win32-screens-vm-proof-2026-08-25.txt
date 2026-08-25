@@ -98,6 +98,26 @@ doing exactly what it is for. A test that only ever ran over ssh would report a
 display that does not exist, and would pass.
 
 
+A SECOND MACHINE — GitHub's windows-latest runner, on every push
+----------------------------------------------------------------
+Windows Server 2025 on Hyper-V, no interactive session, hardware nobody in this
+project controls. The CI lane added with this work runs the same
+TestLiveScreens there:
+
+    SCREEN 0 name="HyperVMonitor" bounds=0,0 1024x768 visible=0,0 1024x720
+             scale=1 primary=true
+
+A different machine, a different display driver, a different name, a different
+taskbar height (48 rows here too, out of 768) — and the same shape, passing the
+same contract assertions. Unlike an ssh session 0, a hosted runner has a REAL
+display device rather than the WinDisc phantom, which is what makes the lane
+worth having.
+
+Its name, "HyperVMonitor", is again a DRIVER description and not an EDID model:
+a synthetic Hyper-V display has no panel and no EDID either. So neither machine
+available to this work can prove the EDID path end to end.
+
+
 WHAT WAS NOT TESTED — and cannot be, on this machine
 ----------------------------------------------------
   - MULTI-MONITOR anything. One display. Nothing here exercised a negative
