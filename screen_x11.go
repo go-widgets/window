@@ -125,38 +125,3 @@ func intersect(ax, ay, aw, ah, bx, by, bw, bh int) (x, y, w, h int, ok bool) {
 	}
 	return x, y, right - x, bottom - y, true
 }
-
-// primaryFirst moves the primary display to the front and guarantees that
-// EXACTLY ONE screen carries the flag, which is what [Screen.Primary]
-// promises.
-//
-// Neither half is automatic. A bare X server with no window manager marks no
-// output primary at all — an Xvfb reports its single monitor as automatic and
-// not primary — and a caller looking for "the main display" would find none.
-// The first monitor RANDR states is the desktop's origin in that case, which is
-// what the flag is for.
-func primaryFirst(screens []Screen) []Screen {
-	first := -1
-	for i := range screens {
-		if screens[i].Primary {
-			if first < 0 {
-				first = i
-				continue
-			}
-			screens[i].Primary = false // only one may claim it
-		}
-	}
-	if first < 0 {
-		if len(screens) == 0 {
-			return screens
-		}
-		first = 0
-		screens[0].Primary = true
-	}
-	if first > 0 {
-		p := screens[first]
-		copy(screens[1:first+1], screens[:first])
-		screens[0] = p
-	}
-	return screens
-}
