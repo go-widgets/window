@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -106,7 +107,12 @@ func TestLiveFullscreenLandsOnEveryAttachedScreen(t *testing.T) {
 
 			// Artefact for a human: a shot of the panel itself. Best-effort — it
 			// needs screen-recording consent and is not an assertion.
-			out := fmt.Sprintf("cocoa-fullscreen-screen%d.png", i)
+			//
+			// It is a picture of WHOEVER RAN THIS, at work, and this repository is
+			// public. It used to be written into internal/cocoa as an untracked
+			// file — one `git add -A` from publication — and that is what this
+			// directory refusal exists to stop.
+			out := filepath.Join(captureDir(t), fmt.Sprintf("cocoa-fullscreen-screen%d.png", i))
 			if err := exec.Command("screencapture", "-x", fmt.Sprintf("-D%d", i+1), out).Run(); err != nil {
 				t.Logf("screencapture unavailable (%v); geometric assertions above stand alone", err)
 			} else {
