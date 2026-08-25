@@ -8,7 +8,8 @@ import "errors"
 
 // ErrScreensUnsupported is returned by [Screens] on a back-end that cannot yet
 // enumerate displays. It is not a failure to handle defensively so much as a
-// statement of coverage: today only the macOS (Cocoa) back-end answers.
+// statement of coverage: today macOS answers through Cocoa and X11 through
+// RANDR, and Wayland, Windows and js/wasm do not.
 var ErrScreensUnsupported = errors.New("window: this back-end cannot enumerate screens yet")
 
 // Screen describes one attached display, in LOGICAL points — the unit the
@@ -28,6 +29,11 @@ type Screen struct {
 	// Name is the display's human-readable name, e.g. "Color LCD" or
 	// "VITURE Beast". It is what to show a user choosing an output, and may be
 	// empty on a display that publishes none.
+	//
+	// It is the panel's OWN name wherever the platform offers one — on X11 the
+	// product string out of its EDID — falling back to the connector ("HDMI-1",
+	// "DP-2") on a display that publishes no EDID, since a socket is still
+	// better than nothing to tell two outputs apart by.
 	Name string
 	// X, Y, Width, Height are the display's full bounds.
 	X, Y          int
