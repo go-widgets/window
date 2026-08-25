@@ -4,7 +4,11 @@
 
 package x11
 
-import "fmt"
+import (
+	"fmt"
+
+	xproto "github.com/go-freedesktop/x11"
+)
 
 // This file implements the client side of the MIT-SHM extension, version 1.2.
 //
@@ -82,22 +86,22 @@ func shmAtLeast(maj, min, wantMaj, wantMin uint16) bool {
 // readOnly declares whether the server may only read the segment. The server
 // takes ownership of the passed descriptor.
 func (s *Shm) AttachFd(seg uint32, fd int, readOnly bool) error {
-	e := newEncoder(s.c.order)
-	e.put32(seg)
+	e := xproto.NewEncoder(s.c.order)
+	e.Put32(seg)
 	ro := byte(0)
 	if readOnly {
 		ro = 1
 	}
-	e.put8(ro)
-	e.skip(3) // unused
-	return s.c.sendRequestFD(s.major, shmReqAttachFd, e.buf, fd)
+	e.Put8(ro)
+	e.Skip(3) // unused
+	return s.c.sendRequestFD(s.major, shmReqAttachFd, e.Bytes(), fd)
 }
 
 // Detach releases a previously attached segment.
 func (s *Shm) Detach(seg uint32) error {
-	e := newEncoder(s.c.order)
-	e.put32(seg)
-	return s.c.sendRequest(s.major, shmReqDetach, e.buf)
+	e := xproto.NewEncoder(s.c.order)
+	e.Put32(seg)
+	return s.c.sendRequest(s.major, shmReqDetach, e.Bytes())
 }
 
 // PutImage blits a w×h source region located at byte offset in segment seg
@@ -107,24 +111,24 @@ func (s *Shm) Detach(seg uint32) error {
 // request regardless of image size — the pixels travel through shared memory.
 func (s *Shm) PutImage(p *Presenter, drawable, gc uint32, seg uint32, offset uint32,
 	totalW, totalH, srcX, srcY, w, h, dstX, dstY int) error {
-	e := newEncoder(s.c.order)
-	e.put32(drawable)
-	e.put32(gc)
-	e.put16(uint16(totalW))
-	e.put16(uint16(totalH))
-	e.put16(uint16(srcX))
-	e.put16(uint16(srcY))
-	e.put16(uint16(w))
-	e.put16(uint16(h))
-	e.put16(uint16(int16(dstX)))
-	e.put16(uint16(int16(dstY)))
-	e.put8(p.depth)
-	e.put8(imageFormatZPixmap)
-	e.put8(0) // send-event: no ShmCompletion event wanted
-	e.put8(0) // bpad
-	e.put32(seg)
-	e.put32(offset)
-	return s.c.sendRequest(s.major, shmReqPutImage, e.buf)
+	e := xproto.NewEncoder(s.c.order)
+	e.Put32(drawable)
+	e.Put32(gc)
+	e.Put16(uint16(totalW))
+	e.Put16(uint16(totalH))
+	e.Put16(uint16(srcX))
+	e.Put16(uint16(srcY))
+	e.Put16(uint16(w))
+	e.Put16(uint16(h))
+	e.Put16(uint16(int16(dstX)))
+	e.Put16(uint16(int16(dstY)))
+	e.Put8(p.depth)
+	e.Put8(imageFormatZPixmap)
+	e.Put8(0) // send-event: no ShmCompletion event wanted
+	e.Put8(0) // bpad
+	e.Put32(seg)
+	e.Put32(offset)
+	return s.c.sendRequest(s.major, shmReqPutImage, e.Bytes())
 }
 
 // EncodeRectInto packs the rectangle (sx, sy, w, h) of an RGBA source buffer

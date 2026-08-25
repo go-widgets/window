@@ -4,6 +4,10 @@
 
 package x11
 
+import (
+	xproto "github.com/go-freedesktop/x11"
+)
+
 // Keymap holds a decoded GetKeyboardMapping reply: for each keycode in
 // [Min, Min+len/PerCode) a run of PerCode keysyms, level 0 being the
 // unshifted symbol and level 1 the shifted one.
@@ -30,10 +34,10 @@ func keyboardMappingHeader(first, count uint8) (b1, b2 byte) { return first, cou
 func parseKeyboardMapping(order ByteOrder, first, count, perCode uint8, body []byte) *Keymap {
 	km := &Keymap{Min: first, PerCode: int(perCode)}
 	n := int(count) * int(perCode)
-	d := newDecoder(order, body)
+	d := xproto.NewDecoder(order, body)
 	km.Syms = make([]uint32, 0, n)
 	for i := 0; i < n; i++ {
-		km.Syms = append(km.Syms, d.get32())
+		km.Syms = append(km.Syms, d.Get32())
 	}
 	return km
 }

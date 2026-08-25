@@ -7,6 +7,8 @@ package x11
 import (
 	"encoding/binary"
 	"testing"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 func TestParseKeyboardMappingAndLookup(t *testing.T) {
@@ -15,11 +17,11 @@ func TestParseKeyboardMappingAndLookup(t *testing.T) {
 	//   kc 8: unshifted 'a' (0x61), shifted 'A' (0x41)
 	//   kc 9: unshifted Return (0xff0d), shifted NoSymbol (0)
 	first, count, perCode := uint8(8), uint8(2), uint8(2)
-	e := newEncoder(order)
+	e := xproto.NewEncoder(order)
 	for _, ks := range []uint32{0x61, 0x41, ksReturn, 0} {
-		e.put32(ks)
+		e.Put32(ks)
 	}
-	km := parseKeyboardMapping(order, first, count, perCode, e.buf)
+	km := parseKeyboardMapping(order, first, count, perCode, e.Bytes())
 
 	if km.Keysym(8, false) != 0x61 || km.Keysym(8, true) != 0x41 {
 		t.Fatalf("kc8 lookup wrong")

@@ -29,6 +29,8 @@ import (
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/window/internal/dnd"
 	"github.com/go-widgets/window/internal/x11"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 // ErrUnsupported is returned by Open on platforms with no windowing backend —
@@ -175,7 +177,7 @@ type Window struct {
 	// mirrors the framebuffer as a ZPixmap image. present falls back to plain
 	// PutImage whenever seg is nil.
 	shm *x11.Shm
-	seg *x11.Segment
+	seg *xproto.Segment
 
 	w, h  int
 	buf   []byte // RGBA framebuffer, 4*w*h bytes
@@ -362,7 +364,7 @@ func (w *Window) ensureSegment() {
 		w.seg = nil
 	}
 	size := w.pres.SegmentSize(w.w, w.h)
-	seg, err := x11.NewSegment(w.conn.NewID(), size)
+	seg, err := xproto.NewSegment(w.conn.NewID(), size)
 	if err != nil {
 		w.shm = nil // give up on SHM for this window
 		return

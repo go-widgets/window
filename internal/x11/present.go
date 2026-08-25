@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/bits"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 // Presenter converts a toolkit RGBA framebuffer (R,G,B,A byte order) into
@@ -235,17 +237,17 @@ func (c *Conn) PutImage(p *Presenter, drawable, gc uint32, src []byte, srcStride
 // putImageChunk emits a single PutImage request for an already-encoded
 // band of image data.
 func (c *Conn) putImageChunk(p *Presenter, drawable, gc uint32, w, h, dstX, dstY int, data []byte) error {
-	e := newEncoder(c.order)
-	e.put32(drawable)
-	e.put32(gc)
-	e.put16(uint16(w))
-	e.put16(uint16(h))
-	e.put16(uint16(int16(dstX)))
-	e.put16(uint16(int16(dstY)))
-	e.put8(0)       // left-pad (0 for ZPixmap)
-	e.put8(p.depth) // depth
-	e.skip(2)       // unused
-	e.putBytes(data)
-	e.pad(len(data))
-	return c.sendRequest(opPutImage, imageFormatZPixmap, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(drawable)
+	e.Put32(gc)
+	e.Put16(uint16(w))
+	e.Put16(uint16(h))
+	e.Put16(uint16(int16(dstX)))
+	e.Put16(uint16(int16(dstY)))
+	e.Put8(0)       // left-pad (0 for ZPixmap)
+	e.Put8(p.depth) // depth
+	e.Skip(2)       // unused
+	e.PutBytes(data)
+	e.Pad(len(data))
+	return c.sendRequest(opPutImage, imageFormatZPixmap, e.Bytes())
 }

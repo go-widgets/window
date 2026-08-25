@@ -4,6 +4,10 @@
 
 package x11
 
+import (
+	xproto "github.com/go-freedesktop/x11"
+)
+
 // Modifier / button state-mask bits carried in pointer and key events.
 const (
 	ModShift   = 0x0001
@@ -63,63 +67,63 @@ type Event struct {
 // handled; other events decode their common header and are returned with
 // the remaining fields zero.
 func decodeEvent(order ByteOrder, raw []byte) Event {
-	d := newDecoder(order, raw)
+	d := xproto.NewDecoder(order, raw)
 	var ev Event
-	first := d.get8()
+	first := d.Get8()
 	ev.Synth = first&sendEventBit != 0
 	ev.Code = first &^ sendEventBit
-	ev.Detail = d.get8()
-	ev.Seq = d.get16()
+	ev.Detail = d.Get8()
+	ev.Seq = d.Get16()
 
 	switch ev.Code {
 	case evKeyPress, evKeyRelease, evButtonPress, evButtonRelease, evMotionNotify:
-		ev.Time = d.get32()
-		_ = d.get32() // root
-		ev.Window = d.get32()
-		_ = d.get32() // child
-		ev.RootX = int16(d.get16())
-		ev.RootY = int16(d.get16())
-		ev.EventX = int16(d.get16())
-		ev.EventY = int16(d.get16())
-		ev.State = d.get16()
+		ev.Time = d.Get32()
+		_ = d.Get32() // root
+		ev.Window = d.Get32()
+		_ = d.Get32() // child
+		ev.RootX = int16(d.Get16())
+		ev.RootY = int16(d.Get16())
+		ev.EventX = int16(d.Get16())
+		ev.EventY = int16(d.Get16())
+		ev.State = d.Get16()
 	case evExpose:
-		ev.Window = d.get32()
-		ev.X = int16(d.get16())
-		ev.Y = int16(d.get16())
-		ev.Width = d.get16()
-		ev.Height = d.get16()
-		ev.Count = d.get16()
+		ev.Window = d.Get32()
+		ev.X = int16(d.Get16())
+		ev.Y = int16(d.Get16())
+		ev.Width = d.Get16()
+		ev.Height = d.Get16()
+		ev.Count = d.Get16()
 	case evConfigureNotify:
-		_ = d.get32() // event
-		ev.Window = d.get32()
-		_ = d.get32() // above-sibling
-		ev.X = int16(d.get16())
-		ev.Y = int16(d.get16())
-		ev.Width = d.get16()
-		ev.Height = d.get16()
+		_ = d.Get32() // event
+		ev.Window = d.Get32()
+		_ = d.Get32() // above-sibling
+		ev.X = int16(d.Get16())
+		ev.Y = int16(d.Get16())
+		ev.Width = d.Get16()
+		ev.Height = d.Get16()
 	case evSelectionRequest:
-		ev.Time = d.get32()
-		ev.Window = d.get32() // owner
-		ev.Requestor = d.get32()
-		ev.Selection = d.get32()
-		ev.Target = d.get32()
-		ev.Property = d.get32()
+		ev.Time = d.Get32()
+		ev.Window = d.Get32() // owner
+		ev.Requestor = d.Get32()
+		ev.Selection = d.Get32()
+		ev.Target = d.Get32()
+		ev.Property = d.Get32()
 	case evSelectionNotify:
-		ev.Time = d.get32()
-		ev.Requestor = d.get32()
+		ev.Time = d.Get32()
+		ev.Requestor = d.Get32()
 		ev.Window = ev.Requestor // the event window, for callers that switch on it
-		ev.Selection = d.get32()
-		ev.Target = d.get32()
-		ev.Property = d.get32()
+		ev.Selection = d.Get32()
+		ev.Target = d.Get32()
+		ev.Property = d.Get32()
 	case evSelectionClear:
-		ev.Time = d.get32()
-		ev.Window = d.get32() // owner losing it
-		ev.Selection = d.get32()
+		ev.Time = d.Get32()
+		ev.Window = d.Get32() // owner losing it
+		ev.Selection = d.Get32()
 	case evClientMessage:
 		ev.Format = ev.Detail
-		ev.Window = d.get32()
-		ev.Atom = d.get32()
-		ev.Data32 = d.get32()
+		ev.Window = d.Get32()
+		ev.Atom = d.Get32()
+		ev.Data32 = d.Get32()
 	}
 	return ev
 }

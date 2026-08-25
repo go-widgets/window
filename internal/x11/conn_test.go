@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"testing"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 func TestHandshakeSuccessBothOrders(t *testing.T) {
@@ -21,9 +23,9 @@ func TestHandshakeSuccessBothOrders(t *testing.T) {
 		}
 		// The first byte written is the byte-order sentinel.
 		sent := fc.out.Bytes()
-		wantSentinel := byte(orderLSB)
+		wantSentinel := byte(xproto.OrderLSB)
 		if order == binary.BigEndian {
-			wantSentinel = orderMSB
+			wantSentinel = xproto.OrderMSB
 		}
 		if sent[0] != wantSentinel {
 			t.Fatalf("sentinel = %c want %c", sent[0], wantSentinel)
@@ -37,7 +39,7 @@ func TestHandshakeSuccessBothOrders(t *testing.T) {
 func TestHandshakeRefused(t *testing.T) {
 	order := binary.LittleEndian
 	reason := "no way"
-	body := make([]byte, pad4(len(reason)))
+	body := make([]byte, xproto.Pad4(len(reason)))
 	copy(body, reason)
 	hdr := make([]byte, 8)
 	hdr[0] = 0 // Failed
@@ -52,7 +54,7 @@ func TestHandshakeRefused(t *testing.T) {
 func TestHandshakeAuthenticate(t *testing.T) {
 	order := binary.LittleEndian
 	reason := "auth\x00\x00\x00\x00"
-	body := make([]byte, pad4(len(reason)))
+	body := make([]byte, xproto.Pad4(len(reason)))
 	copy(body, reason)
 	hdr := make([]byte, 8)
 	hdr[0] = 2 // Authenticate
@@ -98,18 +100,18 @@ func TestHandshakeReadErrors(t *testing.T) {
 func TestHandshakeParseError(t *testing.T) {
 	order := binary.LittleEndian
 	// Success header, but the body claims one screen and provides none.
-	e := newEncoder(order)
-	e.put32(0)
-	e.put32(0)
-	e.put32(0)
-	e.put32(0)
-	e.put16(0)
-	e.put16(0)
-	e.put8(1) // one screen promised
-	e.put8(0)
-	e.skip(6)
-	e.skip(4)
-	body := e.buf
+	e := xproto.NewEncoder(order)
+	e.Put32(0)
+	e.Put32(0)
+	e.Put32(0)
+	e.Put32(0)
+	e.Put16(0)
+	e.Put16(0)
+	e.Put8(1) // one screen promised
+	e.Put8(0)
+	e.Skip(6)
+	e.Skip(4)
+	body := e.Bytes()
 	// Pad body to 4-byte alignment.
 	for len(body)%4 != 0 {
 		body = append(body, 0)
@@ -282,12 +284,12 @@ func TestRoundTripBuffersEvents(t *testing.T) {
 func TestGetKeyboardMapping(t *testing.T) {
 	order := binary.LittleEndian
 	// Reply: perCode=2, keysyms for keycodes 8..9.
-	e := newEncoder(order)
+	e := xproto.NewEncoder(order)
 	for _, ks := range []uint32{0x61, 0x41, ksReturn, 0} {
-		e.put32(ks)
+		e.Put32(ks)
 	}
 	var tail [24]byte
-	reply := replyPacket(order, 2, 1, tail, e.buf) // b1 = perCode
+	reply := replyPacket(order, 2, 1, tail, e.Bytes()) // b1 = perCode
 	c, _ := dialFakeConn(t, order, reply)
 	km, err := c.FetchKeymap()
 	if err != nil {

@@ -5,10 +5,11 @@
 package x11
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"sync"
+
+	xproto "github.com/go-freedesktop/x11"
 )
 
 // Conn is a connection to an X11 server speaking the core protocol over an
@@ -44,74 +45,6 @@ func (e *XError) Error() string {
 		e.Code, e.Major, e.Minor, e.BadValue, e.Seq)
 }
 
-// Handshake runs the client connection setup over rw: it sends the
-// byte-order sentinel, protocol 11.0 and the authorization name+data, then
-// parses the reply. On success it returns a ready Conn. order selects the
-// wire byte order (little- or big-endian); both are valid and the server
-// adopts the client's choice.
-func Handshake(rw io.ReadWriteCloser, order ByteOrder, authName string, authData []byte) (*Conn, error) {
-	sentinel := byte(orderMSB)
-	if order == binary.LittleEndian {
-		sentinel = orderLSB
-	}
-	req := buildSetupRequest(order, sentinel, authName, authData)
-	if _, err := rw.Write(req); err != nil {
-		return nil, err
-	}
-
-	var hdr [8]byte
-	if err := readFull(rw, hdr[:]); err != nil {
-		return nil, err
-	}
-	status := hdr[0]
-	// The additional-data length (in 4-byte units) sits at bytes 6..7 in the
-	// client's chosen order.
-	addLen := int(order.Uint16(hdr[6:8])) * 4
-	body := make([]byte, addLen)
-	if err := readFull(rw, body); err != nil {
-		return nil, err
-	}
-
-	switch status {
-	case 0: // Failed
-		reasonLen := int(hdr[1])
-		reason := ""
-		if reasonLen <= len(body) {
-			reason = string(body[:reasonLen])
-		}
-		return nil, fmt.Errorf("x11: setup refused: %s", reason)
-	case 2: // Authenticate
-		return nil, fmt.Errorf("x11: further authentication required: %s", trimNul(body))
-	case 1: // Success
-	default:
-		return nil, fmt.Errorf("x11: unknown setup status %d", status)
-	}
-
-	s, err := parseSetupReply(order, body)
-	if err != nil {
-		return nil, err
-	}
-	c := &Conn{
-		rw:      rw,
-		order:   order,
-		setup:   s,
-		xidBase: s.ResourceIDBase,
-		xidMask: s.ResourceIDMask,
-	}
-	return c, nil
-}
-
-// trimNul returns b up to its first NUL, as a string (for vendor reason
-// text that may be zero-padded).
-func trimNul(b []byte) string {
-	for i, c := range b {
-		if c == 0 {
-			return string(b[:i])
-		}
-	}
-	return string(b)
-}
-
 // Setup returns the parsed server setup.
 func (c *Conn) Setup() *Setup { return c.setup }
 
@@ -134,15 +67,15 @@ func (c *Conn) NewID() uint32 {
 // 4-byte units — writes it and advances the sequence counter.
 func (c *Conn) sendRequest(opcode, data byte, body []byte) error {
 	total := 4 + len(body)
-	e := newEncoder(c.order)
-	e.put8(opcode)
-	e.put8(data)
-	e.put16(uint16(total / 4))
-	e.putBytes(body)
+	e := xproto.NewEncoder(c.order)
+	e.Put8(opcode)
+	e.Put8(data)
+	e.Put16(uint16(total / 4))
+	e.PutBytes(body)
 
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
-	if _, err := c.rw.Write(e.buf); err != nil {
+	if _, err := c.rw.Write(e.Bytes()); err != nil {
 		return err
 	}
 	c.seq++
@@ -151,19 +84,6 @@ func (c *Conn) sendRequest(opcode, data byte, body []byte) error {
 
 // Seq returns the sequence number of the most recently sent request.
 func (c *Conn) Seq() uint16 { return c.seq }
-
-// FDSender is implemented by a transport that can pass a file descriptor
-// alongside a request over the same socket (a UNIX-domain stream, via
-// SCM_RIGHTS). The production connection's transport (see WrapUnix)
-// implements it; the in-process net.Pipe transport used by most tests does
-// not, so the MIT-SHM fd-passing path degrades to plain PutImage when it is
-// absent. The method is exported so an alternative transport (a measurement
-// or test harness) can provide it too.
-type FDSender interface {
-	// SendFD writes one already-framed request with fd attached as a single
-	// SCM_RIGHTS control message.
-	SendFD(msg []byte, fd int) error
-}
 
 // SupportsFDPassing reports whether the connection's transport can pass a
 // file descriptor to the server (required for MIT-SHM AttachFd).
@@ -181,15 +101,15 @@ func (c *Conn) sendRequestFD(opcode, data byte, body []byte, fd int) error {
 		return fmt.Errorf("x11: transport does not support fd passing")
 	}
 	total := 4 + len(body)
-	e := newEncoder(c.order)
-	e.put8(opcode)
-	e.put8(data)
-	e.put16(uint16(total / 4))
-	e.putBytes(body)
+	e := xproto.NewEncoder(c.order)
+	e.Put8(opcode)
+	e.Put8(data)
+	e.Put16(uint16(total / 4))
+	e.PutBytes(body)
 
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
-	if err := fw.SendFD(e.buf, fd); err != nil {
+	if err := fw.SendFD(e.Bytes(), fd); err != nil {
 		return err
 	}
 	c.seq++
@@ -200,11 +120,11 @@ func (c *Conn) sendRequestFD(opcode, data byte, body []byte, fd int) error {
 // implements it and, if so, its major opcode plus its first event and error
 // codes. It is the standard gate before using any extension's requests.
 func (c *Conn) QueryExtension(name string) (present bool, major, firstEvent, firstError byte, err error) {
-	e := newEncoder(c.order)
-	e.put16(uint16(len(name)))
-	e.skip(2) // unused
-	e.putString(name)
-	reply, err := c.roundTrip(opQueryExtension, 0, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put16(uint16(len(name)))
+	e.Skip(2) // unused
+	e.PutString(name)
+	reply, err := c.roundTrip(opQueryExtension, 0, e.Bytes())
 	if err != nil {
 		return false, 0, 0, 0, err
 	}
@@ -215,7 +135,7 @@ func (c *Conn) QueryExtension(name string) (present bool, major, firstEvent, fir
 // reply (32-byte header plus its additional 4-byte-unit data block).
 func (c *Conn) readPacket() ([]byte, error) {
 	var head [32]byte
-	if err := readFull(c.rw, head[:]); err != nil {
+	if err := xproto.ReadFull(c.rw, head[:]); err != nil {
 		return nil, err
 	}
 	if head[0] != pktReply {
@@ -227,7 +147,7 @@ func (c *Conn) readPacket() ([]byte, error) {
 	}
 	full := make([]byte, 32+extra)
 	copy(full, head[:])
-	if err := readFull(c.rw, full[32:]); err != nil {
+	if err := xproto.ReadFull(c.rw, full[32:]); err != nil {
 		return nil, err
 	}
 	return full, nil
@@ -258,13 +178,13 @@ func (c *Conn) roundTrip(opcode, data byte, body []byte) ([]byte, error) {
 
 // decodeError parses a 32-byte error packet.
 func (c *Conn) decodeError(pkt []byte) *XError {
-	d := newDecoder(c.order, pkt)
-	d.skip(1) // 0
-	code := d.get8()
-	seq := d.get16()
-	bad := d.get32()
-	minor := d.get16()
-	major := d.get8()
+	d := xproto.NewDecoder(c.order, pkt)
+	d.Skip(1) // 0
+	code := d.Get8()
+	seq := d.Get16()
+	bad := d.Get32()
+	minor := d.Get16()
+	major := d.Get8()
 	return &XError{Code: code, Seq: seq, BadValue: bad, Minor: minor, Major: major}
 }
 
@@ -302,51 +222,51 @@ func (c *Conn) NextEvent() (Event, error) {
 // visual sidesteps the BadMatch a differing-visual/colormap window would
 // raise, while still landing on the screen's TrueColor root visual.
 func (c *Conn) CreateWindow(wid, parent uint32, x, y int16, w, h uint16, backPixel, borderPixel, eventMask uint32) error {
-	e := newEncoder(c.order)
-	e.put32(wid)
-	e.put32(parent)
-	e.put16(uint16(x))
-	e.put16(uint16(y))
-	e.put16(w)
-	e.put16(h)
-	e.put16(0)                // border-width
-	e.put16(classInputOutput) // class
-	e.put32(CopyFromParent)   // visual
-	e.put32(cwBackPixel | cwBorderPixel | cwEventMask)
-	e.put32(backPixel)
-	e.put32(borderPixel)
-	e.put32(eventMask)
-	return c.sendRequest(opCreateWindow, CopyFromParent, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(wid)
+	e.Put32(parent)
+	e.Put16(uint16(x))
+	e.Put16(uint16(y))
+	e.Put16(w)
+	e.Put16(h)
+	e.Put16(0)                // border-width
+	e.Put16(classInputOutput) // class
+	e.Put32(CopyFromParent)   // visual
+	e.Put32(cwBackPixel | cwBorderPixel | cwEventMask)
+	e.Put32(backPixel)
+	e.Put32(borderPixel)
+	e.Put32(eventMask)
+	return c.sendRequest(opCreateWindow, CopyFromParent, e.Bytes())
 }
 
 // MapWindow makes the window visible.
 func (c *Conn) MapWindow(wid uint32) error {
-	e := newEncoder(c.order)
-	e.put32(wid)
-	return c.sendRequest(opMapWindow, 0, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(wid)
+	return c.sendRequest(opMapWindow, 0, e.Bytes())
 }
 
 // CreateGC creates a graphics context on drawable with default values.
 func (c *Conn) CreateGC(gc, drawable uint32) error {
-	e := newEncoder(c.order)
-	e.put32(gc)
-	e.put32(drawable)
-	e.put32(0) // value-mask: no explicit values
-	return c.sendRequest(opCreateGC, 0, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(gc)
+	e.Put32(drawable)
+	e.Put32(0) // value-mask: no explicit values
+	return c.sendRequest(opCreateGC, 0, e.Bytes())
 }
 
 // InternAtom resolves (or, when onlyIfExists is false, creates) an atom by
 // name and returns its id.
 func (c *Conn) InternAtom(name string, onlyIfExists bool) (uint32, error) {
-	e := newEncoder(c.order)
-	e.put16(uint16(len(name)))
-	e.put16(0) // unused
-	e.putString(name)
+	e := xproto.NewEncoder(c.order)
+	e.Put16(uint16(len(name)))
+	e.Put16(0) // unused
+	e.PutString(name)
 	data := byte(0)
 	if onlyIfExists {
 		data = 1
 	}
-	reply, err := c.roundTrip(opInternAtom, data, e.buf)
+	reply, err := c.roundTrip(opInternAtom, data, e.Bytes())
 	if err != nil {
 		return 0, err
 	}
@@ -357,16 +277,16 @@ func (c *Conn) InternAtom(name string, onlyIfExists bool) (uint32, error) {
 // and format (8, 16 or 32 bits per element). count is the number of
 // elements; data must already be laid out in the wire order.
 func (c *Conn) ChangeProperty(window, property, typ uint32, format byte, count int, data []byte) error {
-	e := newEncoder(c.order)
-	e.put32(window)
-	e.put32(property)
-	e.put32(typ)
-	e.put8(format)
-	e.skip(3) // unused
-	e.put32(uint32(count))
-	e.putBytes(data)
-	e.pad(len(data))
-	return c.sendRequest(opChangeProperty, propModeReplace, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(window)
+	e.Put32(property)
+	e.Put32(typ)
+	e.Put8(format)
+	e.Skip(3) // unused
+	e.Put32(uint32(count))
+	e.PutBytes(data)
+	e.Pad(len(data))
+	return c.sendRequest(opChangeProperty, propModeReplace, e.Bytes())
 }
 
 // SetWMName sets the window's WM_NAME (an ISO-8859-1 STRING property).
@@ -385,21 +305,21 @@ func (c *Conn) SetWMClass(window uint32, instance, class string) error {
 
 // SetWMProtocols sets WM_PROTOCOLS to the given atom list (format 32).
 func (c *Conn) SetWMProtocols(window, wmProtocols uint32, atoms ...uint32) error {
-	e := newEncoder(c.order)
+	e := xproto.NewEncoder(c.order)
 	for _, a := range atoms {
-		e.put32(a)
+		e.Put32(a)
 	}
-	return c.ChangeProperty(window, wmProtocols, AtomAtom, 32, len(atoms), e.buf)
+	return c.ChangeProperty(window, wmProtocols, AtomAtom, 32, len(atoms), e.Bytes())
 }
 
 // GetKeyboardMapping fetches the keysym table for keycodes [first, first+count).
 func (c *Conn) GetKeyboardMapping(first, count uint8) (*Keymap, error) {
 	b1, b2 := keyboardMappingHeader(first, count)
-	e := newEncoder(c.order)
-	e.put8(b1)
-	e.put8(b2)
-	e.skip(2) // unused
-	reply, err := c.roundTrip(opGetKeyboardMapping, 0, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put8(b1)
+	e.Put8(b2)
+	e.Skip(2) // unused
+	reply, err := c.roundTrip(opGetKeyboardMapping, 0, e.Bytes())
 	if err != nil {
 		return nil, err
 	}

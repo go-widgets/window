@@ -4,7 +4,11 @@
 
 package x11
 
-import "time"
+import (
+	"time"
+
+	xproto "github.com/go-freedesktop/x11"
+)
 
 // The X11 selection protocol, which is what a clipboard is on this platform.
 //
@@ -42,19 +46,19 @@ const CurrentTime = 0
 // owner has to stay alive and answer SelectionRequest events for as long as the
 // text is meant to remain pasteable.
 func (c *Conn) SetSelectionOwner(owner, selection, time uint32) error {
-	e := newEncoder(c.order)
-	e.put32(owner)
-	e.put32(selection)
-	e.put32(time)
-	return c.sendRequest(opSetSelectionOwner, 0, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(owner)
+	e.Put32(selection)
+	e.Put32(time)
+	return c.sendRequest(opSetSelectionOwner, 0, e.Bytes())
 }
 
 // GetSelectionOwner returns the window currently owning selection, or 0 when
 // nobody does — which is the normal state of a fresh session, not an error.
 func (c *Conn) GetSelectionOwner(selection uint32) (uint32, error) {
-	e := newEncoder(c.order)
-	e.put32(selection)
-	reply, err := c.roundTrip(opGetSelectionOwner, 0, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(selection)
+	reply, err := c.roundTrip(opGetSelectionOwner, 0, e.Bytes())
 	if err != nil {
 		return 0, err
 	}
@@ -66,13 +70,13 @@ func (c *Conn) GetSelectionOwner(selection uint32) (uint32, error) {
 // owner replies with a SelectionNotify event, and the data is read from the
 // property afterwards.
 func (c *Conn) ConvertSelection(requestor, selection, target, property, time uint32) error {
-	e := newEncoder(c.order)
-	e.put32(requestor)
-	e.put32(selection)
-	e.put32(target)
-	e.put32(property)
-	e.put32(time)
-	return c.sendRequest(opConvertSelection, 0, e.buf)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(requestor)
+	e.Put32(selection)
+	e.Put32(target)
+	e.Put32(property)
+	e.Put32(time)
+	return c.sendRequest(opConvertSelection, 0, e.Bytes())
 }
 
 // GetProperty reads up to maxWords 32-bit words of a property, optionally
@@ -83,17 +87,17 @@ func (c *Conn) ConvertSelection(requestor, selection, target, property, time uin
 // the owner wrote into, and leaving it behind would make the next paste read a
 // stale answer if the owner failed to reply.
 func (c *Conn) GetProperty(window, property, typ uint32, del bool, maxWords uint32) (retTyp uint32, format byte, data []byte, err error) {
-	e := newEncoder(c.order)
-	e.put32(window)
-	e.put32(property)
-	e.put32(typ)
-	e.put32(0) // long-offset
-	e.put32(maxWords)
+	e := xproto.NewEncoder(c.order)
+	e.Put32(window)
+	e.Put32(property)
+	e.Put32(typ)
+	e.Put32(0) // long-offset
+	e.Put32(maxWords)
 	d := byte(0)
 	if del {
 		d = 1
 	}
-	reply, err := c.roundTrip(opGetProperty, d, e.buf)
+	reply, err := c.roundTrip(opGetProperty, d, e.Bytes())
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -122,24 +126,24 @@ func (c *Conn) GetProperty(window, property, typ uint32, del bool, maxWords uint
 func (c *Conn) SendSelectionNotify(requestor, selection, target, property, time uint32) error {
 	// A SelectionNotify event is 32 bytes, laid out by hand because this is the
 	// only place the client sends an event rather than receiving one.
-	ev := newEncoder(c.order)
-	ev.put8(evSelectionNotify)
-	ev.put8(0) // unused
-	ev.put16(0)
-	ev.put32(time)
-	ev.put32(requestor)
-	ev.put32(selection)
-	ev.put32(target)
-	ev.put32(property)
-	for len(ev.buf) < 32 {
-		ev.put8(0)
+	ev := xproto.NewEncoder(c.order)
+	ev.Put8(evSelectionNotify)
+	ev.Put8(0) // unused
+	ev.Put16(0)
+	ev.Put32(time)
+	ev.Put32(requestor)
+	ev.Put32(selection)
+	ev.Put32(target)
+	ev.Put32(property)
+	for len(ev.Bytes()) < 32 {
+		ev.Put8(0)
 	}
 
-	e := newEncoder(c.order)
-	e.put32(requestor)
-	e.put32(0) // event-mask: 0 delivers to the requestor itself
-	e.putBytes(ev.buf)
-	return c.sendRequest(opSendEvent, 0, e.buf) // propagate = 0
+	e := xproto.NewEncoder(c.order)
+	e.Put32(requestor)
+	e.Put32(0) // event-mask: 0 delivers to the requestor itself
+	e.PutBytes(ev.Bytes())
+	return c.sendRequest(opSendEvent, 0, e.Bytes()) // propagate = 0
 }
 
 // PushEvent returns an event to the head of the queue, so it is delivered by
@@ -169,7 +173,7 @@ func (c *Conn) PushEvent(ev Event) {
 // connection. Waiting first and reading only when there is something to read
 // cannot cut a packet in half.
 func (c *Conn) WaitReadable(d time.Duration) (ready, supported bool) {
-	w, ok := c.rw.(interface{ WaitReadable(time.Duration) bool })
+	w, ok := c.rw.(xproto.Waiter)
 	if !ok {
 		return false, false
 	}
