@@ -29,6 +29,20 @@ func VisibleScreenSize() (w, h int, ok bool) {
 // Screens enumerates the attached displays, primary first. It is safe to call
 // before Open — picking an output is something an application does on the way
 // in.
+//
+// The geometry is read from the WINDOW SERVER each time, not from AppKit's
+// cached NSScreen list, so it describes the desktop as it is now even in a
+// process that has not started an NSApplication. That distinction is not
+// academic: the cache is filled on first read and refreshed only for a running
+// application, so an application that lists the displays on its way in would
+// otherwise hold an arrangement frozen at that first read for the rest of its
+// life -- and place its window accordingly.
+//
+// One thing does still come from AppKit, because it is AppKit's to know: the
+// display's NAME. A display attached while this process had no running
+// application, and enumerated from a goroutine that is not on the main thread,
+// can therefore come back nameless. Everything placement depends on is exact
+// regardless.
 func Screens() ([]Screen, error) {
 	infos, err := cocoa.Screens()
 	if err != nil {

@@ -85,8 +85,12 @@ func TestLiveFullscreenLandsOnEveryAttachedScreen(t *testing.T) {
 			defer callOnMain(func() { win.Close() })
 
 			// The window must cover exactly the panel: same origin, same size, in
-			// AppKit's own coordinates, with no arithmetic in between.
-			want := target.nativeFrame
+			// AppKit's own coordinates.
+			primary, err := primaryBounds()
+			if err != nil {
+				t.Fatalf("primaryBounds() = %v", err)
+			}
+			want := target.appKitFrame(primary.H)
 			if frame != want {
 				t.Errorf("window frame = %+v, want the screen's own frame %+v", frame, want)
 			}

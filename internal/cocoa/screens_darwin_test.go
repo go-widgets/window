@@ -6,7 +6,12 @@
 
 package cocoa
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"reflect"
+	"testing"
+)
 
 // TestFlipY pins the whole of the coordinate-space difference between AppKit
 // (bottom-left origin, Y up) and the rest of this repo (top-left, Y down). It
@@ -94,9 +99,10 @@ func TestScreensReportsACoherentDesktop(t *testing.T) {
 		if s.Scale <= 0 {
 			t.Errorf("screen %d reports scale %v, want > 0", i, s.Scale)
 		}
-		if s.nativeFrame.Size.W != float64(s.Width) || s.nativeFrame.Size.H != float64(s.Height) {
-			t.Errorf("screen %d native frame %vx%v disagrees with reported %dx%d",
-				i, s.nativeFrame.Size.W, s.nativeFrame.Size.H, s.Width, s.Height)
+		f := s.appKitFrame(float64(screens[0].Height))
+		if f.Size.W != float64(s.Width) || f.Size.H != float64(s.Height) {
+			t.Errorf("screen %d AppKit frame %vx%v disagrees with reported %dx%d",
+				i, f.Size.W, f.Size.H, s.Width, s.Height)
 		}
 	}
 	if primaries != 1 {
@@ -111,8 +117,14 @@ func TestScreensReportsACoherentDesktop(t *testing.T) {
 // external panel: a value that no longer describes anything attached must be
 // refused, not approximated to the nearest display.
 func TestFindScreenRejectsAnUnknownScreen(t *testing.T) {
-	if _, ok := FindScreen(ScreenInfo{Name: "no such display", Width: 1, Height: 1}); ok {
-		t.Error("FindScreen matched a display that is not attached")
+	_, err := FindScreen(ScreenInfo{Name: "no such display", Width: 1, Height: 1})
+	if err == nil {
+		t.Fatal("FindScreen matched a display that is not attached")
+	}
+	// And it says WHICH failure it is: gone, not unreadable. A caller that
+	// cannot tell those apart cannot tell a user anything useful.
+	if _, listErr := Screens(); listErr == nil && !errors.Is(err, ErrScreenGone) {
+		t.Errorf("FindScreen(unattached) = %v, want an ErrScreenGone", err)
 	}
 }
 
@@ -129,5 +141,197 @@ func TestResolveScreenErrors(t *testing.T) {
 	want := ScreenInfo{Name: "gone", Width: 123, Height: 456}
 	if _, err := (Options{Screen: &want}).resolveScreen(); err == nil {
 		t.Error("resolveScreen() accepted an unattached screen, want ErrScreenGone")
+	}
+}
+
+// TestScreenInfoHasNoHiddenState is the guard on the mistake that caused a
+// full-screen window to open on the wrong display.
+//
+// ScreenInfo used to carry an unexported nativeFrame: AppKit's own rectangle,
+// which the enumerated value had and a value REBUILT from the numbers a caller
+// was given did not. window.Screen.toCocoa rebuilds one on every Open, so the
+// window was placed from a zero rectangle whenever anything used that field
+// directly. Nothing in the type said so, and no test could have noticed.
+//
+// This one notices, on any machine, with nothing plugged in.
+func TestScreenInfoHasNoHiddenState(t *testing.T) {
+	tp := reflect.TypeOf(ScreenInfo{})
+	for i := 0; i < tp.NumField(); i++ {
+		if f := tp.Field(i); !f.IsExported() {
+			t.Errorf("ScreenInfo.%s is unexported: a caller rebuilding a ScreenInfo "+
+				"out of the values it was given cannot carry it across a package "+
+				"boundary, so anything placement depends on must not live there",
+				f.Name)
+		}
+	}
+}
+
+// TestARebuiltScreenPlacesWhereTheEnumeratedOneDoes states the same property
+// behaviourally: copy the exported fields, as the public wrapper does, and the
+// window goes to exactly the same place.
+func TestARebuiltScreenPlacesWhereTheEnumeratedOneDoes(t *testing.T) {
+	const primary = 1329
+	enumerated := ScreenInfo{
+		Name: "VITURE Beast", X: -7680, Y: 0, Width: 1920, Height: 1080,
+		VisibleX: -7680, VisibleY: 0, VisibleWidth: 1920, VisibleHeight: 1080,
+		Scale: 1,
+	}
+	// Exactly what window.Screen.toCocoa hands back to the back-end.
+	rebuilt := ScreenInfo{
+		Name:  enumerated.Name,
+		X:     enumerated.X,
+		Y:     enumerated.Y,
+		Width: enumerated.Width, Height: enumerated.Height,
+	}
+	if got, want := rebuilt.appKitFrame(primary), enumerated.appKitFrame(primary); got != want {
+		t.Errorf("a rebuilt screen places at %+v, the enumerated one at %+v", got, want)
+	}
+}
+
+// TestAppKitFrame pins the conversion the placement rides on, with no display
+// attached. The numbers are the ones measured on the machine the reported bug
+// happened on: a 1329-point primary, and a 1080-point panel bottom-aligned with
+// it 1920 points to the left.
+func TestAppKitFrame(t *testing.T) {
+	const primary = 1329
+	for _, tc := range []struct {
+		name string
+		in   ScreenInfo
+		want nsRect
+	}{{
+		"the primary screen itself",
+		ScreenInfo{X: 0, Y: 0, Width: 2056, Height: 1329},
+		nsRect{Origin: nsPoint{X: 0, Y: 0}, Size: nsSize{W: 2056, H: 1329}},
+	}, {
+		"a shorter panel to the LEFT, at a negative X",
+		ScreenInfo{X: -1920, Y: 0, Width: 1920, Height: 1080},
+		nsRect{Origin: nsPoint{X: -1920, Y: 249}, Size: nsSize{W: 1920, H: 1080}},
+	}, {
+		"the same panel pushed further left by three more displays",
+		ScreenInfo{X: -7680, Y: 0, Width: 1920, Height: 1080},
+		nsRect{Origin: nsPoint{X: -7680, Y: 249}, Size: nsSize{W: 1920, H: 1080}},
+	}, {
+		"a panel ABOVE the primary, at a negative Y",
+		ScreenInfo{X: 0, Y: -1080, Width: 1920, Height: 1080},
+		nsRect{Origin: nsPoint{X: 0, Y: 1329}, Size: nsSize{W: 1920, H: 1080}},
+	}} {
+		if got := tc.in.appKitFrame(primary); got != tc.want {
+			t.Errorf("%s: appKitFrame = %+v, want %+v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestVisibleTopLeftInAppKit pins where a titled window's FRAME goes on a
+// chosen display: the top-left of the usable area, in AppKit's space.
+func TestVisibleTopLeftInAppKit(t *testing.T) {
+	const primary = 1329
+	// The primary, with a 38-point menu bar: the usable area starts below it.
+	s := ScreenInfo{X: 0, Y: 0, Width: 2056, Height: 1329, VisibleX: 0, VisibleY: 38}
+	if got, want := s.visibleTopLeftInAppKit(primary), (nsPoint{X: 0, Y: 1291}); got != want {
+		t.Errorf("visibleTopLeftInAppKit = %+v, want %+v", got, want)
+	}
+	// A secondary panel to the left, usable to its own top edge.
+	s = ScreenInfo{X: -1920, Y: 0, Width: 1920, Height: 1080, VisibleX: -1920, VisibleY: 0}
+	if got, want := s.visibleTopLeftInAppKit(primary), (nsPoint{X: -1920, Y: 1329}); got != want {
+		t.Errorf("visibleTopLeftInAppKit = %+v, want %+v", got, want)
+	}
+}
+
+// TestVisibleInset pins the menu-bar/Dock inset that is carried over onto the
+// window server's live rectangle. Insets rather than absolute coordinates is
+// the whole point: they stay true when AppKit's idea of where the display sits
+// does not.
+func TestVisibleInset(t *testing.T) {
+	a := appKitScreen{
+		frame:   nsRect{Origin: nsPoint{X: 0, Y: 0}, Size: nsSize{W: 2056, H: 1329}},
+		visible: nsRect{Origin: nsPoint{X: 0, Y: 0}, Size: nsSize{W: 2056, H: 1291}},
+	}
+	if left, top := a.visibleInset(); left != 0 || top != 38 {
+		t.Errorf("visibleInset = (%v, %v), want (0, 38) for a 38-point menu bar", left, top)
+	}
+	// A Dock on the left edge insets the usable area from the left instead.
+	a = appKitScreen{
+		frame:   nsRect{Origin: nsPoint{X: -1920, Y: 249}, Size: nsSize{W: 1920, H: 1080}},
+		visible: nsRect{Origin: nsPoint{X: -1856, Y: 249}, Size: nsSize{W: 1856, H: 1080}},
+	}
+	if left, top := a.visibleInset(); left != 64 || top != 0 {
+		t.Errorf("visibleInset = (%v, %v), want (64, 0) for a 64-point Dock on the left", left, top)
+	}
+}
+
+// TestAppKitAgreesWithWindowServer runs on any macOS: whatever is attached, the
+// two lists must describe it the same way. On a machine where nothing has
+// disturbed the arrangement they always do; the value of asserting it here is
+// that a machine where they DO NOT is exactly the machine the reported bug
+// happens on, and this says so in one line instead of through a wrong window.
+func TestAppKitAgreesWithWindowServer(t *testing.T) {
+	live, err := liveDisplays()
+	if err != nil {
+		t.Skipf("no window server available: %v", err)
+	}
+	if len(live) == 0 {
+		t.Skip("no display attached")
+	}
+	if !appKitAgreesWithWindowServer() && !syncAppKitScreens(appKitScreenSyncTimeout) {
+		ak := appKitScreens()
+		t.Errorf("AppKit lists %d screen(s), the window server %d, and they did not "+
+			"converge within %s", len(ak), len(live), appKitScreenSyncTimeout)
+	}
+}
+
+// TestLiveDisplaysDescribeACoherentDesktop asserts what the window server's own
+// list must always satisfy, so a machine whose answer is nonsense says so here
+// rather than through a window in the wrong place.
+func TestLiveDisplaysDescribeACoherentDesktop(t *testing.T) {
+	live, err := liveDisplays()
+	if err != nil {
+		t.Skipf("no window server available: %v", err)
+	}
+	if len(live) == 0 {
+		t.Skip("no display attached")
+	}
+	if !live[0].main {
+		t.Error("liveDisplays did not put the main display first")
+	}
+	mains := 0
+	for _, d := range live {
+		if d.main {
+			mains++
+		}
+		if d.bounds.W <= 0 || d.bounds.H <= 0 {
+			t.Errorf("display %d has non-positive bounds %+v", d.id, d.bounds)
+		}
+	}
+	if mains != 1 {
+		t.Errorf("got %d main displays among %d, want exactly 1", mains, len(live))
+	}
+	p, err := primaryBounds()
+	if err != nil {
+		t.Fatalf("primaryBounds() = %v", err)
+	}
+	if p != live[0].bounds {
+		t.Errorf("primaryBounds() = %+v, want the main display's %+v", p, live[0].bounds)
+	}
+}
+
+// TestCoreGraphicsFailureIsReported covers the branch that says the display
+// list could not be read at all, without breaking the machine to get there.
+func TestCoreGraphicsFailureIsReported(t *testing.T) {
+	// The binding is loaded once per process; this exercises the failure the
+	// loader reports rather than re-running it.
+	saved := cgErr
+	defer func() { cgErr = saved }()
+	cgErr = fmt.Errorf("%w: simulated", ErrDisplayList)
+	if _, err := liveDisplays(); !errors.Is(err, ErrDisplayList) {
+		t.Errorf("liveDisplays() with an unloadable framework = %v, want an ErrDisplayList", err)
+	}
+	if _, err := primaryBounds(); !errors.Is(err, ErrDisplayList) {
+		t.Errorf("primaryBounds() with an unloadable framework = %v, want an ErrDisplayList", err)
+	}
+	if _, err := Screens(); !errors.Is(err, ErrDisplayList) {
+		t.Errorf("Screens() with an unloadable framework = %v, want an ErrDisplayList", err)
+	}
+	if _, err := FindScreen(ScreenInfo{Name: "anything"}); !errors.Is(err, ErrDisplayList) {
+		t.Errorf("FindScreen() with an unloadable framework = %v, want an ErrDisplayList", err)
 	}
 }
