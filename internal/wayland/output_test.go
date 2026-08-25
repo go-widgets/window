@@ -167,3 +167,162 @@ func TestZeroOutputIsOneToOne(t *testing.T) {
 		t.Errorf("the zero Output reports scale %d, want 1", got)
 	}
 }
+
+// --- the rest of the burst -------------------------------------------------
+//
+// The scale is only one of the things a wl_output says about itself. The rest
+// is what a client enumerating the DISPLAYS needs: where the output is, how
+// big, which way up, and what to call it.
+
+// geometryOf encodes a wl_output.geometry body, whose two strings mean it
+// cannot be built out of plain 32-bit words.
+func geometryOf(order ByteOrder, x, y, pw, ph int32, mk, model string, transform int32) *decoder {
+	e := newEncoder(order)
+	e.putI32(x)
+	e.putI32(y)
+	e.putI32(pw)
+	e.putI32(ph)
+	e.putI32(1) // subpixel: horizontal RGB
+	e.putString(mk)
+	e.putString(model)
+	e.putI32(transform)
+	return newDecoder(order, e.buf)
+}
+
+// stringOf encodes a body that is one string, which is what the name and
+// description events of wl_output 4 carry.
+func stringOf(order ByteOrder, s string) *decoder {
+	e := newEncoder(order)
+	e.putString(s)
+	return newDecoder(order, e.buf)
+}
+
+// oneOutput binds a single output for a test to drive by hand.
+func oneOutput(t *testing.T, order ByteOrder) *Output {
+	t.Helper()
+	c := NewConn(&stubTransport{}, order)
+	reg := &Registry{conn: c}
+	reg.globals = []Global{{Name: 4, Interface: "wl_output", Version: 4}}
+	outs, err := reg.Outputs()
+	if err != nil {
+		t.Fatalf("Outputs: %v", err)
+	}
+	return outs[0]
+}
+
+func TestOutputPublishesItsWholeDescriptionOnDone(t *testing.T) {
+	order := binary.LittleEndian
+	o := oneOutput(t, order)
+
+	// Everything before done says nothing: a client acting on half a burst
+	// places the output where the compositor never said it was.
+	_ = o.handle(outputEvtGeometry, geometryOf(order, 1920, -120, 597, 336, "DELL", "U2720Q", 0))
+	// Every mode the panel supports is announced; the one without the current
+	// flag is not the answer to "how big is this screen".
+	_ = o.handle(outputEvtMode, decoderOf(order, 0, 640, 480, 60000))
+	_ = o.handle(outputEvtMode, decoderOf(order, 1, 3840, 2160, 59951))
+	_ = o.handle(outputEvtScale, decoderOf(order, 2))
+	_ = o.handle(outputEvtName, stringOf(order, "DP-2"))
+	_ = o.handle(outputEvtDescription, stringOf(order, "Dell 27 inch"))
+	if x, y := o.Position(); x != 0 || y != 0 {
+		t.Errorf("position before done = %d,%d, want the unset 0,0", x, y)
+	}
+
+	_ = o.handle(outputEvtDone, decoderOf(order))
+	if x, y := o.Position(); x != 1920 || y != -120 {
+		t.Errorf("position = %d,%d, want 1920,-120", x, y)
+	}
+	if w, h := o.ModeSize(); w != 3840 || h != 2160 {
+		t.Errorf("mode = %dx%d, want the CURRENT 3840x2160", w, h)
+	}
+	if w, h := o.LogicalSize(); w != 1920 || h != 1080 {
+		t.Errorf("logical size = %dx%d, want the mode divided by the scale", w, h)
+	}
+	if w, h := o.PhysicalSize(); w != 597 || h != 336 {
+		t.Errorf("physical size = %dx%d mm, want 597x336", w, h)
+	}
+	if o.Make() != "DELL" || o.Model() != "U2720Q" {
+		t.Errorf("make/model = %q/%q, want DELL/U2720Q", o.Make(), o.Model())
+	}
+	if o.Connector() != "DP-2" || o.Description() != "Dell 27 inch" {
+		t.Errorf("connector/description = %q/%q, want DP-2/Dell 27 inch",
+			o.Connector(), o.Description())
+	}
+	if o.Refresh() != 59951 {
+		t.Errorf("refresh = %d mHz, want 59951", o.Refresh())
+	}
+}
+
+// A quarter turn swaps the axes. Reporting a portrait panel unswapped overlaps
+// whatever sits beside it in the layout, and nothing anywhere says so.
+func TestOutputLogicalSizeFollowsTheTransform(t *testing.T) {
+	order := binary.LittleEndian
+	for _, tc := range []struct {
+		transform int32
+		wantW     int
+		wantH     int
+		whatItIs  string
+	}{
+		{0, 1920, 1080, "normal"},
+		{1, 1080, 1920, "90 degrees"},
+		{2, 1920, 1080, "180 degrees"},
+		{3, 1080, 1920, "270 degrees"},
+		{4, 1920, 1080, "flipped"},
+		{5, 1080, 1920, "flipped and turned 90"},
+	} {
+		t.Run(tc.whatItIs, func(t *testing.T) {
+			o := oneOutput(t, order)
+			_ = o.handle(outputEvtGeometry, geometryOf(order, 0, 0, 0, 0, "", "", tc.transform))
+			_ = o.handle(outputEvtMode, decoderOf(order, 1, 1920, 1080, 60000))
+			_ = o.handle(outputEvtDone, decoderOf(order))
+			if w, h := o.LogicalSize(); w != tc.wantW || h != tc.wantH {
+				t.Errorf("logical size = %dx%d, want %dx%d", w, h, tc.wantW, tc.wantH)
+			}
+		})
+	}
+}
+
+// A truncated event describes nothing, and half of it is worse than none of
+// it: the decoder has already gone not-OK, so every field read after the cut
+// is a zero that would be taken for a real value.
+func TestOutputIgnoresTruncatedEvents(t *testing.T) {
+	order := binary.LittleEndian
+	o := oneOutput(t, order)
+
+	_ = o.handle(outputEvtGeometry, decoderOf(order, 100, 200)) // cut before the strings
+	_ = o.handle(outputEvtMode, decoderOf(order, 1, 1920))      // cut before the height
+	_ = o.handle(outputEvtName, decoderOf(order))
+	_ = o.handle(outputEvtDescription, decoderOf(order))
+	_ = o.handle(outputEvtDone, decoderOf(order))
+
+	if x, y := o.Position(); x != 0 || y != 0 {
+		t.Errorf("position = %d,%d from a truncated geometry, want 0,0", x, y)
+	}
+	if w, h := o.ModeSize(); w != 0 || h != 0 {
+		t.Errorf("mode = %dx%d from a truncated mode event, want 0x0", w, h)
+	}
+	if o.Connector() != "" || o.Description() != "" {
+		t.Errorf("connector/description = %q/%q from truncated events, want empty",
+			o.Connector(), o.Description())
+	}
+}
+
+// A compositor republishes its outputs freely. A done that changes nothing
+// must announce nothing, or a window reallocates its framebuffer for no
+// reason — and one that changes something OTHER than the scale must not
+// announce a scale change either.
+func TestOutputDoneWithoutAScaleChange(t *testing.T) {
+	order := binary.LittleEndian
+	o := oneOutput(t, order)
+	announced := 0
+	o.OnScale = func(int) { announced++ }
+
+	_ = o.handle(outputEvtMode, decoderOf(order, 1, 800, 600, 60000))
+	_ = o.handle(outputEvtDone, decoderOf(order))
+	if w, _ := o.ModeSize(); w != 800 {
+		t.Fatalf("mode width = %d, want 800", w)
+	}
+	if announced != 0 {
+		t.Errorf("a mode change announced %d scale changes, want none", announced)
+	}
+}

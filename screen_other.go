@@ -12,13 +12,13 @@ package window
 // screen-size query yet, so a caller must fall back to its own default — or
 // leave Config.Width/Height ≤ 0 and let the backend choose a readable size.
 //
-// macOS answers in screen_darwin.go and X11 in screen_x11.go.
+// macOS answers in screen_darwin.go and Linux in screen_linux.go.
 func VisibleScreenSize() (w, h int, ok bool) {
 	return 0, 0, false
 }
 
 // Screens reports [ErrScreensUnsupported] on the platforms left here. macOS
-// answers through Cocoa and Linux through RANDR; Windows has
+// answers through Cocoa and Linux through RANDR or wl_output; Windows has
 // EnumDisplayMonitors and a browser has the Screen Detail API, so this remains
 // a gap to be filled per back-end and not a limit of the API.
 func Screens() ([]Screen, error) {

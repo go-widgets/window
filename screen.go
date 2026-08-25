@@ -30,10 +30,13 @@ type Screen struct {
 	// "VITURE Beast". It is what to show a user choosing an output, and may be
 	// empty on a display that publishes none.
 	//
-	// It is the panel's OWN name wherever the platform offers one — on X11 the
-	// product string out of its EDID — falling back to the connector ("HDMI-1",
-	// "DP-2") on a display that publishes no EDID, since a socket is still
-	// better than nothing to tell two outputs apart by.
+	// It is the panel's OWN name wherever the platform offers one and that name
+	// identifies the display — on Linux the product string out of its EDID. It
+	// falls back to the connector ("HDMI-1", "DP-2", "HEADLESS-1") when the
+	// display publishes no product name, and ALSO when it publishes one that
+	// two attached displays share: two identical monitors say the identical
+	// thing about themselves, and a name that cannot tell them apart is not a
+	// name.
 	Name string
 	// X, Y, Width, Height are the display's full bounds.
 	X, Y          int

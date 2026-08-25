@@ -8,7 +8,7 @@ package window
 
 import (
 	"bytes"
-	"errors"
+	"strings"
 	"testing"
 
 	"github.com/go-widgets/window/internal/x11"
@@ -378,14 +378,21 @@ func TestScreensNeedsADisplayServer(t *testing.T) {
 	if _, err := Screens(); err == nil {
 		t.Fatal("Screens succeeded with no display server in the environment")
 	}
+}
 
-	// A Wayland session with no Xwayland is the one case where the back-end
-	// genuinely cannot answer, and it must say WHY rather than report a dial
-	// failure for a socket the caller never mentioned.
-	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+// Screens must ask the SAME server Open would dial, or a caller could pick a
+// display off one and open a window on another.
+func TestScreensPrefersWaylandExactlyAsOpenDoes(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("WAYLAND_DISPLAY", "wayland-nothing-is-listening")
+	t.Setenv("DISPLAY", ":987")
 	_, err := Screens()
-	if !errors.Is(err, ErrScreensUnsupported) {
-		t.Fatalf("Screens under Wayland returned %v, want ErrScreensUnsupported", err)
+	if err == nil {
+		t.Fatal("Screens succeeded with neither server actually running")
+	}
+	// The failure has to come from the Wayland dial, not the X one.
+	if !strings.Contains(err.Error(), "Wayland") {
+		t.Errorf("error %q does not come from the Wayland back-end", err)
 	}
 }
 
@@ -398,5 +405,57 @@ func TestScreensReportsABadDisplay(t *testing.T) {
 	t.Setenv("DISPLAY", ":987")
 	if _, err := Screens(); err == nil {
 		t.Fatal("Screens succeeded against a display with no server on it")
+	}
+}
+
+// A model names the MODEL, and two identical monitors say the identical thing
+// about themselves. Which display is which is then a question only the
+// connector can answer.
+func TestResolveNames(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ids  []displayName
+		want []string
+	}{
+		{"a model that identifies one display",
+			[]displayName{{Model: "DELL U2720Q", Connector: "DP-2"}},
+			[]string{"DELL U2720Q"}},
+		{"two identical monitors",
+			[]displayName{
+				{Model: "DELL U2720Q", Connector: "DP-1"},
+				{Model: "DELL U2720Q", Connector: "DP-2"},
+			},
+			[]string{"DP-1", "DP-2"}},
+		// wlroots publishes the literal "Unknown" for every headless output,
+		// which is a placeholder and not a name.
+		{"a compositor with one placeholder for everything",
+			[]displayName{
+				{Model: "Unknown", Connector: "HEADLESS-1", Vendor: "Unknown"},
+				{Model: "Unknown", Connector: "HEADLESS-2", Vendor: "Unknown"},
+			},
+			[]string{"HEADLESS-1", "HEADLESS-2"}},
+		{"no model at all",
+			[]displayName{{Connector: "HDMI-1"}}, []string{"HDMI-1"}},
+		{"nothing but a manufacturer",
+			[]displayName{{Vendor: "DELL"}}, []string{"DELL"}},
+		// An ambiguous model with no connector to fall back on is still all
+		// the display has said.
+		{"ambiguous, and nothing to disambiguate with",
+			[]displayName{{Model: "Panel"}, {Model: "Panel"}},
+			[]string{"Panel", "Panel"}},
+		{"a display that says nothing", []displayName{{}}, []string{""}},
+		{"no displays", nil, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveNames(tc.ids)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d names, want %d", len(got), len(tc.want))
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("name %d = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
 	}
 }

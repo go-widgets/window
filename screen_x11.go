@@ -8,7 +8,6 @@ package window
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/go-widgets/window/internal/x11"
 )
@@ -23,9 +22,7 @@ import (
 // [Screen] is in LOGICAL POINTS with the desktop's panels excluded, because
 // that is what a caller reasoning about a window has to work in.
 
-// Screens enumerates the attached displays, primary first. It is safe to call
-// before Open — picking an output is something an application does on the way
-// in.
+// x11Screens enumerates the displays of the X server named by $DISPLAY.
 //
 // The names are the displays' OWN names where the protocol offers them: the
 // product string out of a panel's EDID ("DELL U2720Q", "VITURE Beast"), which
@@ -38,15 +35,7 @@ import (
 // has several, but they are separate coordinate spaces that no window can move
 // between, so listing them together would describe a desktop that does not
 // exist.
-func Screens() ([]Screen, error) {
-	disp := os.Getenv("DISPLAY")
-	if disp == "" {
-		if os.Getenv("WAYLAND_DISPLAY") != "" {
-			return nil, fmt.Errorf("%w (this is a Wayland session: wl_output enumeration is not implemented)",
-				ErrScreensUnsupported)
-		}
-		return nil, fmt.Errorf("window: cannot enumerate screens: neither DISPLAY nor WAYLAND_DISPLAY is set")
-	}
+func x11Screens(disp string) ([]Screen, error) {
 	d, err := parseDisplay(disp)
 	if err != nil {
 		return nil, err
@@ -77,10 +66,16 @@ func screensOn(conn *x11.Conn, screen int) ([]Screen, error) {
 	scale := desktopScale(conn, sc.Root)
 	wx, wy, ww, wh, hasWork := conn.WorkArea(sc.Root)
 
+	ids := make([]displayName, len(mons))
+	for i, m := range mons {
+		ids[i] = displayName{Model: m.Model, Connector: m.Name}
+	}
+	names := resolveNames(ids)
+
 	out := make([]Screen, 0, len(mons))
-	for _, m := range mons {
+	for i, m := range mons {
 		s := Screen{
-			Name:    m.DisplayName(),
+			Name:    names[i],
 			X:       points(int(m.X), scale),
 			Y:       points(int(m.Y), scale),
 			Width:   points(int(m.Width), scale),
@@ -164,23 +159,4 @@ func primaryFirst(screens []Screen) []Screen {
 		screens[0] = p
 	}
 	return screens
-}
-
-// VisibleScreenSize returns the usable area of the primary display in LOGICAL
-// points — the full panel minus whatever the desktop's panels and docks
-// reserved through _NET_WM_STRUT. ok is false when no display server can be
-// reached, or when it reports no display.
-//
-// See [Screens], which supersedes it for anything multi-display: it reports
-// every attached panel, not only the primary one.
-func VisibleScreenSize() (w, h int, ok bool) {
-	screens, err := Screens()
-	if err != nil || len(screens) == 0 {
-		return 0, 0, false
-	}
-	s := screens[0]
-	if s.VisibleWidth <= 0 || s.VisibleHeight <= 0 {
-		return 0, 0, false
-	}
-	return s.VisibleWidth, s.VisibleHeight, true
 }
