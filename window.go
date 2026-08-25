@@ -156,6 +156,26 @@ type Scaler interface {
 	RenderScale() float64
 }
 
+// Placement is an optional [Backend] capability: where the window actually is.
+//
+// Asking for a display is not the same as getting one. A back-end resolves
+// [Config.Screen] against the displays attached at that moment, the platform
+// may have its own opinion about where a window may sit, and a desktop that is
+// rearranged while an application is starting can move the panel out from under
+// the rectangle it was about to be placed at. Bounds is how an application that
+// must own a particular display -- an XR headset, a kiosk, a presentation --
+// can check rather than assume, and it is how this package's own live tests
+// assert placement from metadata instead of from pixels.
+//
+// The rectangle is in the same global top-left coordinates [Screen] reports, so
+// a caller compares it against the Screen it asked for directly. ok is false on
+// a back-end that can open a window but cannot say where it went.
+//
+// Implemented today by the macOS (Cocoa) back-end.
+type Placement interface {
+	Bounds() (x, y, width, height int, ok bool)
+}
+
 // NativeScale asks for a framebuffer at the display's own resolution rather
 // than one pixel per logical point. See [Config.RenderScale] for when that is
 // the right thing to ask for -- it is a narrower case than it sounds.

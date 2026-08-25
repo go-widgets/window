@@ -103,6 +103,7 @@ var (
 	selSetAcceptsMouseMoved = objc.RegisterName("setAcceptsMouseMovedEvents:")
 	selMakeFirstResponder   = objc.RegisterName("makeFirstResponder:")
 	selCenter               = objc.RegisterName("center")
+	selSetFrameTopLeftPoint = objc.RegisterName("setFrameTopLeftPoint:")
 	selSetDelegate          = objc.RegisterName("setDelegate:")
 	selBackingScaleFactor   = objc.RegisterName("backingScaleFactor")
 	selMainScreen           = objc.RegisterName("mainScreen")
@@ -680,11 +681,26 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScal
 // it. See Options for what placing a window on a chosen screen involves.
 func NewWithOptions(o Options) (*Window, error) {
 	title, width, height, theme, renderScale := o.Title, o.Width, o.Height, o.Theme, o.RenderScale
-	screen, err := o.resolveScreen()
-	if err != nil {
+	if err := loadFrameworks(); err != nil {
 		return nil, err
 	}
-	if err := loadFrameworks(); err != nil {
+	// The shared application FIRST, and only then the screens. AppKit refreshes
+	// its cached NSScreen list solely for a running application, so a process
+	// that listed the displays on its way in -- and every process that chooses a
+	// display does exactly that -- is holding an arrangement that may have
+	// stopped being true. Creating the application and giving the run loop a
+	// turn is what makes AppKit notice; syncAppKitScreens waits for it to.
+	//
+	// A refusal is not raised when it does not: the placement itself is computed
+	// from the window server's own rectangles, so it is right either way. What
+	// AppKit's agreement buys is that -[NSWindow screen] and the backing factor
+	// name the display the window is actually on.
+	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+	app.Send(selSetActivationPolicy, activationPolicyReg)
+	syncAppKitScreens(appKitScreenSyncTimeout)
+
+	screen, err := o.resolveScreen()
+	if err != nil {
 		return nil, err
 	}
 	vc, dc, err := registerClasses()
@@ -702,25 +718,50 @@ func NewWithOptions(o Options) (*Window, error) {
 		theme = toolkit.DefaultDark()
 	}
 
-	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
-	app.Send(selSetActivationPolicy, activationPolicyReg)
-
 	rect := nsRect{Size: nsSize{W: float64(width), H: float64(height)}}
 	style := uint(styleTitled | styleClosable | styleMiniaturizable | styleResizable)
 	// A fullscreen placement is a BORDERLESS window at the screen's own frame,
-	// copied verbatim from what AppKit reported. It is deliberately not macOS
-	// native full screen, which animates into its own Space and keeps a menu bar
-	// -- wrong for an immersive surface that must own every pixel of the panel.
-	if screen != nil && o.Fullscreen {
-		rect = screen.nativeFrame
-		style = styleBorderless
-		width, height = int(rect.Size.W), int(rect.Size.H)
-	} else if screen != nil {
-		// Not fullscreen, but still on a chosen display: keep the requested size
-		// and put its top-left at the screen's top-left visible corner.
-		rect.Origin = nsPoint{
-			X: screen.nativeFrame.Origin.X,
-			Y: screen.nativeFrame.Origin.Y + screen.nativeFrame.Size.H - float64(height),
+	// as the window server reports it. It is deliberately not macOS native full
+	// screen, which animates into its own Space and keeps a menu bar -- wrong
+	// for an immersive surface that must own every pixel of the panel.
+	// topLeft, when non-zero, is where the finished window's FRAME is put once
+	// AppKit has told us how big its chrome is (see below).
+	var topLeft *nsPoint
+	if screen != nil {
+		// The screen's rectangle in AppKit's own space, derived from the window
+		// server's live bounds. Both branches below need it, and neither may
+		// derive it any other way: an origin computed from a display list that
+		// has stopped being true is how a window ends up on somebody else's
+		// panel with nothing reported.
+		primary, err := primaryBounds()
+		if err != nil {
+			return nil, err
+		}
+		frame := screen.appKitFrame(primary.H)
+		if o.Fullscreen {
+			rect = frame
+			style = styleBorderless
+			width, height = int(rect.Size.W), int(rect.Size.H)
+		} else {
+			// Not fullscreen, but still on a chosen display: keep the requested
+			// size and put the window in the display's top-left usable corner.
+			//
+			// Its FRAME, not its content. A titled window's title bar sits ABOVE
+			// its content, so a content rectangle at the display's top edge puts
+			// the title bar past it -- and AppKit, which will not leave a title
+			// bar where it cannot be grabbed, then moves the whole window
+			// somewhere it fits. Which was, in the measured case, the main
+			// display: the caller chose a screen and got the desktop's.
+			//
+			// The chrome's height is AppKit's to know and it is only knowable
+			// once the window exists, so the placement is finished after
+			// creation with -setFrameTopLeftPoint:.
+			p := screen.visibleTopLeftInAppKit(primary.H)
+			topLeft = &p
+			rect.Origin = nsPoint{
+				X: frame.Origin.X,
+				Y: frame.Origin.Y + frame.Size.H - float64(height),
+			}
 		}
 	}
 	// GoWidgetsWindow rather than NSWindow: it is the subclass that answers YES
@@ -777,6 +818,9 @@ func NewWithOptions(o Options) (*Window, error) {
 	active = w
 
 	win.Send(selSetTitle, objc.NSString(title))
+	if topLeft != nil {
+		win.Send(selSetFrameTopLeftPoint, *topLeft)
+	}
 	if screen == nil {
 		// Centring is the right default, but on a chosen screen it would undo the
 		// placement by pulling the window back to the main display.
@@ -947,6 +991,30 @@ func (w *Window) resize(nw, nh int, scale float64) {
 // Size returns the current client size in framebuffer (render) pixels — equal to
 // the window's logical point size at the default render scale of 1.
 func (w *Window) Size() (int, int) { return w.w, w.h }
+
+// Bounds reports where the window ACTUALLY is: its rectangle on the desktop, in
+// the same global top-left coordinates [ScreenInfo] uses, with ok=false when
+// the display arrangement cannot be read.
+//
+// "The window opened" and "the window opened where it was asked to" are
+// different claims, and only the first of them used to be checkable from
+// outside this package. An application that takes over a display -- an XR
+// headset, a kiosk, a presentation -- needs the second, and so does any test
+// that wants to assert placement without photographing somebody's desktop.
+//
+// It reads -[NSWindow frame], which is the window's own rectangle and is
+// therefore correct whatever AppKit currently believes about the display list,
+// and converts it with the window server's live primary height. Call it from
+// the goroutine that opened the window: it messages AppKit.
+func (w *Window) Bounds() (x, y, width, height int, ok bool) {
+	primary, err := primaryBounds()
+	if err != nil {
+		return 0, 0, 0, 0, false
+	}
+	f := objc.Send[nsRect](w.win, selFrame)
+	return int(f.Origin.X), int(flipY(f.Origin.Y, f.Size.H, primary.H)),
+		int(f.Size.W), int(f.Size.H), true
+}
 
 // Close releases the window. Safe to call more than once.
 // Close closes the window. Safe from any goroutine.

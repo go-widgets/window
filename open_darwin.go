@@ -71,5 +71,6 @@ var (
 	_ AppearanceReader = darwinBackend{}
 	_ Scaler           = (*cocoa.Window)(nil)
 	_ Repainter        = (*cocoa.Window)(nil)
+	_ Placement        = (*cocoa.Window)(nil)
 	_ Backend          = darwinBackend{}
 )
