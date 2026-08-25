@@ -207,16 +207,31 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
 - `window.Screens() ([]Screen, error)` — enumerate the attached displays,
   primary first, in logical points with the desktop's panels excluded. Safe to
   call before `Open`, since picking an output is something an application does
-  on the way in. **macOS** answers through Cocoa and **X11** through RANDR 1.5
+  on the way in. **macOS** answers through Cocoa, **X11** through RANDR 1.5
   (shared with the screen capture in
   [`go-freedesktop/x11`](https://github.com/go-freedesktop/x11), not a second
-  copy of it); Wayland, Windows and `js/wasm` return
-  `window.ErrScreensUnsupported`.
+  copy of it), **Wayland** through `wl_output`, and **Windows** through
+  `EnumDisplayMonitors` (shared with `go-mswin/screencapture` through
+  [`go-mswin/win32`](https://github.com/go-mswin/win32)). Only `js/wasm` still
+  returns `window.ErrScreensUnsupported`.
 
-  `Screen.Name` is the panel's **own** name where the platform offers one — on
-  X11 the product string out of its EDID, `"DELL U2720Q"` — falling back to the
-  RANDR connector, `"HDMI-1"`, on a display that publishes none. That is what
-  an application recognising a particular headset has to match on.
+  `Screen.Name` is the panel's **own** name where the platform offers one — the
+  product string out of its EDID, `"DELL U2720Q"` — falling back to the
+  connector (`"HDMI-1"`, `"DP-2"`, `\\.\DISPLAY1`) on a display that
+  publishes none, **and also when two attached displays publish the same one**:
+  two identical monitors say the identical thing about themselves, and a name
+  that cannot tell them apart is not a name. That is what an application
+  recognising a particular headset has to match on.
+
+  On Windows the EDID lives in the registry under the monitor's device
+  instance, and a panel with none falls back to the description its driver
+  gives — which for the inbox monitor driver is `"Generic PnP Monitor"` for
+  every panel attached, hence the rule above. Windows is also the one platform
+  with **no single logical coordinate space**: each display's rectangle is in
+  its own points, so on a mixed-DPI desktop they do not tile. Nothing depends
+  on them tiling — `Config.Screen` takes the `Screen` value back and the
+  back-end re-resolves it — but a caller doing arithmetic across two Windows
+  displays should know.
 - `window.VisibleScreenSize() (w, h int, ok bool)` — the usable area of the
   primary display, superseded by `Screens` for anything multi-display.
 

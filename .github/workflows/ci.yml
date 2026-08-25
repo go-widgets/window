@@ -130,6 +130,40 @@ jobs:
             internal/cocoa/cocoa-screencapture-2026-08-10.png
           if-no-files-found: warn
 
+  # A SECOND MACHINE for the Windows back-end. The Win32 window itself needs an
+  # interactive session and a framebuffer to look at, which a hosted runner has
+  # neither of, so it stays proven on the Win11 ARM64 VM. But enumerating
+  # displays needs no window at all, and a GitHub runner DOES have a display
+  # device -- \\.\DISPLAY1, unlike the WinDisc phantom an ssh session 0 reports
+  # -- so window.Screens() can be exercised here continuously, on hardware
+  # nobody in this project controls.
+  #
+  # It also runs the module's ordinary tests on a real Windows host, which the
+  # cross-build lane cannot: that lane proves the code COMPILES for
+  # GOOS=windows, and nothing more.
+  windows:
+    name: windows (screens on a hosted runner)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go vet ./...
+        env:
+          CGO_ENABLED: "0"
+      - run: go build ./...
+        env:
+          CGO_ENABLED: "0"
+      - run: go test -count=1 ./...
+        env:
+          CGO_ENABLED: "0"
+      - name: Live display enumeration (no window, no interactive session)
+        env:
+          CGO_ENABLED: "0"
+          WINDOW_LIVE_SCREENS: "1"
+        run: go test -count=1 -run TestLiveScreens -v .
+
   # Cross-build regression guard: the whole module MUST compile CGO-free for
   # every non-native target. windows/{amd64,arm64} now compile the REAL native
   # Win32/GDI backend (internal/win32, pure-Go via syscall.NewLazyDLL + a

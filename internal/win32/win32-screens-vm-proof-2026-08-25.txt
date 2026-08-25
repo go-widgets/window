@@ -1,0 +1,137 @@
+go-widgets/window — Screens() on Windows, live proof on the Win11 ARM64 QEMU VM
+(build 26200.8037), 2026-08-25
+
+Cross-compiled here (CGO_ENABLED=0 GOOS=windows GOARCH=arm64,
+go test -c -trimpath), copied to the VM, run there. The display is QEMU `ramfb`
+behind the Microsoft Basic Display Driver: 800x600, no GPU, ONE monitor, 96 dpi.
+
+The code under test is package window's screen_windows.go, on top of
+github.com/go-mswin/win32 v0.3.0 (its own proof, of the bindings underneath, is
+win32-display-vm-proof-2026-08-25.txt in that repository).
+
+
+WHAT Screens() RETURNS
+----------------------
+TestLiveScreens, gated on WINDOW_LIVE_SCREENS=1, launched INTO THE INTERACTIVE
+SESSION with `schtasks /ru dev /it`:
+
+    === RUN   TestLiveScreens
+        SCREEN 0 name="Generic Non-PnP Monitor" bounds=0,0 800x600
+                 visible=0,0 800x552 scale=1 primary=true
+        ONE DISPLAY: nothing here exercised the multi-monitor rules
+        SCREENS_OK
+    --- PASS: TestLiveScreens (0.00s)
+
+
+AN INSTRUMENT THAT IS NOT THIS CODE
+-----------------------------------
+[System.Windows.Forms.Screen]::AllScreens — .NET's own binding of the same OS
+API, run in the same interactive session, minutes apart:
+
+    DeviceName   : \\.\DISPLAY1
+    Bounds       : {X=0,Y=0,Width=800,Height=600}
+    WorkingArea  : {X=0,Y=0,Width=800,Height=552}
+    Primary      : True
+    BitsPerPixel : 32
+
+Field by field:
+
+    bounds        0,0 800x600   ==  Bounds      {X=0,Y=0,Width=800,Height=600}
+    visible       0,0 800x552   ==  WorkingArea {X=0,Y=0,Width=800,Height=552}
+    primary       true          ==  Primary     True
+    scale         1             ==  (800x600 at 96 dpi is 100%)
+
+The 48 rows between 600 and 552 are the taskbar. Both instruments see it, and
+neither invents it.
+
+A second instrument, dxdiag /t, same session:
+
+    Card name:     Microsoft Basic Display Driver
+    Current Mode:  800 x 600 (32 bit) (64Hz)
+    Monitor Name:  Generic Non-PnP Monitor
+    Monitor Model: unknown
+    Monitor Id:
+    Native Mode:   unknown
+
+`Monitor Name` is exactly what Screens() returned as the display's Name.
+
+
+THE NAME: A DRIVER DESCRIPTION, NOT AN EDID MODEL — say so plainly
+------------------------------------------------------------------
+"Generic Non-PnP Monitor" is the INBOX DRIVER's description of the panel, not
+the panel's own model. It came from EnumDisplayDevicesW; the EDID lookup that
+should have produced a real model found no EDID on this machine, and three
+independent things agree that there is none to find:
+
+  - dxdiag reports `Monitor Model: unknown` and an empty `Monitor Id`.
+  - Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID, which reads
+    EDID directly, returns NOTHING.
+  - The registry key the panel's device interface path points at EXISTS and
+    carries no EDID value:
+
+        device id  \\?\DISPLAY#Default_Monitor#1&8713bca&0&UID0#{e6f07b5f-…}
+        derived    HKLM\SYSTEM\CurrentControlSet\Enum\DISPLAY\
+                   Default_Monitor\1&8713bca&0&UID0\Device Parameters
+        contents   (a WDF subkey, and no EDID value)
+
+So the derivation from device id to registry key is CONFIRMED against a live
+machine — the key is exactly where edidRegistryPath says it is — while the
+model name itself is NOT proven end to end here. A monitor with a real EDID is
+needed for that and this VM cannot provide one. What a machine with one would
+return is "DELL U2720Q" or "VITURE Beast"; what this one returns is the
+driver's description, which is honest and is what the fallback exists for.
+
+
+SESSION 0 — the same trap, and the fallback ladder visibly working
+------------------------------------------------------------------
+The identical binary run over plain ssh (session 0, no desktop):
+
+    SCREEN 0 name="WinDisc" bounds=0,0 1024x768 visible=0,0 1024x768
+             scale=1 primary=true
+
+Three things are different and all of them are the phantom desktop of the
+non-interactive session: a display called WinDisc that nobody can see, 1024x768
+rather than 800x600, and no taskbar (visible == bounds). EnumDisplayDevicesW
+enumerates nothing at all there, so there was no driver description either —
+and the name fell back to the CONNECTOR, which is the ladder in resolveNames
+doing exactly what it is for. A test that only ever ran over ssh would report a
+display that does not exist, and would pass.
+
+
+A SECOND MACHINE — GitHub's windows-latest runner, on every push
+----------------------------------------------------------------
+Windows Server 2025 on Hyper-V, no interactive session, hardware nobody in this
+project controls. The CI lane added with this work runs the same
+TestLiveScreens there:
+
+    SCREEN 0 name="HyperVMonitor" bounds=0,0 1024x768 visible=0,0 1024x720
+             scale=1 primary=true
+
+A different machine, a different display driver, a different name, a different
+taskbar height (48 rows here too, out of 768) — and the same shape, passing the
+same contract assertions. Unlike an ssh session 0, a hosted runner has a REAL
+display device rather than the WinDisc phantom, which is what makes the lane
+worth having.
+
+Its name, "HyperVMonitor", is again a DRIVER description and not an EDID model:
+a synthetic Hyper-V display has no panel and no EDID either. So neither machine
+available to this work can prove the EDID path end to end.
+
+
+WHAT WAS NOT TESTED — and cannot be, on this machine
+----------------------------------------------------
+  - MULTI-MONITOR anything. One display. Nothing here exercised a negative
+    coordinate, the primary flag choosing between two panels, primary-first
+    ordering with a primary that is not already first, or two monitors sharing
+    a model name — which on Windows is the COMMON case, because the inbox
+    driver describes every panel it handles identically. All of it is covered
+    by unit test (screenwin32_test.go, which runs on every platform) and by
+    nothing else.
+  - MIXED DPI, and therefore the one place this back-end genuinely differs
+    from the others: two monitors at different scales do not tile in logical
+    points. Everything on this machine is 96 dpi, where an aware process and an
+    unaware one are identical BY DEFINITION, so this run says nothing about
+    scaling at all.
+  - A REAL EDID, per the section above.
+  - HDR, colour depth beyond the 32bpp reported, refresh rate, rotation. None
+    of them are in Screen and none were looked at.

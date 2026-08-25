@@ -7,7 +7,7 @@ package window
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -66,12 +66,18 @@ func (d display) abstractPath() string { return "@/tmp/.X11-unix/X" + d.number }
 // $TMPDIR instead. Trying that first costs one dial on the platforms that DO
 // have /tmp, where $TMPDIR is either unset or /tmp itself — both of which
 // return "" so the caller skips the duplicate.
+//
+// The joining is "path", not "path/filepath": this is a UNIX-DOMAIN SOCKET
+// path on the machine running the X server, and it is separated by forward
+// slashes whatever the host's own convention is. filepath was indistinguishable
+// from path here until this file's (untagged) tests were first run on a Windows
+// host, where it produced \tmp\.X11-unix\X0.
 func (d display) tmpdirPath() string {
 	dir := os.Getenv("TMPDIR")
-	if dir == "" || filepath.Clean(dir) == "/tmp" {
+	if dir == "" || path.Clean(dir) == "/tmp" {
 		return ""
 	}
-	return filepath.Join(dir, ".X11-unix", "X"+d.number)
+	return path.Join(dir, ".X11-unix", "X"+d.number)
 }
 
 // socketPaths lists, in dial order, the local endpoints an X server for this

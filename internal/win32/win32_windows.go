@@ -75,7 +75,6 @@ var (
 	procSetWindowPos               = user32.NewProc("SetWindowPos")
 	procAdjustWindowRectExForDpi   = user32.NewProc("AdjustWindowRectExForDpi")
 	procGetDpiForWindow            = user32.NewProc("GetDpiForWindow")
-	procSetProcessDpiAwarenessCtx  = user32.NewProc("SetProcessDpiAwarenessContext")
 	procSystemParametersInfoForDpi = user32.NewProc("SystemParametersInfoForDpi")
 	procMapVirtualKeyW             = user32.NewProc("MapVirtualKeyW")
 	procGetKeyState                = user32.NewProc("GetKeyState")
@@ -115,9 +114,6 @@ const (
 	// SystemParametersInfoForDpi: SPI_GETWORKAREA returns the usable monitor
 	// rectangle (excluding the taskbar) in physical pixels.
 	spiGetWorkArea = 0x0030
-
-	// Per-Monitor-V2 DPI awareness context handle (winuser.h): (HANDLE)-4.
-	dpiAwarenessPerMonitorV2 = ^uintptr(3) // -4
 
 	mapvkVKToChar = 2 // MAPVK_VK_TO_CHAR
 
@@ -226,9 +222,16 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 func NewScaled(title string, width, height int, theme *toolkit.Theme, native bool) (*Window, error) {
 	// Per-Monitor-V2 DPI awareness: the window is notified of per-monitor DPI and
 	// its non-client frame scales, so GetDpiForWindow reports the true monitor
-	// DPI and the content stays readable. Best-effort: ignored on the rare build
-	// without the context (the render still works at scale 1).
-	procSetProcessDpiAwarenessCtx.Call(dpiAwarenessPerMonitorV2)
+	// DPI and the content stays readable. Best-effort: it also returns false
+	// when awareness was ALREADY declared -- by window.Screens, or by the
+	// application manifest -- which is not a failure, and the render works at
+	// scale 1 on the rare build without the context.
+	//
+	// The proc and the (HANDLE)-4 context constant used to be declared here.
+	// They are go-mswin/win32's now, because window.Screens needs exactly the
+	// same declaration before it reads any monitor geometry, and two copies of
+	// a negative handle constant is two places for it to be wrong in.
+	win32.SetProcessDPIAwarenessContext(win32.DPIAwarenessPerMonitorV2)
 
 	if theme == nil {
 		theme = toolkit.DefaultDark()

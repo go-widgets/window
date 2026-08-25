@@ -8,8 +8,9 @@ import "errors"
 
 // ErrScreensUnsupported is returned by [Screens] on a back-end that cannot yet
 // enumerate displays. It is not a failure to handle defensively so much as a
-// statement of coverage: today macOS answers through Cocoa and X11 through
-// RANDR, and Wayland, Windows and js/wasm do not.
+// statement of coverage: today macOS answers through Cocoa, X11 through RANDR,
+// Wayland through wl_output and Windows through EnumDisplayMonitors, and
+// js/wasm does not.
 var ErrScreensUnsupported = errors.New("window: this back-end cannot enumerate screens yet")
 
 // Screen describes one attached display, in LOGICAL points — the unit the
