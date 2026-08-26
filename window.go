@@ -121,6 +121,23 @@ type Config struct {
 	//
 	// Honoured today by the macOS (Cocoa) back-end.
 	Fullscreen bool
+
+	// Immersive puts the window above the platform's own furniture -- on macOS
+	// the menu bar and the Dock -- instead of underneath it.
+	//
+	// [Config.Fullscreen] covers the desktop and nothing more: the menu bar and
+	// the Dock are drawn at window levels above an ordinary window, so on a
+	// display that carries them they appear ON TOP of the picture. For a
+	// surface showing captured desktops that reads as two menu bars, one of them
+	// belonging to a screen the viewer is not looking at.
+	//
+	// It is a window level rather than a presentation option deliberately:
+	// presentation options apply only while this application is active, and an
+	// immersive surface driven by global shortcuts is used precisely while
+	// another application has the keyboard.
+	//
+	// Honoured today by the macOS (Cocoa) back-end; ignored elsewhere.
+	Immersive bool
 }
 
 // Repainter is an optional [Backend] capability: ask for a repaint from ANY

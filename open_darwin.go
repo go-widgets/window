@@ -32,6 +32,7 @@ func Open(cfg Config) (Backend, error) {
 		Theme:       cfg.Theme,
 		RenderScale: cfg.RenderScale,
 		Fullscreen:  cfg.Fullscreen,
+		Immersive:   cfg.Immersive,
 	}
 	if cfg.Screen != nil {
 		s := cfg.Screen.toCocoa()

@@ -100,6 +100,7 @@ var (
 	selSetContentView       = objc.RegisterName("setContentView:")
 	selContentView          = objc.RegisterName("contentView")
 	selMakeKeyAndOrderFront = objc.RegisterName("makeKeyAndOrderFront:")
+	selSetLevel             = objc.RegisterName("setLevel:")
 	selSetAcceptsMouseMoved = objc.RegisterName("setAcceptsMouseMovedEvents:")
 	selMakeFirstResponder   = objc.RegisterName("makeFirstResponder:")
 	selCenter               = objc.RegisterName("center")
@@ -818,6 +819,14 @@ func NewWithOptions(o Options) (*Window, error) {
 	active = w
 
 	win.Send(selSetTitle, objc.NSString(title))
+	if o.Immersive {
+		// NSStatusWindowLevel is 25: one above the menu bar's 24 and five above
+		// the Dock's 20, and below the levels the system keeps for its own
+		// alerts. High enough to cover the furniture, not so high as to cover a
+		// dialogue the viewer needs to answer.
+		const nsStatusWindowLevel = 25
+		win.Send(selSetLevel, nsStatusWindowLevel)
+	}
 	if topLeft != nil {
 		win.Send(selSetFrameTopLeftPoint, *topLeft)
 	}

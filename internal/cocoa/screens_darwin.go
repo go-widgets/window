@@ -374,6 +374,22 @@ type Options struct {
 	// is what an immersive surface needs, and it is also what lets a caller put
 	// one on an external display while the desktop carries on elsewhere.
 	Fullscreen bool
+	// Immersive puts the window ABOVE the platform's own furniture instead of
+	// underneath it.
+	//
+	// A borderless window at a display's exact bounds covers the desktop, and
+	// nothing more: the menu bar and the Dock are drawn by the window server at
+	// levels above an ordinary window, so on a display that carries them they
+	// appear ON TOP of the picture. On glasses showing a captured desktop that
+	// reads as two menu bars, one of them belonging to a screen the viewer is
+	// not looking at.
+	//
+	// This is a window LEVEL and not -[NSApp setPresentationOptions:], on
+	// purpose. Presentation options apply only while the application is active,
+	// and an immersive surface driven by global shortcuts is used precisely
+	// while another application has the keyboard: the menu bar would come back
+	// over the picture the moment the viewer typed anywhere else.
+	Immersive bool
 }
 
 // resolveScreen turns the requested placement into a live screen, or nil when
