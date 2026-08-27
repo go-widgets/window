@@ -720,7 +720,7 @@ func NewWithOptions(o Options) (*Window, error) {
 	}
 
 	rect := nsRect{Size: nsSize{W: float64(width), H: float64(height)}}
-	style := uint(styleTitled | styleClosable | styleMiniaturizable | styleResizable)
+	style := framedStyle(o.FixedSize)
 	// A fullscreen placement is a BORDERLESS window at the screen's own frame,
 	// as the window server reports it. It is deliberately not macOS native full
 	// screen, which animates into its own Space and keeps a menu bar -- wrong
@@ -1045,4 +1045,20 @@ func (w *Window) Close() error {
 // String identifies the window for debugging.
 func (w *Window) String() string {
 	return fmt.Sprintf("cocoa.Window(%dx%d %q)", w.w, w.h, w.title)
+}
+
+// framedStyle is the AppKit style mask for an ordinary framed window: titled,
+// closable, miniaturisable, and resizable unless the caller asked for a fixed
+// size.
+//
+// Without the resizable mask AppKit gives no resize control, refuses a drag on
+// any edge, and disables the zoom button -- which is the whole of "this window
+// is the size it is". It is a pure function so the decision can be checked
+// without a display; the mask itself only means anything to AppKit.
+func framedStyle(fixed bool) uint {
+	style := uint(styleTitled | styleClosable | styleMiniaturizable | styleResizable)
+	if fixed {
+		style &^= styleResizable
+	}
+	return style
 }

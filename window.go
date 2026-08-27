@@ -121,6 +121,22 @@ type Config struct {
 	//
 	// Honoured today by the macOS (Cocoa) back-end.
 	Fullscreen bool
+	// FixedSize makes the window unresizable: no resize control, no drag on an
+	// edge, no zoom button.
+	//
+	// For a window sized to its own content there is nothing to gain from
+	// resizing it and something to lose. Room has to be found for what a smaller
+	// window cannot show, and the honest answers are a scrollbar in a dialogue
+	// that never needs to scroll, or a reflow into a layout nobody designed. A
+	// settings window is the case in point: it is exactly as big as what it has
+	// to say.
+	//
+	// Resizable stays the default, because most windows hold content whose size
+	// is the user's business rather than the layout's.
+	//
+	// Honoured today by the macOS (Cocoa) back-end; elsewhere it is accepted and
+	// ignored, so a caller need not ask what platform it is on.
+	FixedSize bool
 
 	// Immersive puts the window above the platform's own furniture -- on macOS
 	// the menu bar and the Dock -- instead of underneath it.
