@@ -390,6 +390,14 @@ type Options struct {
 	// while another application has the keyboard: the menu bar would come back
 	// over the picture the moment the viewer typed anywhere else.
 	Immersive bool
+	// FixedSize makes the window unresizable: no resize control, no drag on an
+	// edge, no zoom.
+	//
+	// For a window sized to its own content there is nothing to gain from
+	// resizing it and something to lose: room has to be found for what a smaller
+	// window cannot show, which means a scrollbar in a dialogue that never needs
+	// to scroll, or a layout that reflows into something nobody designed.
+	FixedSize bool
 }
 
 // resolveScreen turns the requested placement into a live screen, or nil when
