@@ -63,11 +63,15 @@ const (
 )
 
 const (
-	backingStoreBuffered   = 2
-	activationPolicyReg    = 0 // NSApplicationActivationPolicyRegular
-	nsCompositingCopy      = 1 // NSCompositingOperationCopy
-	eventMaskAny           = math.MaxUint64
-	defaultRunLoopModeName = "kCFRunLoopDefaultMode"
+	backingStoreBuffered = 2
+	activationPolicyReg  = 0 // NSApplicationActivationPolicyRegular
+	// activationPolicyAccessory is an application with no Dock icon that never
+	// becomes the active one. It is what a passive window's process must be, or
+	// opening it takes the keyboard from whatever the person was using.
+	activationPolicyAccessory = 1 // NSApplicationActivationPolicyAccessory
+	nsCompositingCopy         = 1 // NSCompositingOperationCopy
+	eventMaskAny              = math.MaxUint64
+	defaultRunLoopModeName    = "kCFRunLoopDefaultMode"
 )
 
 // NSEventType values used when the integration test synthesises real NSEvents.
@@ -172,6 +176,9 @@ type Window struct {
 	// moved to a display of another density has to re-derive, and the resolved
 	// scale alone cannot say whether it is allowed to.
 	follow bool
+	// passive records that this window must never take the keyboard or the mouse.
+	// See Options.Passive.
+	passive bool
 
 	root       toolkit.Widget
 	dmg        damageRenderer
@@ -603,9 +610,17 @@ func viewRepaintNow(_ objc.ID, _ objc.SEL) {
 	}
 }
 
-// windowCanBecomeKey answers YES for every window this package makes. See
-// registerClasses for why a borderless one needs telling.
-func windowCanBecomeKey(_ objc.ID, _ objc.SEL) bool { return true }
+// windowCanBecomeKey answers YES for every window this package makes, unless it
+// asked to be passive. See registerClasses for why a borderless one needs
+// telling, and Options.Passive for why one might not want it.
+//
+// The answer is read from the ACTIVE window rather than from the receiver,
+// because this process runs one window at a time -- Run blocks on it -- and a
+// method on a registered class has no other way to reach Go state. A window that
+// has not been made active yet cannot be asked this question by AppKit.
+func windowCanBecomeKey(_ objc.ID, _ objc.SEL) bool {
+	return active == nil || !active.passive
+}
 
 // selCloseNow is a selector of our own, for the same reason as selRepaintNow:
 // the teardown is more than -[NSWindow close] and has to happen in one hop.
@@ -697,7 +712,11 @@ func NewWithOptions(o Options) (*Window, error) {
 	// AppKit's agreement buys is that -[NSWindow screen] and the backing factor
 	// name the display the window is actually on.
 	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
-	app.Send(selSetActivationPolicy, activationPolicyReg)
+	policy := activationPolicyReg
+	if o.Passive {
+		policy = activationPolicyAccessory
+	}
+	app.Send(selSetActivationPolicy, policy)
 	syncAppKitScreens(appKitScreenSyncTimeout)
 
 	screen, err := o.resolveScreen()
@@ -814,9 +833,23 @@ func NewWithOptions(o Options) (*Window, error) {
 		h:       int(float64(height) * scale),
 		scale:   scale,
 		backing: backing,
+		passive: o.Passive,
 	}
 	w.buf = make([]byte, 4*w.w*w.h)
 	active = w
+	if o.Passive {
+		// The pointer goes straight through to whatever is behind, and to the
+		// display underneath: a picture is not something to click on.
+		//
+		// canBecomeKeyWindow already answers NO for this window, but AppKit only
+		// asks that when something tries to MAKE it key -- a click on it would
+		// otherwise still arrive as a mouse event, and the desk would act on a
+		// press meant for the application behind it.
+		win.Send(objc.RegisterName("setIgnoresMouseEvents:"), true)
+		// And it must not steal the keyboard when it appears. An accessory
+		// application cannot become active, which is the whole of that.
+		win.Send(objc.RegisterName("setCanHide:"), false)
+	}
 
 	win.Send(selSetTitle, objc.NSString(title))
 	if o.Immersive {

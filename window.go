@@ -137,6 +137,25 @@ type Config struct {
 	// Honoured today by the macOS (Cocoa) back-end; elsewhere it is accepted and
 	// ignored, so a caller need not ask what platform it is on.
 	FixedSize bool
+	// Passive makes the window a picture and nothing else: it never takes the
+	// keyboard, never takes a click, and the application never activates.
+	//
+	// It is for a window that SHOWS something rather than one somebody works in --
+	// a head-up display, a viewer on a second screen, a surface inside glasses.
+	// Such a window taking input is not a missing feature, it is a TRAP: it takes
+	// the keyboard from whatever the person was typing into, and the pointer that
+	// wanders onto the display it owns is invisible, because the picture is of
+	// somewhere else and does not show where the mouse is. That was measured on a
+	// pair of glasses, and the way out was unplugging them.
+	//
+	// A passive window is driven from outside instead -- a global shortcut, a
+	// menu-bar item, a socket -- so an application that asks for this must have
+	// another way in. Its own loop still runs: it repaints, resizes and closes as
+	// before, and nothing about drawing changes.
+	//
+	// Honoured today by the macOS (Cocoa) back-end; elsewhere it is accepted and
+	// ignored.
+	Passive bool
 
 	// Immersive puts the window above the platform's own furniture -- on macOS
 	// the menu bar and the Dock -- instead of underneath it.
