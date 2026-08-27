@@ -102,4 +102,10 @@ var systemFontPath = `C:\Windows\Fonts\segoeui.ttf`
 // font-substitution table: it answers "the system font", which for every
 // supported Windows is Segoe UI, and says so here rather than pretending to
 // more.
-func (w *Window) SystemFontTTF() ([]byte, error) { return os.ReadFile(systemFontPath) }
+func (w *Window) SystemFontTTF() ([]byte, error) { return SystemFontTTF() }
+
+// SystemFontTTF returns the bytes of the Windows UI font, without needing a
+// window: it is a file read. The package-level window.SystemFontTTF forwards
+// here so an application can install the face BEFORE it lays out the window
+// whose height depends on it.
+func SystemFontTTF() ([]byte, error) { return os.ReadFile(systemFontPath) }

@@ -70,4 +70,10 @@ func (w *Window) AppearanceRaw() (dark bool, r, g, b uint8, hasAccent bool) {
 
 // SystemFontTTF returns the raw bytes of the macOS system face. Implements the
 // window.AppearanceReader capability.
-func (w *Window) SystemFontTTF() ([]byte, error) { return os.ReadFile(sfFontPath) }
+func (w *Window) SystemFontTTF() ([]byte, error) { return SystemFontTTF() }
+
+// SystemFontTTF returns the raw bytes of the macOS system face, without needing
+// a window: it is a file read. The package-level window.SystemFontTTF forwards
+// here so an application can install the face BEFORE it lays out the window
+// whose height depends on it.
+func SystemFontTTF() ([]byte, error) { return os.ReadFile(sfFontPath) }
