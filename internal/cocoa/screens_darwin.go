@@ -398,6 +398,21 @@ type Options struct {
 	// window cannot show, which means a scrollbar in a dialogue that never needs
 	// to scroll, or a layout that reflows into something nobody designed.
 	FixedSize bool
+	// Passive makes the window a picture and nothing else: it never takes the
+	// keyboard, never takes a click, and the application never activates.
+	//
+	// It is for a window that SHOWS something rather than one somebody works in --
+	// a head-up display, a viewer on another screen, a surface in glasses. Such a
+	// window taking input is not a missing feature, it is a trap: it takes the
+	// keyboard from whatever the person was typing into, and the pointer that
+	// wanders onto the display it owns is invisible, because the picture is of
+	// somewhere else and does not show where the mouse is. That was measured, and
+	// the way out was unplugging the display.
+	//
+	// A passive window is driven from outside instead: global shortcuts, a menu
+	// item, a socket. Its own event loop still runs -- it repaints, resizes and
+	// closes -- so nothing about drawing changes.
+	Passive bool
 }
 
 // resolveScreen turns the requested placement into a live screen, or nil when

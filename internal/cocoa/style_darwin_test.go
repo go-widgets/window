@@ -39,3 +39,50 @@ func TestFramedStyle(t *testing.T) {
 		}
 	}
 }
+
+// TestAPassiveWindowCannotBecomeKey.
+//
+// The mask is not the whole of passive -- the pointer is turned away with
+// -setIgnoresMouseEvents: and the application is made an accessory -- but this
+// part is the one that decides whether the keyboard moves, and it is the part
+// that can be checked without a display.
+//
+// It reads the flag off the ACTIVE window because a method on a registered class
+// has no other way to reach Go state, and this process runs one window at a time.
+// A window that has not been made active yet cannot be asked.
+func TestAPassiveWindowCannotBecomeKey(t *testing.T) {
+	was := active
+	defer func() { active = was }()
+
+	// No window at all: yes, because the alternative is a borderless window that
+	// silently takes no keys for the whole of a process that never asked to be
+	// passive.
+	active = nil
+	if !windowCanBecomeKey(0, 0) {
+		t.Error("with no active window the answer is no")
+	}
+	active = &Window{}
+	if !windowCanBecomeKey(0, 0) {
+		t.Error("an ordinary window cannot become key")
+	}
+	active = &Window{passive: true}
+	if windowCanBecomeKey(0, 0) {
+		t.Error("a passive window can become key, so it takes the keyboard from " +
+			"whatever the person was typing into")
+	}
+}
+
+// TestThePassivePolicyIsAccessory: the two activation policies are the two
+// numbers AppKit means, and they are not the same number.
+//
+// Worth pinning because they are untyped constants copied out of a header: a
+// regular application shows in the Dock and can become active, an accessory one
+// does neither, and swapping them makes a viewer steal the keyboard on launch.
+func TestThePassivePolicyIsAccessory(t *testing.T) {
+	if activationPolicyReg != 0 {
+		t.Errorf("regular is %d, want 0", activationPolicyReg)
+	}
+	if activationPolicyAccessory != 1 {
+		t.Errorf("accessory is %d, want 1", activationPolicyAccessory)
+	}
+}
