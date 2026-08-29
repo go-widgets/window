@@ -1095,3 +1095,21 @@ func framedStyle(fixed bool) uint {
 	}
 	return style
 }
+
+// Number is the window's system-wide identifier — -[NSWindow windowNumber],
+// which on macOS IS the CGWindowID that CoreGraphics and ScreenCaptureKit use.
+//
+// It exists so a program can tell a capture about its own window. Capturing a
+// display that this window sits on otherwise feeds the window back into itself:
+// an overlay filming the screen it covers. ScreenCaptureKit takes a list of
+// window ids to leave out, and this is the only way a consumer can name one it
+// did not create itself.
+//
+// Zero means the window has no number yet, which is what an unopened or already
+// closed one answers.
+func (w *Window) Number() uint32 {
+	if w == nil || w.win == 0 {
+		return 0
+	}
+	return uint32(objc.Send[int64](w.win, selWindowNumber))
+}
