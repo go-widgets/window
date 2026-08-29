@@ -535,3 +535,42 @@ func TestScaleFollowsBackingChange(t *testing.T) {
 		win.followBackingChange()
 	})
 }
+
+// TestLiveWindowNumberIsTheCGWindowID, which is what a capture needs to leave
+// the window out of a picture of the screen it sits on.
+//
+// A window that is not open has no number, and one that is has a positive one.
+// That is the whole contract, and it cannot be checked without a window server:
+// -[NSWindow windowNumber] answers 0 or a real id, and nothing in between.
+func TestLiveWindowNumberIsTheCGWindowID(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the live macOS window proof")
+	}
+	var (
+		win *Window
+		err error
+		n   uint32
+	)
+	callOnMain(func() {
+		win, err = New("window number", 200, 120, toolkit.DefaultDark())
+		if err != nil {
+			return
+		}
+		n = win.Number()
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if n == 0 {
+		t.Error("an open window has no number, so a capture cannot be told to leave it out")
+	}
+	t.Logf("CGWindowID = %d", n)
+
+	// A nil receiver and a closed window answer zero rather than reaching into
+	// nothing: a consumer holds this across a close.
+	var none *Window
+	if got := none.Number(); got != 0 {
+		t.Errorf("a nil window answered %d", got)
+	}
+	callOnMain(func() { win.Close() })
+}

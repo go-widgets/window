@@ -194,6 +194,22 @@ type Repainter interface {
 	Repaint()
 }
 
+// Numbered is an optional [Backend] capability: the window's system-wide
+// identifier.
+//
+// On macOS that is -[NSWindow windowNumber], which IS the CGWindowID that
+// CoreGraphics and ScreenCaptureKit use. It exists so a program can tell a
+// CAPTURE about its own window: capturing a display this window sits on
+// otherwise feeds the window back into itself -- an overlay filming the screen
+// it covers -- and the capture API takes a list of window ids to leave out.
+//
+// Zero means the back-end has no such number, or has not got one yet.
+//
+// Implemented today by the macOS (Cocoa) back-end.
+type Numbered interface {
+	Number() uint32
+}
+
 // Scaler is an optional [Backend] capability: how many framebuffer pixels the
 // back-end is allocating per logical point.
 //
