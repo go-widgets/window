@@ -172,7 +172,7 @@ func TestLiveCocoaDragDrop(t *testing.T) {
 		}
 		// Mid-drag, the pointer is over the DropZone: it must be lit, and this is
 		// the frame we capture on-device.
-		hoverMid = zone.Hover
+		hoverMid = zone.Hover().Get()
 		win.presentFull()
 		hoverPNG, _ = renderViewPNG(win.view)
 
@@ -200,7 +200,7 @@ func TestLiveCocoaDragDrop(t *testing.T) {
 		t.Fatalf("root never saw EventDrop carrying %q; events=%+v", payload, root.events)
 	}
 	// Hover must clear after the drop (lifecycle completed cleanly).
-	if zone.Hover {
+	if zone.Hover().Get() {
 		t.Fatalf("DropZone.Hover still set after drop")
 	}
 
