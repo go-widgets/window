@@ -55,7 +55,7 @@ func scene() toolkit.Widget {
 	label := toolkit.NewLabel("clicks: 0")
 	btn := toolkit.NewButton("Click me", func() {
 		clicks++
-		label.Text = fmt.Sprintf("clicks: %d", clicks)
+		label.Text().Set(fmt.Sprintf("clicks: %d", clicks))
 	})
 	box.Append(btn)
 	box.Append(label)
