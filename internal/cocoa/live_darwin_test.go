@@ -223,7 +223,7 @@ func TestLiveCocoaWindow(t *testing.T) {
 		}
 		btnRect = btn.Bounds()
 
-		app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+		app := objc.App()
 
 		// Synthesise a click at the button centre. btnRect is in device pixels
 		// (top-left); convert its centre to window/base points (bottom-left).

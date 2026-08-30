@@ -415,7 +415,7 @@ func runDeliveryCase(t *testing.T, tc deliveryCase) {
 		defer w.Close()
 		w.bindAndSeed(root)
 
-		app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+		app := objc.App()
 		app.Send(selSetActivationPolicy, 0) // NSApplicationActivationPolicyRegular
 		app.Send(selActivateIgnoring, true)
 		// Make the window key by hand: outside a running NSApp nothing else
