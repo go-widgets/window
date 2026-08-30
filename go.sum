@@ -10,6 +10,8 @@ github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734 h1:nU+MGeyJzidGvC
 github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734/go.mod h1:ObuOBKDEidGX0LqLKY/5nqj7JVN/hsCzHMAJd0TNc0k=
 github.com/go-macos/objc v0.2.0 h1:uDFsiCMQT66A3E7dFsVYrnVOk3BQxpkhfwZJCtYuWq8=
 github.com/go-macos/objc v0.2.0/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
+github.com/go-macos/objc v0.5.0 h1:/C091FfAlpHR8UAGWMVV9hM7AOPJejONu3TbpZYi9EQ=
+github.com/go-macos/objc v0.5.0/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
 github.com/go-macos/virtualdisplay v0.1.0 h1:mZll/h6+PVn+mNTDH17D7G5lXV5HPxlmJU9NKXJcR7c=
 github.com/go-macos/virtualdisplay v0.1.0/go.mod h1:SdD/x985/SWSqyARACyLX6F3xTD5dyFk/kWAT++RhyY=
 github.com/go-mswin/win32 v0.3.0 h1:woBuRYApSkzs8PzloMI4qhQdAB8lDmbFC2VT/QRsB3E=
