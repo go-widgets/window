@@ -16,7 +16,7 @@ jobs:
     name: workflows parse
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # A workflow that fails to PARSE reports nothing at all: no jobs run, no
       # checks appear, and a pull request looks unexercised rather than broken.
       # Every other lane in this file is downstream of the file itself being
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - run: go version
@@ -110,7 +110,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - run: CGO_ENABLED=0 go vet ./...
@@ -122,7 +122,7 @@ jobs:
         run: CGO_ENABLED=0 go test -tags=integration -run TestLiveCocoaWindow -v ./internal/cocoa/
       - name: Upload the on-device window render as a build artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cocoa-capture
           path: |
@@ -146,7 +146,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - run: go vet ./...
@@ -196,7 +196,7 @@ jobs:
           - { goos: android, goarch: arm64 }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -213,7 +213,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: arm64 links CGO-free
@@ -245,7 +245,7 @@ jobs:
           - { os: ubuntu-24.04-arm, label: arm64 }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - run: go env GOARCH && CGO_ENABLED=0 go test ./...
@@ -263,7 +263,7 @@ jobs:
           - { goarch: s390x,   qemu: qemu-s390x-static }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
@@ -283,7 +283,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: Install X utilities
@@ -298,7 +298,7 @@ jobs:
         run: xvfb-run -s "-screen 0 1024x768x24" go test -tags=integration -run TestLiveX11 -v ./...
       - name: Upload the captured window + SHM measurement as build artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-capture
           path: |
@@ -321,7 +321,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: Install a headless Wayland compositor + capture/keymap tools
@@ -365,7 +365,7 @@ jobs:
           WINDOW_WAYLAND_INTEGRATION=1 go test -tags=integration -run TestLiveWayland -v ./...
       - name: Upload the captured window as a build artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-wayland-capture
           path: live-wayland-capture.png
@@ -383,7 +383,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: Install an X server and capture tools
@@ -403,7 +403,7 @@ jobs:
           WINDOW_X11_HIDPI=1 go test -tags=integration -run TestLiveXHiDPI -v ./...
       - name: Upload the capture as a build artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-x11-hidpi-capture
           path: live-x11-hidpi-native.png
@@ -421,7 +421,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: Install a headless Wayland compositor + capture tools
@@ -463,7 +463,7 @@ jobs:
           WINDOW_WAYLAND_HIDPI=1 go test -tags=integration -run TestLiveWlHiDPI -v ./...
       - name: Upload the captures as build artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-hidpi-captures
           path: |
