@@ -35,7 +35,7 @@ func main() {
 	count := 0
 	button := toolkit.NewButton("Click me", func() {
 		count++
-		label.Text = fmt.Sprintf("Clicks: %d", count)
+		label.Text().Set(fmt.Sprintf("Clicks: %d", count))
 		if root != nil {
 			root.Invalidate(label) // damage just the label → incremental commit
 		}

@@ -206,7 +206,7 @@ func TestLiveCocoaWindow(t *testing.T) {
 		lbl := toolkit.NewLabel("clicks: 0")
 		btn = toolkit.NewButton("Click me", func() {
 			clicks++
-			lbl.Text = fmt.Sprintf("clicks: %d", clicks)
+			lbl.Text().Set(fmt.Sprintf("clicks: %d", clicks))
 		})
 		vbox.Append(btn)
 		vbox.Append(lbl)
