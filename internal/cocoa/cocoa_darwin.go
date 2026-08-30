@@ -86,51 +86,52 @@ const (
 
 // selectors resolved once.
 var (
-	selAlloc                = objc.RegisterName("alloc")
-	selInit                 = objc.RegisterName("init")
-	selRetain               = objc.RegisterName("retain")
-	selRelease              = objc.RegisterName("release")
-	selSharedApplication    = objc.RegisterName("sharedApplication")
-	selSetActivationPolicy  = objc.RegisterName("setActivationPolicy:")
-	selActivateIgnoring     = objc.RegisterName("activateIgnoringOtherApps:")
-	selNextEvent            = objc.RegisterName("nextEventMatchingMask:untilDate:inMode:dequeue:")
-	selSendEvent            = objc.RegisterName("sendEvent:")
-	selRun                  = objc.RegisterName("run")
-	selStop                 = objc.RegisterName("stop:")
-	selPostEvent            = objc.RegisterName("postEvent:atStart:")
-	selUpdateWindows        = objc.RegisterName("updateWindows")
-	selInitContentRect      = objc.RegisterName("initWithContentRect:styleMask:backing:defer:")
-	selSetTitle             = objc.RegisterName("setTitle:")
-	selSetContentView       = objc.RegisterName("setContentView:")
-	selContentView          = objc.RegisterName("contentView")
-	selMakeKeyAndOrderFront = objc.RegisterName("makeKeyAndOrderFront:")
-	selSetLevel             = objc.RegisterName("setLevel:")
-	selSetAcceptsMouseMoved = objc.RegisterName("setAcceptsMouseMovedEvents:")
-	selMakeFirstResponder   = objc.RegisterName("makeFirstResponder:")
-	selCenter               = objc.RegisterName("center")
-	selSetFrameTopLeftPoint = objc.RegisterName("setFrameTopLeftPoint:")
-	selSetDelegate          = objc.RegisterName("setDelegate:")
-	selBackingScaleFactor   = objc.RegisterName("backingScaleFactor")
-	selMainScreen           = objc.RegisterName("mainScreen")
-	selVisibleFrame         = objc.RegisterName("visibleFrame")
-	selWindowNumber         = objc.RegisterName("windowNumber")
-	selClose                = objc.RegisterName("close")
-	selInitWithFrame        = objc.RegisterName("initWithFrame:")
-	selBounds               = objc.RegisterName("bounds")
-	selSetNeedsDisplay      = objc.RegisterName("setNeedsDisplay:")
-	selSetNeedsDisplayRect  = objc.RegisterName("setNeedsDisplayInRect:")
-	selDisplayIfNeeded      = objc.RegisterName("displayIfNeeded")
-	selInitBitmapRep        = objc.RegisterName("initWithBitmapDataPlanes:pixelsWide:pixelsHigh:bitsPerSample:samplesPerPixel:hasAlpha:isPlanar:colorSpaceName:bytesPerRow:bitsPerPixel:")
-	selDrawInRectFull       = objc.RegisterName("drawInRect:fromRect:operation:fraction:respectFlipped:hints:")
-	selLocationInWindow     = objc.RegisterName("locationInWindow")
-	selScrollingDeltaY      = objc.RegisterName("scrollingDeltaY")
-	selKeyCode              = objc.RegisterName("keyCode")
-	selCharsIgnoringMods    = objc.RegisterName("charactersIgnoringModifiers")
-	selModifierFlags        = objc.RegisterName("modifierFlags")
-	selDistantFuture        = objc.RegisterName("distantFuture")
-	selDistantPast          = objc.RegisterName("distantPast")
-	selMouseEventFactory    = objc.RegisterName("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:")
-	selKeyEventFactory      = objc.RegisterName("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:")
+	selAlloc                 = objc.RegisterName("alloc")
+	selInit                  = objc.RegisterName("init")
+	selRetain                = objc.RegisterName("retain")
+	selRelease               = objc.RegisterName("release")
+	selSharedApplication     = objc.RegisterName("sharedApplication")
+	selSetActivationPolicy   = objc.RegisterName("setActivationPolicy:")
+	selActivateIgnoring      = objc.RegisterName("activateIgnoringOtherApps:")
+	selNextEvent             = objc.RegisterName("nextEventMatchingMask:untilDate:inMode:dequeue:")
+	selSendEvent             = objc.RegisterName("sendEvent:")
+	selRun                   = objc.RegisterName("run")
+	selStop                  = objc.RegisterName("stop:")
+	selPostEvent             = objc.RegisterName("postEvent:atStart:")
+	selUpdateWindows         = objc.RegisterName("updateWindows")
+	selInitContentRect       = objc.RegisterName("initWithContentRect:styleMask:backing:defer:")
+	selSetTitle              = objc.RegisterName("setTitle:")
+	selSetContentView        = objc.RegisterName("setContentView:")
+	selContentView           = objc.RegisterName("contentView")
+	selMakeKeyAndOrderFront  = objc.RegisterName("makeKeyAndOrderFront:")
+	selSetLevel              = objc.RegisterName("setLevel:")
+	selSetCollectionBehavior = objc.RegisterName("setCollectionBehavior:")
+	selSetAcceptsMouseMoved  = objc.RegisterName("setAcceptsMouseMovedEvents:")
+	selMakeFirstResponder    = objc.RegisterName("makeFirstResponder:")
+	selCenter                = objc.RegisterName("center")
+	selSetFrameTopLeftPoint  = objc.RegisterName("setFrameTopLeftPoint:")
+	selSetDelegate           = objc.RegisterName("setDelegate:")
+	selBackingScaleFactor    = objc.RegisterName("backingScaleFactor")
+	selMainScreen            = objc.RegisterName("mainScreen")
+	selVisibleFrame          = objc.RegisterName("visibleFrame")
+	selWindowNumber          = objc.RegisterName("windowNumber")
+	selClose                 = objc.RegisterName("close")
+	selInitWithFrame         = objc.RegisterName("initWithFrame:")
+	selBounds                = objc.RegisterName("bounds")
+	selSetNeedsDisplay       = objc.RegisterName("setNeedsDisplay:")
+	selSetNeedsDisplayRect   = objc.RegisterName("setNeedsDisplayInRect:")
+	selDisplayIfNeeded       = objc.RegisterName("displayIfNeeded")
+	selInitBitmapRep         = objc.RegisterName("initWithBitmapDataPlanes:pixelsWide:pixelsHigh:bitsPerSample:samplesPerPixel:hasAlpha:isPlanar:colorSpaceName:bytesPerRow:bitsPerPixel:")
+	selDrawInRectFull        = objc.RegisterName("drawInRect:fromRect:operation:fraction:respectFlipped:hints:")
+	selLocationInWindow      = objc.RegisterName("locationInWindow")
+	selScrollingDeltaY       = objc.RegisterName("scrollingDeltaY")
+	selKeyCode               = objc.RegisterName("keyCode")
+	selCharsIgnoringMods     = objc.RegisterName("charactersIgnoringModifiers")
+	selModifierFlags         = objc.RegisterName("modifierFlags")
+	selDistantFuture         = objc.RegisterName("distantFuture")
+	selDistantPast           = objc.RegisterName("distantPast")
+	selMouseEventFactory     = objc.RegisterName("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:")
+	selKeyEventFactory       = objc.RegisterName("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:")
 )
 
 // damageRenderer is the OPT-IN incremental-present capability, declared
@@ -859,6 +860,24 @@ func NewWithOptions(o Options) (*Window, error) {
 		// dialogue the viewer needs to answer.
 		const nsStatusWindowLevel = 25
 		win.Send(selSetLevel, nsStatusWindowLevel)
+
+		// AND IT STAYS PUT WHEN THE SPACE CHANGES.
+		//
+		// Without this a window belongs to the ONE Space it was opened in, and
+		// macOS slides it away whenever that display changes Space -- which
+		// clicking a desktop can do. What a viewer sees is the picture sliding
+		// off to the side and the real desktop underneath it, which is exactly
+		// how it was reported: "on voit que tu superposes une image sur le
+		// bureau car elle glisse sur le cote".
+		//
+		// An immersive window is not a document. It is a surface put over a
+		// display on purpose, so it joins every Space and does not move with
+		// them, and it is allowed over a full-screen application rather than
+		// being hidden by one.
+		//
+		// canJoinAllSpaces 1<<0, stationary 1<<4, fullScreenAuxiliary 1<<8.
+		const stays = 1 | 1<<4 | 1<<8
+		win.Send(selSetCollectionBehavior, uint(stays))
 	}
 	if topLeft != nil {
 		win.Send(selSetFrameTopLeftPoint, *topLeft)
