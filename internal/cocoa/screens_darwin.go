@@ -278,7 +278,7 @@ const appKitScreenSyncTimeout = 2 * time.Second
 // backing factor borrowed from the main display — so a framebuffer sized from
 // it is twice the size the panel wants. That was measured too.
 func syncAppKitScreens(timeout time.Duration) bool {
-	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+	app := objc.App()
 	deadline := time.Now().Add(timeout)
 	for {
 		if appKitAgreesWithWindowServer() {

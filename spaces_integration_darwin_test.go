@@ -76,7 +76,7 @@ func collectionBehaviours(t *testing.T) []uint {
 	purego.RegisterLibFunc(&count, h, "CFArrayGetCount")
 	purego.RegisterLibFunc(&at, h, "CFArrayGetValueAtIndex")
 
-	app := objc.ID(objc.GetClass("NSApplication")).Send(objc.RegisterName("sharedApplication"))
+	app := objc.App()
 	wins := uintptr(app.Send(objc.RegisterName("windows")))
 	n := count(wins)
 	if n == 0 {

@@ -90,7 +90,6 @@ var (
 	selInit                  = objc.RegisterName("init")
 	selRetain                = objc.RegisterName("retain")
 	selRelease               = objc.RegisterName("release")
-	selSharedApplication     = objc.RegisterName("sharedApplication")
 	selSetActivationPolicy   = objc.RegisterName("setActivationPolicy:")
 	selActivateIgnoring      = objc.RegisterName("activateIgnoringOtherApps:")
 	selNextEvent             = objc.RegisterName("nextEventMatchingMask:untilDate:inMode:dequeue:")
@@ -454,7 +453,7 @@ func windowShouldClose(_ objc.ID, _ objc.SEL, _ objc.ID) bool {
 	// -stop: is honoured at the END of the current event cycle, and this runs
 	// inside one, so no synthetic wake-up event is needed: Run returns to its
 	// caller as soon as this handler does.
-	objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication).Send(selStop, objc.ID(0))
+	objc.App().Send(selStop, objc.ID(0))
 	return true
 }
 
@@ -668,7 +667,7 @@ func viewCloseNow(_ objc.ID, _ objc.SEL) {
 // posted to wake it, which is the difference between Close returning promptly
 // and Close appearing to hang.
 func stopApp() {
-	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+	app := objc.App()
 	app.Send(selStop, objc.ID(0))
 	ev := objc.ID(objc.GetClass("NSEvent")).Send(selOtherEventType,
 		uint64(nsAppKitDefined), nsPoint{}, uint64(0), 0.0, int64(0), objc.ID(0),
@@ -712,7 +711,7 @@ func NewWithOptions(o Options) (*Window, error) {
 	// from the window server's own rectangles, so it is right either way. What
 	// AppKit's agreement buys is that -[NSWindow screen] and the backing factor
 	// name the display the window is actually on.
-	app := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication)
+	app := objc.App()
 	policy := activationPolicyReg
 	if o.Passive {
 		policy = activationPolicyAccessory
@@ -913,7 +912,7 @@ func NewWithOptions(o Options) (*Window, error) {
 // expects and that no application can usefully reimplement.
 func (w *Window) Run(root toolkit.Widget) error {
 	w.bindAndSeed(root)
-	objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication).Send(selRun)
+	objc.App().Send(selRun)
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/ebitengine/purego"
+	"github.com/go-macos/objc"
 )
 
 // The window server's own account of the attached displays.
@@ -140,9 +141,11 @@ func primaryBounds() (cgRect, error) {
 // The main thread.
 // ---------------------------------------------------------------------------
 
-// libSystemPath carries pthread_main_np. It is a variable so a test can point
-// the loader somewhere that does not exist and exercise the failure branch.
-var libSystemPath = "/usr/lib/libSystem.B.dylib"
+// libSystemPath carries pthread_main_np. The path itself comes from
+// github.com/go-macos/objc rather than being spelled out again here — one
+// library, one place that names it. It stays a variable so a test can point the
+// loader somewhere that does not exist and exercise the failure branch.
+var libSystemPath = objc.LibSystem
 
 var (
 	mainThreadOnce sync.Once

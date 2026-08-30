@@ -46,7 +46,7 @@ func (w *Window) AppearanceRaw() (dark bool, r, g, b uint8, hasAccent bool) {
 	if err := loadFrameworks(); err != nil {
 		return false, 0, 0, 0, false
 	}
-	if appr := objc.ID(objc.GetClass("NSApplication")).Send(selSharedApplication).Send(selEffectiveAppearance); appr != 0 {
+	if appr := objc.App().Send(selEffectiveAppearance); appr != 0 {
 		dark = strings.Contains(objc.GoString(appr.Send(selApprName)), "Dark")
 	}
 	colorClass := objc.ID(objc.GetClass("NSColor"))
