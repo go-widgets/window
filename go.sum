@@ -28,6 +28,8 @@ github.com/go-widgets/mvvm v0.7.0 h1:I7E2Kd9H8K/vJfZClifBRCqnk0kQTjTnhjnuIdORAVk
 github.com/go-widgets/mvvm v0.7.0/go.mod h1:BBgSa7vTeNtYCo28qeowez9RlSSvViU73CcFj5vCvJ8=
 github.com/go-widgets/painter v0.11.0 h1:xsj4zTz8B43rOZnWrx7ZsaUBMgJyvgaE/Pq2FfcG2Sw=
 github.com/go-widgets/painter v0.11.0/go.mod h1:IPRLqdUJuJX8sfuHeYLZCzjoLvA0ApbOlyIAVmguJDQ=
+github.com/go-widgets/painter v0.12.0 h1:gMqTVbIbGSKmaE28NKsbbKdNIk2drupNMNuLjFP6T6I=
+github.com/go-widgets/painter v0.12.0/go.mod h1:IPRLqdUJuJX8sfuHeYLZCzjoLvA0ApbOlyIAVmguJDQ=
 github.com/go-widgets/toolkit v0.201.0 h1:hkf4BB8wYxKg7OlEwUjB0aMca2hphki3tTfBeGvwr9g=
 github.com/go-widgets/toolkit v0.201.0/go.mod h1:pNroe6a4TiuFC//n6kbsikgs/actqsvqN88vUxjwESg=
 github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=
