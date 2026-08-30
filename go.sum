@@ -14,6 +14,8 @@ github.com/go-macos/virtualdisplay v0.1.0 h1:mZll/h6+PVn+mNTDH17D7G5lXV5HPxlmJU9
 github.com/go-macos/virtualdisplay v0.1.0/go.mod h1:SdD/x985/SWSqyARACyLX6F3xTD5dyFk/kWAT++RhyY=
 github.com/go-mswin/win32 v0.3.0 h1:woBuRYApSkzs8PzloMI4qhQdAB8lDmbFC2VT/QRsB3E=
 github.com/go-mswin/win32 v0.3.0/go.mod h1:ypmW4zosl3mXhy0O39EDbHk+AUjgaXGyFgY5UpX3AxI=
+github.com/go-mswin/win32 v0.4.0 h1:0JAvm3XNMxOyfYX1anbtAqxNvxvUA0DZ1SyAUinhMa0=
+github.com/go-mswin/win32 v0.4.0/go.mod h1:ypmW4zosl3mXhy0O39EDbHk+AUjgaXGyFgY5UpX3AxI=
 github.com/go-opentype/fonts v0.8.0 h1:77i3VPIH90GbstzNb21mk+an4WvEOe2idC6W+J0n0fw=
 github.com/go-opentype/fonts v0.8.0/go.mod h1:C6yQL2apHItfEZ5hztpsHF0S5mlX/hklLlq/Z5fRG/g=
 github.com/go-opentype/opentype v0.6.0 h1:2t1Qs/Uo4M+f9gahV5QGihLTTeI/q4s0l7MIsbkd290=
