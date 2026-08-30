@@ -3,7 +3,7 @@ module github.com/go-widgets/window
 go 1.26.4
 
 require (
-	github.com/go-macos/objc v0.2.0
+	github.com/go-macos/objc v0.4.0
 	github.com/go-mswin/win32 v0.3.0
 	github.com/go-opentype/opentype v0.6.0
 	github.com/go-widgets/android v0.13.1
@@ -12,7 +12,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2
 )
 
-require github.com/go-macos/virtualdisplay v0.1.0
+require github.com/go-macos/virtualdisplay v0.2.1
 
 require (
 	github.com/ebitengine/purego v0.10.2

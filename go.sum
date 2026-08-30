@@ -10,8 +10,12 @@ github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734 h1:nU+MGeyJzidGvC
 github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734/go.mod h1:ObuOBKDEidGX0LqLKY/5nqj7JVN/hsCzHMAJd0TNc0k=
 github.com/go-macos/objc v0.2.0 h1:uDFsiCMQT66A3E7dFsVYrnVOk3BQxpkhfwZJCtYuWq8=
 github.com/go-macos/objc v0.2.0/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
+github.com/go-macos/objc v0.4.0 h1:SjL67emvTtDl2C++5HkIoegjFpayAMgd3IQTDYpCLXs=
+github.com/go-macos/objc v0.4.0/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
 github.com/go-macos/virtualdisplay v0.1.0 h1:mZll/h6+PVn+mNTDH17D7G5lXV5HPxlmJU9NKXJcR7c=
 github.com/go-macos/virtualdisplay v0.1.0/go.mod h1:SdD/x985/SWSqyARACyLX6F3xTD5dyFk/kWAT++RhyY=
+github.com/go-macos/virtualdisplay v0.2.1 h1:Yg1IPEjsToMCfSHVuiVKGtL3NpOgI68VGgA53euQtOY=
+github.com/go-macos/virtualdisplay v0.2.1/go.mod h1:X2uyrY28G2kJ8dVDxnCGUa7Q1ScB5rr0Vmd83Smx+uY=
 github.com/go-mswin/win32 v0.3.0 h1:woBuRYApSkzs8PzloMI4qhQdAB8lDmbFC2VT/QRsB3E=
 github.com/go-mswin/win32 v0.3.0/go.mod h1:ypmW4zosl3mXhy0O39EDbHk+AUjgaXGyFgY5UpX3AxI=
 github.com/go-opentype/fonts v0.8.0 h1:77i3VPIH90GbstzNb21mk+an4WvEOe2idC6W+J0n0fw=
