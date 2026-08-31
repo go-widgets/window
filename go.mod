@@ -13,7 +13,7 @@ require (
 )
 
 require (
-	github.com/go-gtk/gtk4 v0.2.0
+	github.com/go-gtk/gtk4 v0.2.1
 	github.com/go-macos/virtualdisplay v0.2.1
 )
 
