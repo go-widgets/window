@@ -39,8 +39,9 @@ type Window struct {
 	scale float64
 	buf   []byte
 
-	native map[string]*liveControl
-	dirty  atomic.Bool
+	native  map[string]*liveControl
+	dirty   atomic.Bool
+	btnDown bool // a mouse button is held: OnMotion is a drag, not a move
 }
 
 // Open creates the GTK window (but does not enter the loop; Run does). width and
@@ -87,6 +88,7 @@ func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
 	w.loop = gtk4.MainLoopNew()
 	w.win.Connect("close-request", func() { w.loop.Quit() })
+	w.installInput() // drawn regions become clickable/scrollable/typeable
 	w.win.Present()
 	w.dirty.Store(true) // draw the first frame once the clock starts (post-map)
 	// The frame clock is the main-thread pump that turns a Repaint request into a
