@@ -13,8 +13,12 @@ import (
 )
 
 // A GTK4-hosted backend satisfies the same Backend contract as the from-scratch
-// X11/Wayland ones.
-var _ Backend = (*gtk.Window)(nil)
+// X11/Wayland ones, and the Repainter capability that lets the application present
+// loop drive it on demand instead of blitting every tick.
+var (
+	_ Backend   = (*gtk.Window)(nil)
+	_ Repainter = (*gtk.Window)(nil)
+)
 
 // Open returns a live window backed by this environment's display server. It
 // auto-selects: Wayland when $WAYLAND_DISPLAY is set, X11 otherwise.
