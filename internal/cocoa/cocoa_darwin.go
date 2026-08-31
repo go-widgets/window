@@ -196,6 +196,11 @@ type Window struct {
 	holes       []toolkit.Rect
 	materials   []*toolkit.Material
 
+	// toolkit.Native: live AppKit controls embedded over the framebuffer, one per
+	// Native in the tree, kept across frames (keyed for identity) so their focus
+	// and text survive relayout. See native_darwin.go.
+	nativeControls map[string]*liveControl
+
 	// Accessibility publish gate: republishing the NSAccessibilityElement tree
 	// is thousands of ObjC round-trips (per node, on the main thread), so it runs
 	// only when the tree actually changed. a11yShown records that a tree has been
@@ -937,6 +942,7 @@ func (w *Window) bindAndSeed(root toolkit.Widget) {
 	// framebuffer holes are punched and each material renders its native
 	// (child-only) path. A tree with no Material leaves everything unchanged.
 	w.syncMaterials(root)
+	w.syncNative(root)
 	if w.translucent {
 		if w.dmg != nil {
 			w.drawIncremental()
@@ -991,6 +997,10 @@ func (w *Window) paintFrame(resize bool) {
 	// with an empty accessibility tree and, with nothing repainting it while
 	// idle, kept one.
 	defer w.refreshA11y(resize)
+	// Reconcile embedded native controls with the freshly laid-out tree, so one
+	// tracks its Native through scrolling and interaction. After the draw (this
+	// is deferred), for the same reason the a11y refresh is.
+	defer w.syncNative(w.root)
 	if w.dmg == nil {
 		w.draw()
 		w.presentFull()
@@ -1041,6 +1051,7 @@ func (w *Window) resize(nw, nh int, scale float64) {
 		// the effect views over them, then repaint so the holes match, and blit.
 		w.draw()
 		w.syncMaterials(w.root)
+		w.syncNative(w.root)
 		w.draw()
 		w.presentFull()
 		return
