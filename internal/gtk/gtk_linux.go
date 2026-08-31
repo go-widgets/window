@@ -18,6 +18,7 @@ package gtk
 
 import (
 	"errors"
+	"sync/atomic"
 
 	"github.com/go-gtk/gtk4"
 	"github.com/go-widgets/painter"
@@ -39,6 +40,7 @@ type Window struct {
 	buf   []byte
 
 	native map[string]*liveControl
+	dirty  atomic.Bool
 }
 
 // Open creates the GTK window (but does not enter the loop; Run does). width and
@@ -79,30 +81,39 @@ func Open(title string, width, height int, theme *toolkit.Theme, scale float64) 
 	}, nil
 }
 
-// Run binds root and drives the GLib main loop until the window is closed,
-// presenting a fresh frame every vsync from the window's frame clock.
+// Run binds root and drives the GLib main loop until the window is closed. It
+// presents a frame only when one was asked for — see [Window.Repaint].
 func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
 	w.loop = gtk4.MainLoopNew()
 	w.win.Connect("close-request", func() { w.loop.Quit() })
 	w.win.Present()
-	// Present each frame on the frame clock, not once. The root is an
-	// application's own Surface — an immediate-mode scene whose pixels change as
-	// data loads, a caret blinks, a list scrolls — so a single present would
-	// freeze whatever existed before the first layout (and before the window was
-	// even mapped, the frame clock has not started). AddTickCallback fires on the
-	// window's GdkFrameClock while it is mapped and is quiescent when it is not,
-	// so an idle or hidden window costs nothing; syncNative inside frame()
-	// reconciles the overlaid controls by key, so ticking never rebuilds them or
-	// fights a caret. It stops when the window closes (loop quits, widget
-	// unmaps).
+	w.dirty.Store(true) // draw the first frame once the clock starts (post-map)
+	// The frame clock is the main-thread pump that turns a Repaint request into a
+	// present. It ticks while the window is mapped (and only then), and each tick
+	// draws ONLY if a repaint was asked for since the last one — so an idle window
+	// costs a flag read per frame, not a full layout + texture upload + recompose.
+	// This is the same policy the Cocoa back-end runs (present on request, not on a
+	// timer): go-widgets/application's loop calls Repaint at up to 60 Hz gated by
+	// the handler's NeedsPresent, so nothing is drawn while nothing changes. A
+	// single persistent callback avoids exhausting purego's callback table.
 	w.win.AddTickCallback(func() bool {
-		w.frame()
+		if w.dirty.Swap(false) {
+			w.frame()
+		}
 		return true
 	})
 	w.loop.Run()
 	return nil
 }
+
+// Repaint asks for a frame from any goroutine. It implements
+// [github.com/go-widgets/window.Repainter]: the application present loop calls it
+// (gated by the handler's NeedsPresent), and a background producer that has queued
+// a scene change may call it directly. It only raises a flag the frame clock reads
+// on the main thread, so it makes no GTK call off that thread and never allocates
+// a callback — cheap enough to call every tick.
+func (w *Window) Repaint() { w.dirty.Store(true) }
 
 // Close quits the loop and drops the window.
 func (w *Window) Close() error {
