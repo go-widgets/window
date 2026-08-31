@@ -168,6 +168,14 @@ type Window struct {
 	dnd    *dnd.Controller
 	closed bool
 
+	// The native-control seam (native_windows.go): the live Win32 child
+	// controls this window embeds over its framebuffer, keyed by descriptor Key
+	// and mirrored by HWND for WM_COMMAND/WM_HSCROLL routing, plus the running
+	// control-id sequence. Nil until the first frame that carries a control.
+	nativeControls map[string]*liveControl
+	nativeByHWND   map[uintptr]*liveControl
+	nativeIDSeq    uint16
+
 	// The Repainter capability: at most one posted wakeup in flight. See
 	// repaint.go for why the flag is ours and not the message queue's.
 	repaint repaintFlag
@@ -280,7 +288,7 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, native boo
 	// a monitor. The client is sized to the logical/physical target immediately
 	// afterwards via SetWindowPos.
 	hwnd, err := win32.CreateWindowEx(
-		0, className, titlePtr, uint32(wsOverlappedWindow),
+		0, className, titlePtr, uint32(wsOverlappedWindow)|wsClipChildren,
 		int32(cwUseDefault), int32(cwUseDefault), 640, 480,
 		0, 0, win32.HINSTANCE(hInstance), nil,
 	)
@@ -410,6 +418,10 @@ func (w *Window) Run(root toolkit.Widget) error {
 	}
 	w.invalidateAll()
 	procUpdateWindow.Call(w.hwnd)
+	// Seed the native-control seam once the root is laid out, so a Surface (or a
+	// widget tree) that carries native controls has them embedded before the
+	// first input arrives. Thereafter paintFrame reconciles them every frame.
+	w.syncNative(w.root)
 
 	// The GetMessage/TranslateMessage/DispatchMessage loop lives in win32.Pump;
 	// it returns nil on WM_QUIT (WM_DESTROY -> PostQuitMessage).
@@ -492,6 +504,20 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmChar:
 		w.dispatchAll(MapCharDown(rune(uint16(wParam)), keyMods()))
 		return 0
+	case wmCommand:
+		// A child native control (button/edit/checkbox/combo) notifying its
+		// parent. onCommand returns false for a menu/accelerator command, which
+		// belongs to the default handling.
+		if w.onCommand(wParam, lParam) {
+			return 0
+		}
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
+	case wmHScroll:
+		// A trackbar (NativeSlider) notifying its parent of a new thumb position.
+		if w.onHScroll(lParam) {
+			return 0
+		}
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmClose:
 		win32.DestroyWindow(win32.HWND(hwnd))
 		return 0
@@ -681,6 +707,10 @@ func (w *Window) drawIncremental() []toolkit.Rect {
 // framebuffer was reallocated (whole-surface damage) and the full surface is
 // presented.
 func (w *Window) paintFrame(resize bool) {
+	// Reconcile the embedded native controls after this frame's layout (drawing
+	// below sets the widget bounds WalkNative reads), mirroring the Cocoa
+	// backend's deferred syncNative.
+	defer w.syncNative(w.root)
 	// The frame about to be shown and the tree a screen reader reads are
 	// published from the same place, so the description can never lag the
 	// pixels a sighted user already sees.
