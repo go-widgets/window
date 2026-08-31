@@ -470,3 +470,20 @@ jobs:
             live-hidpi-native.png
             live-hidpi-logical.png
           if-no-files-found: warn
+
+  # Live GTK4 proof: the GTK4-hosted backend (internal/gtk, pure-Go via
+  # github.com/go-gtk/gtk4) opens a real GTK window under a headless X server,
+  # presents the toolkit framebuffer in a GtkPicture, and reconciles a Surface's
+  # native controls into real GTK widgets. Needs only the libgtk-4 runtime.
+  live-gtk:
+    name: live GTK4 (Xvfb, native controls)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Install GTK4 runtime + a headless X server
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth
+      - name: internal/gtk on real GTK4
+        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 go test -count=1 -v ./internal/gtk/
