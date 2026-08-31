@@ -7,74 +7,97 @@
 package cocoa
 
 import (
-	"fmt"
-
 	"github.com/go-macos/appkit"
 	"github.com/go-widgets/toolkit"
 )
 
-// This file is the Cocoa backing for toolkit.Native — the platform half of the
-// native-control seam. The toolkit widget is OS-neutral and only marks WHERE a
-// real control goes and holds its value; here we embed an actual AppKit control
-// (from github.com/go-macos/appkit) as a subview OVER the framebuffer view, bind
-// its value both ways to the Native's observables, and keep it across frames so
-// the person's focus and text survive relayout.
+// This file is the Cocoa backing for toolkit's native-control seam. Each frame
+// the app describes the native controls it wants — as flat toolkit.NativeControl
+// descriptors, from a Surface's Controls field or from WalkNative over a widget
+// tree — and this backend holds the real AppKit controls (github.com/go-macos/
+// appkit), one per Key, laid over the framebuffer view, reconciling them to the
+// descriptors.
 //
-// It differs from the Material seam in two ways that matter:
+// Two things make it different from the Material seam. A control sits ON TOP of
+// the pixel view — interactive and opaque — so there is no hole to punch. And
+// controls are RECONCILED by Key, not rebuilt: a control holds focus, a
+// selection and an insertion point, so the same descriptor Key finds the same
+// live control across frames and only moves or updates it.
 //
-//   - A control sits ON TOP of the pixel view (it is interactive and opaque), so
-//     there is no hole to punch behind it. The framebuffer's fallback draw for a
-//     claimed Native is suppressed by the toolkit, so nothing shows through.
-//   - Controls are RECONCILED, not rebuilt. A Material is a passive rectangle
-//     rebuilt each layout; a control holds focus, a selection and an insertion
-//     point, so syncNative finds the same control again by key and only moves it.
+// The value binding is immediate-mode-safe by construction: a descriptor's value
+// is pushed into a control ONLY when it differs from what the control last
+// reported. When the person edits, the change flows out through the descriptor's
+// callback and the app's next descriptor carries that same value — equal, so
+// nothing is pushed back and the caret is never disturbed. Only a value the app
+// changed on its own differs, and only that is pushed.
 
-// liveControl is one embedded AppKit control and the observable subscriptions
-// that keep it in step with its Native. applying guards the two-way binding: it
-// is set while a change flowing FROM the control is written INTO the Native, so
-// the Native's notification does not echo back and reset the control mid-edit.
+// liveControl is one embedded AppKit control, the app callbacks for the frame,
+// and the last value it reported — the baseline the next descriptor is compared
+// against.
 type liveControl struct {
-	ctl      *appkit.Control
-	unsub    []func()
-	applying bool
+	ctl *appkit.Control
+
+	onText     func(string)
+	onBool     func(bool)
+	onNumber   func(float64)
+	onActivate func()
+
+	lastText string
+	lastBool bool
+	lastNum  float64
 }
 
-func (lc *liveControl) close() {
-	for _, u := range lc.unsub {
-		u()
+func (lc *liveControl) close() { lc.ctl.Close() }
+
+// nativeControlSource is the optional capability a root exposes to supply native
+// controls directly — a self-rendering toolkit.Surface implements it. A root
+// that does not is walked as a widget tree instead.
+type nativeControlSource interface {
+	NativeControls() []toolkit.NativeControl
+}
+
+// gatherNative collects this frame's control descriptors: from the root's own
+// provider when it has one (a Surface), else by walking it as a widget tree.
+func gatherNative(root toolkit.Widget) []toolkit.NativeControl {
+	if p, ok := root.(nativeControlSource); ok {
+		return p.NativeControls()
 	}
-	lc.ctl.Close()
+	return toolkit.WalkNative(root)
 }
 
-// syncNative reconciles the window's embedded AppKit controls with the Natives in
-// the current tree. It runs after each frame's layout (bounds are known), so a
-// control tracks its Native through scrolling and resizing. With no Natives ever
+// syncNative reconciles the window's embedded AppKit controls with the
+// descriptors for the current frame. It runs after layout, so a control tracks
+// its descriptor through scrolling and interaction. With no controls ever
 // present it does nothing, leaving the ordinary path untouched.
 func (w *Window) syncNative(root toolkit.Widget) {
-	places := toolkit.WalkNative(root)
-	if len(places) == 0 && w.nativeControls == nil {
+	specs := gatherNative(root)
+	if len(specs) == 0 && w.nativeControls == nil {
 		return
 	}
 	if w.nativeControls == nil {
 		w.nativeControls = make(map[string]*liveControl)
 	}
 
-	seen := make(map[string]bool, len(places))
-	for _, pl := range places {
-		key := nativeKey(pl.Control)
-		seen[key] = true
-		lc := w.nativeControls[key]
+	seen := make(map[string]bool, len(specs))
+	for _, spec := range specs {
+		if spec.Key == "" {
+			// A descriptor with no identity cannot be reconciled across frames;
+			// a producer must key every control (WalkNative synthesises one).
+			continue
+		}
+		seen[spec.Key] = true
+		lc := w.nativeControls[spec.Key]
 		if lc == nil {
-			lc = w.makeControl(pl.Control)
+			lc = w.makeControl(spec)
 			if lc == nil {
 				continue
 			}
-			w.nativeControls[key] = lc
-			pl.Control.Claimed().Set(true)
+			w.nativeControls[spec.Key] = lc
+			if spec.OnClaim != nil {
+				spec.OnClaim(true)
+			}
 		}
-		r := pl.Rect
-		_ = lc.ctl.SetFrame(float64(r.X)/w.scale, float64(r.Y)/w.scale, float64(r.W)/w.scale, float64(r.H)/w.scale)
-		_ = lc.ctl.SetHidden(!pl.Visible)
+		w.applySpec(lc, spec)
 	}
 	for key, lc := range w.nativeControls {
 		if !seen[key] {
@@ -84,122 +107,125 @@ func (w *Window) syncNative(root toolkit.Widget) {
 	}
 }
 
-// nativeKey is the identity a control is kept under across frames: the Native's
-// own Key when the caller set one, else the widget's address — which is stable in
-// this retained-mode toolkit, where the same *Native is laid out frame after
-// frame.
-func nativeKey(n *toolkit.Native) string {
-	if n.Key != "" {
-		return n.Key
+// applySpec updates a live control from this frame's descriptor: refresh the
+// callbacks (their closures may differ each frame), push a value only when it
+// changed away from what the control last reported, and reposition it.
+func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
+	lc.onText = spec.OnText
+	lc.onBool = spec.OnBool
+	lc.onNumber = spec.OnNumber
+	lc.onActivate = spec.OnActivate
+
+	switch spec.Kind {
+	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativePopUp:
+		if spec.Text != lc.lastText {
+			_ = lc.ctl.SetStringValue(spec.Text)
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
+		if spec.On != lc.lastBool {
+			_ = lc.ctl.SetBool(spec.On)
+			lc.lastBool = spec.On
+		}
+	case toolkit.NativeSlider:
+		if spec.Number != lc.lastNum {
+			_ = lc.ctl.SetDouble(spec.Number)
+			lc.lastNum = spec.Number
+		}
 	}
-	return fmt.Sprintf("%p", n)
+	// A Button's title is fixed at creation (NSButton has no stringValue), so it
+	// is not pushed here.
+
+	r := spec.Rect
+	_ = lc.ctl.SetFrame(float64(r.X)/w.scale, float64(r.Y)/w.scale, float64(r.W)/w.scale, float64(r.H)/w.scale)
+	_ = lc.ctl.SetHidden(!spec.Visible)
 }
 
-// makeControl builds the AppKit control for a Native, binds it, and adds it over
-// the framebuffer view. Returns nil if the control cannot be created (off a real
-// AppKit, or an unknown kind).
-func (w *Window) makeControl(n *toolkit.Native) *liveControl {
+// makeControl builds the AppKit control for a descriptor, wires its native
+// callbacks to dispatch through the liveControl's current app callbacks, and
+// adds it over the framebuffer view.
+func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 	var (
 		ctl *appkit.Control
 		err error
 	)
-	switch n.Kind {
+	switch spec.Kind {
 	case toolkit.NativeButton:
-		ctl, err = appkit.NewButton(n.Text().Get())
+		ctl, err = appkit.NewButton(spec.Text)
 	case toolkit.NativeLabel:
-		ctl, err = appkit.NewLabel(n.Text().Get())
+		ctl, err = appkit.NewLabel(spec.Text)
 	case toolkit.NativeEntry:
-		ctl, err = appkit.NewTextField(n.Text().Get())
+		ctl, err = appkit.NewTextField(spec.Text)
 	case toolkit.NativeSecureEntry:
-		ctl, err = appkit.NewSecureTextField(n.Text().Get())
+		ctl, err = appkit.NewSecureTextField(spec.Text)
 	case toolkit.NativeCheckbox:
-		ctl, err = appkit.NewCheckbox(n.Text().Get())
+		ctl, err = appkit.NewCheckbox(spec.Text)
 	case toolkit.NativeRadio:
-		ctl, err = appkit.NewRadioButton(n.Text().Get())
+		ctl, err = appkit.NewRadioButton(spec.Text)
 	case toolkit.NativeSwitch:
 		ctl, err = appkit.NewSwitch()
 	case toolkit.NativeSlider:
-		ctl, err = appkit.NewSlider(n.Min, n.Max, n.Number().Get())
+		ctl, err = appkit.NewSlider(spec.Min, spec.Max, spec.Number)
 	case toolkit.NativePopUp:
-		ctl, err = appkit.NewPopUpButton(n.Items)
+		ctl, err = appkit.NewPopUpButton(spec.Items)
 	default:
 		return nil
 	}
 	if err != nil || ctl == nil {
 		return nil
 	}
-	lc := &liveControl{ctl: ctl}
-	bindControl(n, lc)
+	lc := &liveControl{ctl: ctl, lastText: spec.Text, lastBool: spec.On, lastNum: spec.Number}
+
+	switch spec.Kind {
+	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
+		_ = ctl.SetBool(spec.On)
+	case toolkit.NativePopUp:
+		if spec.Text != "" {
+			_ = ctl.SetStringValue(spec.Text)
+		}
+	}
+
+	switch spec.Kind {
+	case toolkit.NativeEntry, toolkit.NativeSecureEntry:
+		ctl.OnChange(func() { lc.reportText() })
+		ctl.OnAction(func() { lc.reportText(); lc.activate() })
+	case toolkit.NativeButton:
+		ctl.OnAction(func() { lc.activate() })
+	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
+		ctl.OnAction(func() { lc.reportBool(); lc.activate() })
+	case toolkit.NativeSlider:
+		ctl.OnChange(func() { lc.reportNumber() })
+	case toolkit.NativePopUp:
+		ctl.OnAction(func() { lc.reportText(); lc.activate() })
+	}
+
 	_ = ctl.AddTo(w.view)
 	return lc
 }
 
-// bindControl wires a control's value to its Native's observables, both ways.
-// The toolkit→control direction is a subscription (the app sets the observable,
-// the control follows); the control→toolkit direction is the control's own
-// change/action callback (the person edits, the model follows). lc.applying
-// breaks the echo between them.
-func bindControl(n *toolkit.Native, lc *liveControl) {
-	ctl := lc.ctl
-	pushText := func() func() {
-		return n.Text().Subscribe(func(s string) {
-			if lc.applying {
-				return
-			}
-			_ = ctl.SetStringValue(s)
-		})
-	}
-	pushBool := func() func() {
-		return n.On().Subscribe(func(b bool) {
-			if lc.applying {
-				return
-			}
-			_ = ctl.SetBool(b)
-		})
-	}
-
-	switch n.Kind {
-	case toolkit.NativeButton:
-		ctl.OnAction(func() { n.Activate() })
-	case toolkit.NativeLabel:
-		lc.unsub = append(lc.unsub, pushText())
-	case toolkit.NativeEntry, toolkit.NativeSecureEntry:
-		lc.unsub = append(lc.unsub, pushText())
-		ctl.OnChange(func() { withApplying(lc, func() { n.Text().Set(ctl.StringValue()) }) })
-		ctl.OnAction(func() {
-			withApplying(lc, func() { n.Text().Set(ctl.StringValue()) })
-			n.Activate()
-		})
-	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
-		_ = ctl.SetBool(n.On().Get())
-		lc.unsub = append(lc.unsub, pushBool())
-		ctl.OnAction(func() {
-			withApplying(lc, func() { n.On().Set(ctl.Bool()) })
-			n.Activate()
-		})
-	case toolkit.NativeSlider:
-		lc.unsub = append(lc.unsub, n.Number().Subscribe(func(v float64) {
-			if lc.applying {
-				return
-			}
-			_ = ctl.SetDouble(v)
-		}))
-		ctl.OnChange(func() { withApplying(lc, func() { n.Number().Set(ctl.Double()) }) })
-	case toolkit.NativePopUp:
-		_ = ctl.SetStringValue(n.Text().Get())
-		lc.unsub = append(lc.unsub, pushText())
-		ctl.OnAction(func() {
-			withApplying(lc, func() { n.Text().Set(ctl.StringValue()) })
-			n.Activate()
-		})
+// reportText/reportBool/reportNumber record the control's new value as the
+// baseline (so the next descriptor comparing equal does not push it back) and
+// forward it to the app's current callback.
+func (lc *liveControl) reportText() {
+	lc.lastText = lc.ctl.StringValue()
+	if lc.onText != nil {
+		lc.onText(lc.lastText)
 	}
 }
-
-// withApplying runs fn with lc.applying set, so a value written into the Native
-// from its control does not echo back through the subscription and disturb the
-// control the person is using.
-func withApplying(lc *liveControl, fn func()) {
-	lc.applying = true
-	fn()
-	lc.applying = false
+func (lc *liveControl) reportBool() {
+	lc.lastBool = lc.ctl.Bool()
+	if lc.onBool != nil {
+		lc.onBool(lc.lastBool)
+	}
+}
+func (lc *liveControl) reportNumber() {
+	lc.lastNum = lc.ctl.Double()
+	if lc.onNumber != nil {
+		lc.onNumber(lc.lastNum)
+	}
+}
+func (lc *liveControl) activate() {
+	if lc.onActivate != nil {
+		lc.onActivate()
+	}
 }

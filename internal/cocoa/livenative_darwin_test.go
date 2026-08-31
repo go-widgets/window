@@ -82,8 +82,12 @@ func TestLiveCocoaNativeControls(t *testing.T) {
 		}
 		pwClaimed = pw.Claimed().Get()
 
-		// toolkit -> native: setting the model observable updates the real field.
+		// app -> native: the model changes, the app repaints, and the next frame's
+		// descriptor carries the new value, which syncNative pushes into the field
+		// (it differs from what the control last reported). paintFrame drives that
+		// frame here, standing in for the app's own repaint-on-change.
 		pw.Text().Set("newsecret")
+		win.paintFrame(false)
 		spin(0.2)
 		if lc := win.nativeControls["pw"]; lc != nil {
 			afterSetValue = lc.ctl.StringValue()
@@ -114,5 +118,76 @@ func TestLiveCocoaNativeControls(t *testing.T) {
 	}
 	if count1 != 1 || !pwGone {
 		t.Errorf("after reconcile: %d controls, pwGone=%v; want 1 and true", count1, pwGone)
+	}
+}
+
+// TestLiveCocoaNativeControlsProvider proves the Surface provider path — the one
+// a self-rendering app (the news reader) uses: a toolkit.Surface publishes its
+// native controls through its Controls field, and the backend embeds and binds
+// them exactly as it does for a widget tree. Gated behind WINDOW_COCOA_INTEGRATION.
+func TestLiveCocoaNativeControlsProvider(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the live macOS provider proof")
+	}
+	theme := toolkit.DefaultDark()
+
+	// The app's own state — what a Scene would hold.
+	pw := "hunter2"
+
+	var (
+		win            *Window
+		setupErr       error
+		count          int
+		initialValue   string
+		afterAppChange string
+	)
+
+	callOnMain(func() {
+		win, setupErr = New("go-widgets/window native provider proof", 320, 180, theme)
+		if setupErr != nil {
+			return
+		}
+		surf := toolkit.NewSurface(func() ([]byte, int, int) {
+			return make([]byte, 320*180*4), 320, 180
+		})
+		surf.Controls = func() []toolkit.NativeControl {
+			return []toolkit.NativeControl{{
+				Kind:    toolkit.NativeSecureEntry,
+				Key:     "pw",
+				Rect:    toolkit.Rect{X: 10, Y: 10, W: 200, H: 24},
+				Visible: true,
+				Text:    pw,
+				OnText:  func(s string) { pw = s },
+			}}
+		}
+
+		win.bindAndSeed(surf)
+		spin(0.3)
+		count = len(win.nativeControls)
+		if lc := win.nativeControls["pw"]; lc != nil {
+			initialValue = lc.ctl.StringValue()
+		}
+
+		// The app changes its own state and repaints; the next descriptor carries
+		// the new value and the backend pushes it into the field.
+		pw = "changed"
+		win.paintFrame(false)
+		spin(0.2)
+		if lc := win.nativeControls["pw"]; lc != nil {
+			afterAppChange = lc.ctl.StringValue()
+		}
+	})
+
+	if setupErr != nil {
+		t.Fatalf("provider setup failed: %v", setupErr)
+	}
+	if count != 1 {
+		t.Fatalf("controls from provider = %d, want 1", count)
+	}
+	if initialValue != "hunter2" {
+		t.Errorf("initial field value = %q, want hunter2", initialValue)
+	}
+	if afterAppChange != "changed" {
+		t.Errorf("after app change, field = %q, want changed (provider descriptor push)", afterAppChange)
 	}
 }
