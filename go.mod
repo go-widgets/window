@@ -12,7 +12,10 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2
 )
 
-require github.com/go-macos/virtualdisplay v0.2.1
+require (
+	github.com/go-gtk/gtk4 v0.2.0
+	github.com/go-macos/virtualdisplay v0.2.1
+)
 
 require (
 	github.com/ajroetker/go-highway v0.0.4 // indirect
