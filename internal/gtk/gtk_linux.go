@@ -62,6 +62,11 @@ func Open(title string, width, height int, theme *toolkit.Theme, scale float64) 
 	win.SetDefaultSize(width, height)
 	fixed := gtk4.FixedNew()
 	pic := gtk4.PictureNew()
+	// A GtkFixed gives each child its requested size, and a GtkPicture with no
+	// content requests nothing — so without this the framebuffer would be laid out
+	// at 0×0 and never seen. Size it to the logical window; the picture scales its
+	// (hi-dpi) texture down to fit.
+	pic.Widget().SetSizeRequest(width, height)
 	fixed.Put(pic.Widget(), 0, 0)
 	win.SetChild(fixed)
 
@@ -74,14 +79,27 @@ func Open(title string, width, height int, theme *toolkit.Theme, scale float64) 
 	}, nil
 }
 
-// Run binds root, presents the first frame, and drives the GLib main loop until
-// the window is closed.
+// Run binds root and drives the GLib main loop until the window is closed,
+// presenting a fresh frame every vsync from the window's frame clock.
 func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
 	w.loop = gtk4.MainLoopNew()
 	w.win.Connect("close-request", func() { w.loop.Quit() })
 	w.win.Present()
-	w.frame() // initial layout + present + control reconcile
+	// Present each frame on the frame clock, not once. The root is an
+	// application's own Surface — an immediate-mode scene whose pixels change as
+	// data loads, a caret blinks, a list scrolls — so a single present would
+	// freeze whatever existed before the first layout (and before the window was
+	// even mapped, the frame clock has not started). AddTickCallback fires on the
+	// window's GdkFrameClock while it is mapped and is quiescent when it is not,
+	// so an idle or hidden window costs nothing; syncNative inside frame()
+	// reconciles the overlaid controls by key, so ticking never rebuilds them or
+	// fights a caret. It stops when the window closes (loop quits, widget
+	// unmaps).
+	w.win.AddTickCallback(func() bool {
+		w.frame()
+		return true
+	})
 	w.loop.Run()
 	return nil
 }
