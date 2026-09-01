@@ -22,10 +22,13 @@ type liveControl struct {
 
 	onText     func(string)
 	onBool     func(bool)
+	onNumber   func(float64)
 	onActivate func()
 
 	lastText string
 	lastBool bool
+	lastNum  float64
+	items    []string // a pop-up's item strings, to map its selected index to text
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -86,6 +89,7 @@ func (w *Window) pt(px int) float64 { return float64(px) / w.scale }
 func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	lc.onText = spec.OnText
 	lc.onBool = spec.OnBool
+	lc.onNumber = spec.OnNumber
 	lc.onActivate = spec.OnActivate
 
 	switch spec.Kind {
@@ -99,6 +103,18 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			lc.widget.SetActive(spec.On)
 			lc.lastBool = spec.On
 		}
+	case toolkit.NativeSlider:
+		if spec.Number != lc.lastNum {
+			lc.widget.SetValue(spec.Number)
+			lc.lastNum = spec.Number
+		}
+	case toolkit.NativePopUp:
+		// A pop-up's value is the selected item's STRING (spec.Text), matching the
+		// cocoa/win32 backends; push it by selecting that item's index.
+		if spec.Text != lc.lastText {
+			lc.widget.SetSelected(indexOf(lc.items, spec.Text))
+			lc.lastText = spec.Text
+		}
 	}
 
 	w.fixed.Move(lc.widget, w.pt(spec.Rect.X), w.pt(spec.Rect.Y))
@@ -108,10 +124,9 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 
 // makeControl builds the GTK widget for a descriptor, puts it in the fixed over
 // the framebuffer, and wires its signals to dispatch through the liveControl's
-// current app callbacks. Returns nil for a kind this back-end does not yet host
-// (slider, pop-up — pending trackbar/combo in the binding).
+// current app callbacks. Returns nil for a kind this back-end does not host.
 func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
-	lc := &liveControl{kind: spec.Kind, lastText: spec.Text, lastBool: spec.On}
+	lc := &liveControl{kind: spec.Kind, lastText: spec.Text, lastBool: spec.On, lastNum: spec.Number}
 	switch spec.Kind {
 	case toolkit.NativeButton:
 		lc.widget = gtk4.ButtonNewWithLabel(spec.Text)
@@ -151,12 +166,52 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 				lc.onActivate()
 			}
 		})
+	case toolkit.NativeSlider:
+		step := (spec.Max - spec.Min) / 100
+		if step <= 0 {
+			step = 1
+		}
+		lc.widget = gtk4.SliderNew(spec.Min, spec.Max, step)
+		lc.widget.SetValue(spec.Number)
+		lc.widget.Connect("value-changed", func() {
+			lc.lastNum = lc.widget.Value()
+			if lc.onNumber != nil {
+				lc.onNumber(lc.lastNum)
+			}
+		})
+	case toolkit.NativePopUp:
+		lc.items = spec.Items
+		lc.widget = gtk4.PopUpNew(spec.Items)
+		lc.widget.SetSelected(indexOf(spec.Items, spec.Text))
+		lc.widget.Connect("notify::selected", func() {
+			if i := lc.widget.Selected(); i >= 0 && i < len(lc.items) {
+				lc.lastText = lc.items[i]
+				if lc.onText != nil {
+					lc.onText(lc.lastText)
+				}
+				if lc.onActivate != nil {
+					lc.onActivate()
+				}
+			}
+		})
 	default:
-		return nil // NativeSlider, NativePopUp — not yet bound
+		return nil
 	}
 	if lc.widget == 0 {
 		return nil
 	}
 	w.fixed.Put(lc.widget, w.pt(spec.Rect.X), w.pt(spec.Rect.Y))
 	return lc
+}
+
+// indexOf returns the position of s in items, or 0 when it is absent (GtkDropDown
+// selects the first item for an out-of-range index, the same "fall back to the
+// head" the cocoa pop-up's string match does).
+func indexOf(items []string, s string) int {
+	for i, it := range items {
+		if it == s {
+			return i
+		}
+	}
+	return 0
 }
