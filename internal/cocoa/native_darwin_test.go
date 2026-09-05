@@ -77,3 +77,49 @@ func TestSameStringsDecidesWhenAListIsReloaded(t *testing.T) {
 		}
 	}
 }
+
+// TestAMenuIsRebuiltOnlyWhenItReadsDifferently covers what decides that a
+// control's menu is replaced.
+//
+// Rebuilding on every frame would tear the menu down while it is open: a
+// person holding it with the pointer over "Remove" would find it replaced
+// under them, which is a way to make somebody click the wrong verb.
+func TestAMenuIsRebuiltOnlyWhenItReadsDifferently(t *testing.T) {
+	t.Parallel()
+
+	pick := func() {}
+	base := []toolkit.NativeMenuItem{
+		{Label: "Retry", Pick: pick},
+		{},
+		{Label: "Remove", Pick: pick},
+	}
+
+	for _, tc := range []struct {
+		what string
+		a, b []toolkit.NativeMenuItem
+		want bool
+	}{
+		{"the same menu", base, base, true},
+		// The handlers are closures the application rebuilds every frame, so
+		// comparing them would say "changed" for ever.
+		{"the same words, fresh closures", base, []toolkit.NativeMenuItem{
+			{Label: "Retry", Pick: func() {}},
+			{},
+			{Label: "Remove", Pick: func() {}},
+		}, true},
+		{"a word changed", base, []toolkit.NativeMenuItem{
+			{Label: "Retry", Pick: pick}, {}, {Label: "Delete", Pick: pick},
+		}, false},
+		// Whether a verb applies IS part of what the menu reads like.
+		{"a verb that stopped applying", base, []toolkit.NativeMenuItem{
+			{Label: "Retry", Pick: pick}, {}, {Label: "Remove"},
+		}, false},
+		{"an item added", base, append(append([]toolkit.NativeMenuItem{}, base...),
+			toolkit.NativeMenuItem{Label: "Open"}), false},
+		{"both empty", nil, nil, true},
+	} {
+		if got := sameMenu(tc.a, tc.b); got != tc.want {
+			t.Errorf("%s: sameMenu = %v, want %v", tc.what, got, tc.want)
+		}
+	}
+}
