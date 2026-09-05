@@ -46,6 +46,7 @@ type liveControl struct {
 	lastBool  bool
 	lastNum   float64
 	lastItems []string
+	lastMenu  []toolkit.NativeMenuItem
 }
 
 // sameStrings reports whether two row lists are the same, so a list is only
@@ -167,6 +168,8 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	// A Button's title is fixed at creation (NSButton has no stringValue), so it
 	// is not pushed here.
 
+	lc.applyMenu(spec.Menu)
+
 	r := spec.Rect
 	_ = lc.ctl.SetFrame(float64(r.X)/w.scale, float64(r.Y)/w.scale, float64(r.W)/w.scale, float64(r.H)/w.scale)
 	_ = lc.ctl.SetHidden(!spec.Visible)
@@ -237,8 +240,41 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ctl.OnAction(func() { lc.reportText(); lc.activate() })
 	}
 
+	lc.applyMenu(spec.Menu)
 	_ = ctl.AddTo(w.view)
 	return lc
+}
+
+// applyMenu hands the control its context menu, and only when it changed.
+//
+// Rebuilding a menu on every frame would tear it down while it is open: a
+// person holding a menu with the pointer over "Remove" would find it replaced
+// under them, which is a way to make somebody click the wrong verb.
+func (lc *liveControl) applyMenu(items []toolkit.NativeMenuItem) {
+	if sameMenu(items, lc.lastMenu) {
+		return
+	}
+	out := make([]appkit.MenuItem, 0, len(items))
+	for _, it := range items {
+		out = append(out, appkit.MenuItem{Title: it.Label, OnPick: it.Pick})
+	}
+	_ = lc.ctl.SetMenu(out)
+	lc.lastMenu = items
+}
+
+// sameMenu reports whether two menus read the same. Only the words and whether
+// each verb applies: the handlers are closures the application rebuilds every
+// frame, so comparing them would say "changed" forever.
+func sameMenu(a, b []toolkit.NativeMenuItem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Label != b[i].Label || (a[i].Pick == nil) != (b[i].Pick == nil) {
+			return false
+		}
+	}
+	return true
 }
 
 // reportText/reportBool/reportNumber record the control's new value as the

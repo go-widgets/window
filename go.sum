@@ -30,6 +30,8 @@ github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=
 github.com/go-logr/stdr v1.2.2/go.mod h1:mMo/vtBO5dYbehREoey6XUKy/eSumjCCveDpRre4VKE=
 github.com/go-macos/appkit v0.2.0 h1:ZcjejkGEKfkrEu09BvkyCSHQ9TORH1W2FWwowiIzXZI=
 github.com/go-macos/appkit v0.2.0/go.mod h1:KQ+vIsZ2hBFniqFJ5Q4uQ4ylQX+MXPvJcMOzvBpJRdE=
+github.com/go-macos/appkit v0.3.0 h1:ujpAR45JfGZbitv7GiULgTWgaiDFrNWM0nCYzg56N9c=
+github.com/go-macos/appkit v0.3.0/go.mod h1:KQ+vIsZ2hBFniqFJ5Q4uQ4ylQX+MXPvJcMOzvBpJRdE=
 github.com/go-macos/objc v0.9.1 h1:GGBoj8aMijBCYNPjGAYS4neeA3lWa8/JEIF1K5GswDo=
 github.com/go-macos/objc v0.9.1/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
 github.com/go-macos/virtualdisplay v0.3.0 h1:OWo8bGaXWEGutoGHO/RV9qO5Lzfe1hFx2aXNocZ4bHI=
@@ -54,6 +56,8 @@ github.com/go-widgets/painter v0.12.0 h1:gMqTVbIbGSKmaE28NKsbbKdNIk2drupNMNuLjFP
 github.com/go-widgets/painter v0.12.0/go.mod h1:IPRLqdUJuJX8sfuHeYLZCzjoLvA0ApbOlyIAVmguJDQ=
 github.com/go-widgets/toolkit v0.302.0 h1:5hsfczcWLwxXSqRM5L0xirChO2iT4pxkt9bqhhCEZ8w=
 github.com/go-widgets/toolkit v0.302.0/go.mod h1:tpn/Pcd+kra6UnIe8LPwaZWYQaCvvatYXrbuMJyoBfc=
+github.com/go-widgets/toolkit v0.303.0 h1:8xBslkQXmHLHQIX9fMx+K2qTVNFPZOrUmUi1+eOZNqc=
+github.com/go-widgets/toolkit v0.303.0/go.mod h1:tpn/Pcd+kra6UnIe8LPwaZWYQaCvvatYXrbuMJyoBfc=
 github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=
 github.com/godbus/dbus/v5 v5.2.2/go.mod h1:3AAv2+hPq5rdnr5txxxRwiGjPXamgoIHgz9FPBfOp3c=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
