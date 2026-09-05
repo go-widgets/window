@@ -7,6 +7,7 @@
 package cocoa
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/go-widgets/toolkit"
@@ -120,6 +121,42 @@ func TestAMenuIsRebuiltOnlyWhenItReadsDifferently(t *testing.T) {
 	} {
 		if got := sameMenu(tc.a, tc.b); got != tc.want {
 			t.Errorf("%s: sameMenu = %v, want %v", tc.what, got, tc.want)
+		}
+	}
+}
+
+// TestAPictureIsPushedOnlyWhenItChanged covers what keeps a toolbar still.
+//
+// Decoding a PNG on every frame to hand AppKit the same image sixty times a
+// second is work for nothing, and it makes a button flicker as its cell is
+// replaced under the pointer.
+func TestAPictureIsPushedOnlyWhenItChanged(t *testing.T) {
+	t.Parallel()
+
+	png := []byte{0x89, 'P', 'N', 'G', 1}
+	lc := &liveControl{lastImage: png, lastOnly: true}
+
+	// The same bytes and the same arrangement is nothing to do. Compared by
+	// CONTENT, not by identity: the application rebuilds its descriptor every
+	// frame, so a fresh slice holding the same picture is the same picture.
+	same := append([]byte(nil), png...)
+	if !bytes.Equal(same, lc.lastImage) || lc.lastOnly != true {
+		t.Fatal("the fixture is wrong")
+	}
+	for _, tc := range []struct {
+		what string
+		png  []byte
+		only bool
+		want bool // want a push
+	}{
+		{"the same picture", same, true, false},
+		{"a different picture", []byte{0x89, 'P', 'N', 'G', 2}, true, true},
+		{"the same picture, now beside its title", same, false, true},
+		{"no picture at all", nil, true, true},
+	} {
+		got := !bytes.Equal(tc.png, lc.lastImage) || tc.only != lc.lastOnly
+		if got != tc.want {
+			t.Errorf("%s: push=%v, want %v", tc.what, got, tc.want)
 		}
 	}
 }
