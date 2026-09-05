@@ -86,7 +86,19 @@ func gatherNative(root toolkit.Widget) []toolkit.NativeControl {
 // descriptors for the current frame. It runs after layout, so a control tracks
 // its descriptor through scrolling and interaction. With no controls ever
 // present it does nothing, leaving the ordinary path untouched.
-func (w *Window) syncNative(root toolkit.Widget) {
+//
+// It reports whether it CREATED any control this pass, which the caller needs
+// because creating one changes what the framebuffer should contain.
+//
+// ⛔ A CLAIMED REGION STOPS DRAWING, AND THE OLD PIXELS STAY. A toolkit.Native
+// paints its Fallback until a host claims it; the claim happens HERE, after
+// the frame that painted the fallback. On an opaque window nothing repainted
+// afterwards, so the drawn fallback stayed in the framebuffer with the real
+// AppKit control composited on top of it -- two buttons, one over the other,
+// their labels a pixel apart. Seen in a settings window converted to native
+// controls, and invisible in every unit test, because it is a question about
+// pixels that are still there rather than about pixels that are wrong.
+func (w *Window) syncNative(root toolkit.Widget) (created bool) {
 	specs := gatherNative(root)
 	if len(specs) == 0 && w.nativeControls == nil {
 		return
@@ -110,6 +122,7 @@ func (w *Window) syncNative(root toolkit.Widget) {
 				continue
 			}
 			w.nativeControls[spec.Key] = lc
+			created = true
 			if spec.OnClaim != nil {
 				spec.OnClaim(true)
 			}
@@ -122,6 +135,7 @@ func (w *Window) syncNative(root toolkit.Widget) {
 			delete(w.nativeControls, key)
 		}
 	}
+	return created
 }
 
 // applySpec updates a live control from this frame's descriptor: refresh the
