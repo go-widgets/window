@@ -7,6 +7,7 @@
 package cocoa
 
 import (
+	"bytes"
 	"github.com/go-macos/appkit"
 	"github.com/go-widgets/toolkit"
 )
@@ -47,6 +48,8 @@ type liveControl struct {
 	lastNum   float64
 	lastItems []string
 	lastMenu  []toolkit.NativeMenuItem
+	lastImage []byte
+	lastOnly  bool
 }
 
 // sameStrings reports whether two row lists are the same, so a list is only
@@ -183,6 +186,7 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	// is not pushed here.
 
 	lc.applyMenu(spec.Menu)
+	lc.applyImage(spec.Image, spec.ImageOnly)
 
 	r := spec.Rect
 	_ = lc.ctl.SetFrame(float64(r.X)/w.scale, float64(r.Y)/w.scale, float64(r.W)/w.scale, float64(r.H)/w.scale)
@@ -255,6 +259,7 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 	}
 
 	lc.applyMenu(spec.Menu)
+	lc.applyImage(spec.Image, spec.ImageOnly)
 	_ = ctl.AddTo(w.view)
 	return lc
 }
@@ -274,6 +279,20 @@ func (lc *liveControl) applyMenu(items []toolkit.NativeMenuItem) {
 	}
 	_ = lc.ctl.SetMenu(out)
 	lc.lastMenu = items
+}
+
+// applyImage puts a picture on the control, and only when it changed.
+//
+// Decoding a PNG on every frame to hand AppKit the same image sixty times a
+// second is work for nothing, and it makes a button flicker as its cell is
+// replaced under the pointer.
+func (lc *liveControl) applyImage(png []byte, only bool) {
+	if bytes.Equal(png, lc.lastImage) && only == lc.lastOnly {
+		return
+	}
+	_ = lc.ctl.SetImage(png)
+	_ = lc.ctl.SetImageOnly(only)
+	lc.lastImage, lc.lastOnly = png, only
 }
 
 // sameMenu reports whether two menus read the same. Only the words and whether
