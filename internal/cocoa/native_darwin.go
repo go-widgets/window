@@ -42,9 +42,25 @@ type liveControl struct {
 	onNumber   func(float64)
 	onActivate func()
 
-	lastText string
-	lastBool bool
-	lastNum  float64
+	lastText  string
+	lastBool  bool
+	lastNum   float64
+	lastItems []string
+}
+
+// sameStrings reports whether two row lists are the same, so a list is only
+// reloaded when its contents actually changed. Reloading on every frame would
+// throw the selection away sixty times a second.
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (lc *liveControl) close() { lc.ctl.Close() }
@@ -132,6 +148,21 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			_ = lc.ctl.SetDouble(spec.Number)
 			lc.lastNum = spec.Number
 		}
+	case toolkit.NativeList:
+		// The ROWS first: a selection is an index into them, so pushing it
+		// against the old list would choose the wrong entry -- or none, if the
+		// list has grown shorter and the row no longer exists.
+		if !sameStrings(spec.Items, lc.lastItems) {
+			_ = lc.ctl.SetItems(spec.Items)
+			lc.lastItems = append(lc.lastItems[:0], spec.Items...)
+			// Replacing them drops the selection, so it is pushed again even
+			// when the application has not moved it.
+			lc.lastNum = -2
+		}
+		if spec.Number != lc.lastNum {
+			_ = lc.ctl.SetDouble(spec.Number)
+			lc.lastNum = spec.Number
+		}
 	}
 	// A Button's title is fixed at creation (NSButton has no stringValue), so it
 	// is not pushed here.
@@ -168,17 +199,24 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ctl, err = appkit.NewSlider(spec.Min, spec.Max, spec.Number)
 	case toolkit.NativePopUp:
 		ctl, err = appkit.NewPopUpButton(spec.Items)
+	case toolkit.NativeList:
+		ctl, err = appkit.NewTableView(spec.Items)
 	default:
 		return nil
 	}
 	if err != nil || ctl == nil {
 		return nil
 	}
-	lc := &liveControl{ctl: ctl, lastText: spec.Text, lastBool: spec.On, lastNum: spec.Number}
+	lc := &liveControl{
+		ctl: ctl, lastText: spec.Text, lastBool: spec.On, lastNum: spec.Number,
+		lastItems: append([]string(nil), spec.Items...),
+	}
 
 	switch spec.Kind {
 	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
 		_ = ctl.SetBool(spec.On)
+	case toolkit.NativeList:
+		_ = ctl.SetDouble(spec.Number)
 	case toolkit.NativePopUp:
 		if spec.Text != "" {
 			_ = ctl.SetStringValue(spec.Text)
@@ -193,7 +231,7 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ctl.OnAction(func() { lc.activate() })
 	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
 		ctl.OnAction(func() { lc.reportBool(); lc.activate() })
-	case toolkit.NativeSlider:
+	case toolkit.NativeSlider, toolkit.NativeList:
 		ctl.OnChange(func() { lc.reportNumber() })
 	case toolkit.NativePopUp:
 		ctl.OnAction(func() { lc.reportText(); lc.activate() })
