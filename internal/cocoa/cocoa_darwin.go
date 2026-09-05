@@ -942,9 +942,18 @@ func (w *Window) bindAndSeed(root toolkit.Widget) {
 	// framebuffer holes are punched and each material renders its native
 	// (child-only) path. A tree with no Material leaves everything unchanged.
 	w.syncMaterials(root)
-	w.syncNative(root)
-	if w.translucent {
-		if w.dmg != nil {
+	// ⛔ REPAINT IF A CONTROL WAS JUST CLAIMED. A toolkit.Native paints its
+	// Fallback until a host claims it, and the claim happens INSIDE syncNative
+	// -- after the frame above painted the fallback. Without this, an opaque
+	// window kept those pixels for good, with the real AppKit control
+	// composited on top: two buttons, one over the other, their labels a pixel
+	// apart. Seen in a settings window converted to native controls.
+	claimed := w.syncNative(root)
+	if w.translucent || claimed {
+		// A FULL draw when a control was just claimed, never the incremental
+		// one: nothing marked the region damaged, so an incremental pass would
+		// leave exactly the pixels this exists to clear.
+		if w.dmg != nil && !claimed {
 			w.drawIncremental()
 		} else {
 			w.draw()
@@ -1000,7 +1009,18 @@ func (w *Window) paintFrame(resize bool) {
 	// Reconcile embedded native controls with the freshly laid-out tree, so one
 	// tracks its Native through scrolling and interaction. After the draw (this
 	// is deferred), for the same reason the a11y refresh is.
-	defer w.syncNative(w.root)
+	//
+	// ⛔ AND ONE MORE FRAME WHEN A CONTROL IS CLAIMED. The Native painted its
+	// Fallback into the frame that just went out; the claim happens here, and
+	// nothing marks the region damaged -- so without this the fallback's pixels
+	// stay under the real control for as long as the window is idle. Once per
+	// control, not per frame: only a control that was CREATED costs a repaint.
+	defer func() {
+		if w.syncNative(w.root) {
+			w.draw()
+			w.presentFull()
+		}
+	}()
 	if w.dmg == nil {
 		w.draw()
 		w.presentFull()
