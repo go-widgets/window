@@ -65,6 +65,9 @@ const (
 	// EDIT styles.
 	esAutoHScroll = 0x0080 // ES_AUTOHSCROLL
 	esPassword    = 0x0020 // ES_PASSWORD
+	esMultiline   = 0x0004 // ES_MULTILINE
+	esAutoVScroll = 0x0040 // ES_AUTOVSCROLL
+	esWantReturn  = 0x1000 // ES_WANTRETURN
 
 	// BUTTON styles.
 	bsPushButton      = 0x00000000 // BS_PUSHBUTTON
@@ -76,6 +79,7 @@ const (
 
 	// COMBOBOX styles.
 	cbsDropDownList = 0x0003 // CBS_DROPDOWNLIST
+	cbsDropDown     = 0x0002 // CBS_DROPDOWN (editable — has an edit field)
 	cbsHasStrings   = 0x0200 // CBS_HASSTRINGS
 
 	// Trackbar (msctls_trackbar32) style.
@@ -102,9 +106,10 @@ const (
 	swShowNA = 8 // SW_SHOWNA: show without stealing activation/focus
 
 	// WM_COMMAND notification codes (HIWORD of wParam).
-	bnClicked    = 0      // BN_CLICKED
-	enChange     = 0x0300 // EN_CHANGE
-	cbnSelChange = 1      // CBN_SELCHANGE
+	bnClicked     = 0      // BN_CLICKED
+	enChange      = 0x0300 // EN_CHANGE
+	cbnSelChange  = 1      // CBN_SELCHANGE
+	cbnEditChange = 5      // CBN_EDITCHANGE (editable combo's text edited)
 
 	// GetStockObject index.
 	defaultGUIFont = 17 // DEFAULT_GUI_FONT
@@ -238,7 +243,10 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	lc.onActivate = spec.OnActivate
 
 	switch spec.Kind {
-	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry:
+	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry,
+		toolkit.NativeSearch, toolkit.NativeTextView, toolkit.NativeCombo:
+		// An editable COMBOBOX and the EDIT-based controls all take their value
+		// through WM_SETTEXT (for the combo that is its edit field).
 		if spec.Text != lc.lastText {
 			setWindowText(lc.hwnd, spec.Text)
 			lc.lastText = spec.Text
@@ -321,6 +329,21 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 	case toolkit.NativePopUp:
 		class = classCOMBOBOX
 		style |= wsTabStop | wsVScroll | cbsDropDownList | cbsHasStrings
+	case toolkit.NativeSearch:
+		// Win32 has no dedicated search box before Win11; an EDIT is the honest
+		// native equivalent (a cue banner could be added later).
+		class = classEDIT
+		style |= wsBorder | wsTabStop | esAutoHScroll
+		caption = mustUTF16(spec.Text)
+	case toolkit.NativeTextView:
+		class = classEDIT
+		style |= wsBorder | wsTabStop | esMultiline | esAutoVScroll | esWantReturn | wsVScroll
+		caption = mustUTF16(spec.Text)
+	case toolkit.NativeCombo:
+		// Editable drop-down: CBS_DROPDOWN (not ...LIST) gives it an edit field, so
+		// a person may type as well as pick.
+		class = classCOMBOBOX
+		style |= wsTabStop | wsVScroll | cbsDropDown | cbsHasStrings
 	default:
 		return nil
 	}
@@ -358,6 +381,14 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		}
 		if spec.Text != "" {
 			comboSelect(lc.hwnd, spec.Text)
+		}
+	case toolkit.NativeCombo:
+		// Fill the drop-down list, then put the free text in the edit field.
+		for _, item := range spec.Items {
+			comboAdd(lc.hwnd, item)
+		}
+		if spec.Text != "" {
+			setWindowText(lc.hwnd, spec.Text)
 		}
 	}
 
@@ -415,9 +446,16 @@ func (w *Window) onCommand(wParam, lParam uintptr) bool {
 	}
 	code := hiWord(uint32(wParam))
 	switch lc.kind {
-	case toolkit.NativeEntry, toolkit.NativeSecureEntry:
+	case toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativeSearch, toolkit.NativeTextView:
 		if code == enChange {
 			lc.reportText()
+		}
+	case toolkit.NativeCombo:
+		// The edit field changed (typed) or a list item was picked; either way the
+		// value is the edit text.
+		if code == cbnEditChange || code == cbnSelChange {
+			lc.reportText()
+			lc.activate()
 		}
 	case toolkit.NativeButton:
 		if code == bnClicked {
