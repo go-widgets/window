@@ -52,6 +52,7 @@ import (
 const (
 	wmCommand = 0x0111 // WM_COMMAND: a child control notifies its parent
 	wmHScroll = 0x0114 // WM_HSCROLL: a horizontal trackbar notifies its parent
+	wmVScroll = 0x0115 // WM_VSCROLL: a vertical up-down (stepper) notifies its parent
 	wmSetFont = 0x0030 // WM_SETFONT: give a control the GUI font
 
 	// Window styles.
@@ -101,6 +102,25 @@ const (
 	tbmSetPos   = wmUser + 5 // TBM_SETPOS
 	tbmSetRange = wmUser + 6 // TBM_SETRANGE
 
+	// Progress bar (msctls_progress32): a 0..progressScale range, so a float
+	// fraction maps to an integer position.
+	progressScale = 1000
+	pbsMarquee    = 0x08        // PBS_MARQUEE (indeterminate spinner style)
+	pbmSetPos     = wmUser + 2  // PBM_SETPOS
+	pbmSetRange32 = wmUser + 6  // PBM_SETRANGE32 (wParam=low, lParam=high)
+	pbmSetMarquee = wmUser + 10 // PBM_SETMARQUEE (wParam=on, lParam=interval ms)
+
+	// Up-down / stepper (msctls_updown32).
+	udsAlignRight = 0x0004       // UDS_ALIGNRIGHT
+	udsArrowKeys  = 0x0020       // UDS_ARROWKEYS
+	udmSetRange32 = wmUser + 111 // UDM_SETRANGE32 (wParam=low, lParam=high)
+	udmSetPos32   = wmUser + 113 // UDM_SETPOS32 (lParam=pos)
+	udmGetPos32   = wmUser + 114 // UDM_GETPOS32
+
+	// InitCommonControlsEx flags for the classes above.
+	iccProgressClass = 0x00000020 // ICC_PROGRESS_CLASS
+	iccUpDownClass   = 0x00000010 // ICC_UPDOWN_CLASS
+
 	// ShowWindow commands.
 	swHide   = 0 // SW_HIDE
 	swShowNA = 8 // SW_SHOWNA: show without stealing activation/focus
@@ -146,6 +166,8 @@ var (
 	classSTATIC   = mustUTF16("STATIC")
 	classCOMBOBOX = mustUTF16("COMBOBOX")
 	classTrackbar = mustUTF16("msctls_trackbar32")
+	classProgress = mustUTF16("msctls_progress32")
+	classUpDown   = mustUTF16("msctls_updown32")
 )
 
 func mustUTF16(s string) *uint16 {
@@ -266,6 +288,25 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			setTrackPos(lc.hwnd, spec.Min, spec.Max, spec.Number)
 			lc.lastNum = spec.Number
 		}
+	case toolkit.NativeStepper:
+		if spec.Number != lc.lastNum {
+			sendMessage(lc.hwnd, udmSetPos32, 0, uintptr(int32(spec.Number)))
+			lc.lastNum = spec.Number
+		}
+	case toolkit.NativeProgress:
+		if spec.Number != lc.lastNum {
+			sendMessage(lc.hwnd, pbmSetPos, uintptr(progressPos(spec.Number, spec.Min, spec.Max)), 0)
+			lc.lastNum = spec.Number
+		}
+	case toolkit.NativeSpinner:
+		if spec.On != lc.lastBool {
+			on := uintptr(0)
+			if spec.On {
+				on = 1
+			}
+			sendMessage(lc.hwnd, pbmSetMarquee, on, 30)
+			lc.lastBool = spec.On
+		}
 	}
 	// A Button's title is fixed at creation, mirroring the Cocoa backend, so it
 	// is not pushed here.
@@ -344,6 +385,17 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		// a person may type as well as pick.
 		class = classCOMBOBOX
 		style |= wsTabStop | wsVScroll | cbsDropDown | cbsHasStrings
+	case toolkit.NativeProgress:
+		ensureCommonControls()
+		class = classProgress
+	case toolkit.NativeSpinner:
+		ensureCommonControls()
+		class = classProgress
+		style |= pbsMarquee
+	case toolkit.NativeStepper:
+		ensureCommonControls()
+		class = classUpDown
+		style |= wsTabStop | udsAlignRight | udsArrowKeys
 	default:
 		return nil
 	}
@@ -390,6 +442,16 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		if spec.Text != "" {
 			setWindowText(lc.hwnd, spec.Text)
 		}
+	case toolkit.NativeProgress:
+		sendMessage(lc.hwnd, pbmSetRange32, 0, progressScale)
+		sendMessage(lc.hwnd, pbmSetPos, uintptr(progressPos(spec.Number, spec.Min, spec.Max)), 0)
+	case toolkit.NativeSpinner:
+		if spec.On {
+			sendMessage(lc.hwnd, pbmSetMarquee, 1, 30)
+		}
+	case toolkit.NativeStepper:
+		sendMessage(lc.hwnd, udmSetRange32, uintptr(int32(spec.Min)), uintptr(int32(spec.Max)))
+		sendMessage(lc.hwnd, udmSetPos32, 0, uintptr(int32(spec.Number)))
 	}
 
 	w.nativeByHWND[lc.hwnd] = lc
@@ -495,6 +557,41 @@ func (w *Window) onHScroll(lParam uintptr) bool {
 	lc.reportNumber()
 	w.paintFrame(false)
 	return true
+}
+
+// onVScroll routes a WM_VSCROLL from an up-down (stepper) to its liveControl and
+// reports the new integer position (UDM_GETPOS32). Returns false when the scroll
+// did not come from a stepper we own.
+func (w *Window) onVScroll(lParam uintptr) bool {
+	if lParam == 0 {
+		return false
+	}
+	lc := w.nativeByHWND[lParam]
+	if lc == nil || lc.kind != toolkit.NativeStepper {
+		return false
+	}
+	lc.lastNum = float64(int32(sendMessage(lc.hwnd, udmGetPos32, 0, 0)))
+	if lc.onNumber != nil {
+		lc.onNumber(lc.lastNum)
+	}
+	w.paintFrame(false)
+	return true
+}
+
+// progressPos maps a value in [min,max] to a progress-bar position in
+// [0,progressScale], clamped.
+func progressPos(v, min, max float64) int {
+	if max <= min {
+		return 0
+	}
+	f := (v - min) / (max - min)
+	if f < 0 {
+		f = 0
+	}
+	if f > 1 {
+		f = 1
+	}
+	return int(f * progressScale)
 }
 
 // reportText/reportBool/reportNumber record the control's new value as the
@@ -635,7 +732,7 @@ func ensureCommonControls() {
 	commonControlsOnce.Do(func() {
 		icc := initCommonControlsExStruct{
 			dwSize: uint32(unsafe.Sizeof(initCommonControlsExStruct{})),
-			dwICC:  iccBarClasses,
+			dwICC:  iccBarClasses | iccProgressClass | iccUpDownClass,
 		}
 		procInitCommonControlsEx.Call(uintptr(unsafe.Pointer(&icc)))
 	})

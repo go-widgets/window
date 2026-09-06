@@ -518,6 +518,12 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
+	case wmVScroll:
+		// An up-down (NativeStepper) notifying its parent of a new position.
+		if w.onVScroll(lParam) {
+			return 0
+		}
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmClose:
 		win32.DestroyWindow(win32.HWND(hwnd))
 		return 0
