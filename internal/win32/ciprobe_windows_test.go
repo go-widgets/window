@@ -38,12 +38,12 @@ func TestWin32ControlsCreateHeadless(t *testing.T) {
 	win.root = surf
 	win.syncNative(surf)
 
-	if got := len(win.nativeControls); got != 3 {
-		t.Fatalf("controls created = %d, want 3 (Entry+Progress+Stepper)", got)
-	}
+	n := len(win.nativeControls)
+	val := ""
 	if lc := win.nativeControls["e"]; lc != nil {
-		if v := win32.GetWindowText(win32.HWND(lc.hwnd)); v != "hello" {
-			t.Errorf("entry value = %q, want hello", v)
-		}
+		val = win32.GetWindowText(win32.HWND(lc.hwnd))
 	}
+	// TEMPORARY: report the outcome as a failure so it is visible in the
+	// non-verbose CI log (a skip/pass is silent). Reverted once read.
+	t.Errorf("PROBE RESULT: New() OK, created %d controls headlessly, entry=%q", n, val)
 }
