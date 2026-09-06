@@ -28,7 +28,8 @@ type liveControl struct {
 	lastText string
 	lastBool bool
 	lastNum  float64
-	items    []string // a pop-up's item strings, to map its selected index to text
+	items    []string      // a pop-up's/segmented's item strings
+	segments []gtk4.Widget // a segmented control's toggle buttons, in item order
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -93,7 +94,7 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	lc.onActivate = spec.OnActivate
 
 	switch spec.Kind {
-	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry:
+	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativeSearch:
 		if spec.Text != lc.lastText {
 			lc.widget.SetText(spec.Text)
 			lc.lastText = spec.Text
@@ -108,11 +109,57 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			lc.widget.SetValue(spec.Number)
 			lc.lastNum = spec.Number
 		}
+	case toolkit.NativeStepper:
+		if spec.Number != lc.lastNum {
+			lc.widget.SetSpinValue(spec.Number)
+			lc.lastNum = spec.Number
+		}
+	case toolkit.NativeProgress:
+		if spec.Number != lc.lastNum {
+			lc.widget.SetFraction(fraction(spec.Number, spec.Min, spec.Max))
+			lc.lastNum = spec.Number
+		}
+	case toolkit.NativeSpinner:
+		if spec.On != lc.lastBool {
+			if spec.On {
+				lc.widget.Start()
+			} else {
+				lc.widget.Stop()
+			}
+			lc.lastBool = spec.On
+		}
 	case toolkit.NativePopUp:
 		// A pop-up's value is the selected item's STRING (spec.Text), matching the
 		// cocoa/win32 backends; push it by selecting that item's index.
 		if spec.Text != lc.lastText {
 			lc.widget.SetSelected(indexOf(lc.items, spec.Text))
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeCombo:
+		if spec.Text != lc.lastText {
+			lc.widget.SetComboText(spec.Text)
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeSegmented:
+		if spec.Text != lc.lastText {
+			if i := indexOf(lc.items, spec.Text); i < len(lc.segments) {
+				lc.segments[i].SetActive(true)
+			}
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeTextView:
+		if spec.Text != lc.lastText {
+			lc.widget.SetTextViewText(spec.Text)
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeDate:
+		if spec.Text != lc.lastText {
+			lc.widget.SetDateISO(spec.Text)
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeColor:
+		if spec.Text != lc.lastText {
+			lc.widget.SetColorHex(spec.Text)
 			lc.lastText = spec.Text
 		}
 	}
@@ -194,6 +241,114 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 				}
 			}
 		})
+	case toolkit.NativeSearch:
+		lc.widget = gtk4.SearchNew()
+		lc.widget.SetText(spec.Text)
+		lc.widget.Connect("search-changed", func() {
+			lc.lastText = lc.widget.Text()
+			if lc.onText != nil {
+				lc.onText(lc.lastText)
+			}
+		})
+		lc.widget.Connect("activate", func() {
+			if lc.onActivate != nil {
+				lc.onActivate()
+			}
+		})
+	case toolkit.NativeCombo:
+		lc.widget = gtk4.ComboNew(spec.Items)
+		lc.widget.SetComboText(spec.Text)
+		lc.widget.Connect("changed", func() {
+			lc.lastText = lc.widget.ComboText()
+			if lc.onText != nil {
+				lc.onText(lc.lastText)
+			}
+		})
+	case toolkit.NativeTextView:
+		lc.widget = gtk4.TextViewNew()
+		lc.widget.SetTextViewText(spec.Text)
+		lc.widget.ConnectBufferChanged(func() {
+			lc.lastText = lc.widget.TextViewText()
+			if lc.onText != nil {
+				lc.onText(lc.lastText)
+			}
+		})
+	case toolkit.NativeProgress:
+		lc.widget = gtk4.ProgressNew()
+		lc.widget.SetFraction(fraction(spec.Number, spec.Min, spec.Max))
+	case toolkit.NativeSpinner:
+		lc.widget = gtk4.SpinnerNew()
+		if spec.On {
+			lc.widget.Start()
+		}
+	case toolkit.NativeStepper:
+		step := (spec.Max - spec.Min) / 100
+		if step <= 0 {
+			step = 1
+		}
+		lc.widget = gtk4.StepperNew(spec.Min, spec.Max, step)
+		lc.widget.SetSpinValue(spec.Number)
+		lc.widget.Connect("value-changed", func() {
+			lc.lastNum = lc.widget.SpinValue()
+			if lc.onNumber != nil {
+				lc.onNumber(lc.lastNum)
+			}
+		})
+	case toolkit.NativeLink:
+		lc.widget = gtk4.LinkNew(spec.Text)
+		lc.widget.OnActivateLink(func() {
+			if lc.onActivate != nil {
+				lc.onActivate()
+			}
+		})
+	case toolkit.NativeDate:
+		lc.widget = gtk4.DateNew()
+		lc.widget.SetDateISO(spec.Text)
+		lc.widget.Connect("day-selected", func() {
+			lc.lastText = lc.widget.DateISO()
+			if lc.onText != nil {
+				lc.onText(lc.lastText)
+			}
+		})
+	case toolkit.NativeColor:
+		lc.widget = gtk4.ColorNew()
+		lc.widget.SetColorHex(spec.Text)
+		lc.widget.Connect("color-set", func() {
+			lc.lastText = lc.widget.ColorHex()
+			if lc.onText != nil {
+				lc.onText(lc.lastText)
+			}
+		})
+	case toolkit.NativeSegmented:
+		// GTK has no segmented control; compose one from linked toggle buttons in a
+		// horizontal box (the go-gtk primitives). The selected segment's title is the
+		// value, reported like a pop-up's.
+		lc.items = spec.Items
+		box := gtk4.BoxNew(true)
+		var group gtk4.Widget
+		for i, item := range spec.Items {
+			tb := gtk4.ToggleButtonNewWithLabel(item)
+			if i == 0 {
+				group = tb
+			} else {
+				tb.SetGroup(group) // join the first button's radio group
+			}
+			if item == spec.Text {
+				tb.SetActive(true)
+			}
+			idx := i
+			tb.Connect("toggled", func() {
+				if tb.Active() { // report only the newly-selected segment
+					lc.lastText = lc.items[idx]
+					if lc.onText != nil {
+						lc.onText(lc.lastText)
+					}
+				}
+			})
+			box.Append(tb)
+			lc.segments = append(lc.segments, tb)
+		}
+		lc.widget = box
 	default:
 		return nil
 	}
@@ -207,6 +362,20 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 // indexOf returns the position of s in items, or 0 when it is absent (GtkDropDown
 // selects the first item for an out-of-range index, the same "fall back to the
 // head" the cocoa pop-up's string match does).
+func fraction(v, min, max float64) float64 {
+	if max <= min {
+		return 0
+	}
+	f := (v - min) / (max - min)
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
+
 func indexOf(items []string, s string) int {
 	for i, it := range items {
 		if it == s {
