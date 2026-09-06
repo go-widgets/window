@@ -165,3 +165,30 @@ func TestGTKBackendMoreWidgets(t *testing.T) {
 		t.Error("segmented: the \"two\" segment should be active")
 	}
 }
+
+// TestGTKBackendList proves NativeList builds a GtkListBox whose rows are the
+// Items and whose selection follows Number.
+func TestGTKBackendList(t *testing.T) {
+	win, err := Open("gtk list test", 320, 240, nil, 1)
+	if err != nil {
+		t.Skipf("no GTK display: %v", err)
+	}
+	defer win.Close()
+	surf := toolkit.NewSurface(func() ([]byte, int, int) { return make([]byte, 320*240*4), 320, 240 })
+	surf.Controls = func() []toolkit.NativeControl {
+		return []toolkit.NativeControl{{
+			Kind: toolkit.NativeList, Key: "lst", Visible: true,
+			Rect:  toolkit.Rect{X: 10, Y: 10, W: 200, H: 160},
+			Items: []string{"red", "green", "blue"}, Number: 2, OnNumber: func(float64) {},
+		}}
+	}
+	win.root = surf
+	win.frame()
+	lc := win.native["lst"]
+	if lc == nil {
+		t.Fatal("no list control created")
+	}
+	if got := lc.widget.SelectedRow(); got != 2 {
+		t.Errorf("selected row = %d, want 2 (blue)", got)
+	}
+}

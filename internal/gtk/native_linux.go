@@ -162,6 +162,14 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			lc.widget.SetColorHex(spec.Text)
 			lc.lastText = spec.Text
 		}
+	case toolkit.NativeList:
+		// Push the selected row when the app moved it. (Changing the row STRINGS
+		// after creation needs a new Key so the control is rebuilt — GtkListBox has
+		// no clear-all in the binding; the reconcile handles that path.)
+		if spec.Number != lc.lastNum {
+			lc.widget.SelectRow(int(spec.Number))
+			lc.lastNum = spec.Number
+		}
 	}
 
 	w.fixed.Move(lc.widget, w.pt(spec.Rect.X), w.pt(spec.Rect.Y))
@@ -319,6 +327,26 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 				lc.onText(lc.lastText)
 			}
 		})
+	case toolkit.NativeList:
+		// A single-column selectable list (the GTK peer of cocoa's NSTableView).
+		// Items are the rows, Number the selected index, reported via OnNumber.
+		lc.items = spec.Items
+		lb := gtk4.ListBoxNew()
+		for _, it := range spec.Items {
+			lb.ListBoxAppendText(it)
+		}
+		if i := int(spec.Number); i >= 0 && i < len(spec.Items) {
+			lb.SelectRow(i)
+		}
+		lb.Connect("row-selected", func() {
+			if i := lb.SelectedRow(); i >= 0 {
+				lc.lastNum = float64(i)
+				if lc.onNumber != nil {
+					lc.onNumber(lc.lastNum)
+				}
+			}
+		})
+		lc.widget = lb
 	case toolkit.NativeSegmented:
 		// GTK has no segmented control; compose one from linked toggle buttons in a
 		// horizontal box (the go-gtk primitives). The selected segment's title is the
