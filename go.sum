@@ -20,6 +20,8 @@ github.com/go-gfx/gfx v0.19.0 h1:nA2Eg8Aq2kytR5Hrm/eQ6618w4vT0+Ao8BMZiuYh84c=
 github.com/go-gfx/gfx v0.19.0/go.mod h1:VAK6hgCgkhT3j3ek2K7G8zDfkCPD3RCF45UbcRlCV8Q=
 github.com/go-gtk/gtk4 v0.4.0 h1:x2glqFEFQY+u5w46dFZYfO/HhpHeUhNcBOwNGMV3oiY=
 github.com/go-gtk/gtk4 v0.4.0/go.mod h1:+bpfPrc8PwsiQkZdNCL3LcOzj1KYgv8j2BvvL6P6Aqo=
+github.com/go-gtk/gtk4 v0.5.0 h1:97/WDULZ3cVIYldSIPT9FV7GBkEf4cOMunF7nsIODNk=
+github.com/go-gtk/gtk4 v0.5.0/go.mod h1:jjaA29sFQTpy2D3N+FrnxMFZq07mG48ahgQoEEECpPA=
 github.com/go-icons/iconoir v0.2.0 h1:I5AnDEIPgYfawTmwzemDRJjlYCUbFHuS8GJXrjADhXc=
 github.com/go-icons/iconoir v0.2.0/go.mod h1:Td/M2vy4xdVv4aOudAskV0nXR9Wv0MlhWvyRIzPBz5U=
 github.com/go-images/images v0.0.0-20260831115433-23d959d868e3 h1:SinmtXWpA4a30ZQ5A9QI9YrsYvytmLGeTRVbXqqEezw=
@@ -34,6 +36,8 @@ github.com/go-macos/appkit v0.3.0 h1:ujpAR45JfGZbitv7GiULgTWgaiDFrNWM0nCYzg56N9c
 github.com/go-macos/appkit v0.3.0/go.mod h1:KQ+vIsZ2hBFniqFJ5Q4uQ4ylQX+MXPvJcMOzvBpJRdE=
 github.com/go-macos/appkit v0.4.0 h1:fB5vlsXLmuQExTBKWflQr+oreshYn1VUeqe1pIKQhPA=
 github.com/go-macos/appkit v0.4.0/go.mod h1:KQ+vIsZ2hBFniqFJ5Q4uQ4ylQX+MXPvJcMOzvBpJRdE=
+github.com/go-macos/appkit v0.5.0 h1:4LeIstgHaKcoTk4Eb0qFoHmUVa7arW1NNZAO8VLJtfQ=
+github.com/go-macos/appkit v0.5.0/go.mod h1:KQ+vIsZ2hBFniqFJ5Q4uQ4ylQX+MXPvJcMOzvBpJRdE=
 github.com/go-macos/objc v0.9.1 h1:GGBoj8aMijBCYNPjGAYS4neeA3lWa8/JEIF1K5GswDo=
 github.com/go-macos/objc v0.9.1/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
 github.com/go-macos/virtualdisplay v0.3.0 h1:OWo8bGaXWEGutoGHO/RV9qO5Lzfe1hFx2aXNocZ4bHI=

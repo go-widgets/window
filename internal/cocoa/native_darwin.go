@@ -151,17 +151,19 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	lc.onActivate = spec.OnActivate
 
 	switch spec.Kind {
-	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativePopUp:
+	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativePopUp,
+		toolkit.NativeSearch, toolkit.NativeCombo, toolkit.NativeSegmented, toolkit.NativeTextView,
+		toolkit.NativeDate, toolkit.NativeColor:
 		if spec.Text != lc.lastText {
 			_ = lc.ctl.SetStringValue(spec.Text)
 			lc.lastText = spec.Text
 		}
-	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
+	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch, toolkit.NativeSpinner:
 		if spec.On != lc.lastBool {
 			_ = lc.ctl.SetBool(spec.On)
 			lc.lastBool = spec.On
 		}
-	case toolkit.NativeSlider:
+	case toolkit.NativeSlider, toolkit.NativeStepper, toolkit.NativeProgress:
 		if spec.Number != lc.lastNum {
 			_ = lc.ctl.SetDouble(spec.Number)
 			lc.lastNum = spec.Number
@@ -222,6 +224,26 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ctl, err = appkit.NewPopUpButton(spec.Items)
 	case toolkit.NativeList:
 		ctl, err = appkit.NewTableView(spec.Items)
+	case toolkit.NativeProgress:
+		ctl, err = appkit.NewProgressIndicator(spec.Min, spec.Max)
+	case toolkit.NativeSpinner:
+		ctl, err = appkit.NewSpinner()
+	case toolkit.NativeStepper:
+		ctl, err = appkit.NewStepper(spec.Min, spec.Max, spec.Number)
+	case toolkit.NativeSearch:
+		ctl, err = appkit.NewSearchField(spec.Text)
+	case toolkit.NativeCombo:
+		ctl, err = appkit.NewComboBox(spec.Items)
+	case toolkit.NativeSegmented:
+		ctl, err = appkit.NewSegmentedControl(spec.Items)
+	case toolkit.NativeTextView:
+		ctl, err = appkit.NewTextView(spec.Text)
+	case toolkit.NativeLink:
+		ctl, err = appkit.NewLinkButton(spec.Text)
+	case toolkit.NativeDate:
+		ctl, err = appkit.NewDatePicker()
+	case toolkit.NativeColor:
+		ctl, err = appkit.NewColorWell()
 	default:
 		return nil
 	}
@@ -234,27 +256,27 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 	}
 
 	switch spec.Kind {
-	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
+	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch, toolkit.NativeSpinner:
 		_ = ctl.SetBool(spec.On)
-	case toolkit.NativeList:
+	case toolkit.NativeList, toolkit.NativeStepper, toolkit.NativeProgress:
 		_ = ctl.SetDouble(spec.Number)
-	case toolkit.NativePopUp:
+	case toolkit.NativePopUp, toolkit.NativeSegmented, toolkit.NativeCombo, toolkit.NativeDate, toolkit.NativeColor:
 		if spec.Text != "" {
 			_ = ctl.SetStringValue(spec.Text)
 		}
 	}
 
 	switch spec.Kind {
-	case toolkit.NativeEntry, toolkit.NativeSecureEntry:
+	case toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativeSearch, toolkit.NativeTextView:
 		ctl.OnChange(func() { lc.reportText() })
 		ctl.OnAction(func() { lc.reportText(); lc.activate() })
-	case toolkit.NativeButton:
+	case toolkit.NativeButton, toolkit.NativeLink:
 		ctl.OnAction(func() { lc.activate() })
 	case toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
 		ctl.OnAction(func() { lc.reportBool(); lc.activate() })
-	case toolkit.NativeSlider, toolkit.NativeList:
+	case toolkit.NativeSlider, toolkit.NativeList, toolkit.NativeStepper:
 		ctl.OnChange(func() { lc.reportNumber() })
-	case toolkit.NativePopUp:
+	case toolkit.NativePopUp, toolkit.NativeSegmented, toolkit.NativeCombo, toolkit.NativeDate, toolkit.NativeColor:
 		ctl.OnAction(func() { lc.reportText(); lc.activate() })
 	}
 

@@ -109,3 +109,59 @@ func TestGTKBackendSliderPopUp(t *testing.T) {
 		t.Errorf("after app change, pop-up selection = %d, want 2 (three)", got)
 	}
 }
+
+// TestGTKBackendMoreWidgets proves the ten controls added for full parity build
+// on real GTK and round-trip their value through syncNative: a stepper, search,
+// editable combo, multi-line text view, date and colour carry a value; a
+// segmented control tracks its selected item; a progress bar, spinner and link
+// build without error.
+func TestGTKBackendMoreWidgets(t *testing.T) {
+	win, err := Open("gtk more-widgets test", 400, 300, nil, 1)
+	if err != nil {
+		t.Skipf("no GTK display: %v", err)
+	}
+	defer win.Close()
+
+	r := toolkit.Rect{X: 10, Y: 10, W: 200, H: 28}
+	specs := []toolkit.NativeControl{
+		{Kind: toolkit.NativeProgress, Key: "prog", Rect: r, Visible: true, Min: 0, Max: 100, Number: 40},
+		{Kind: toolkit.NativeSpinner, Key: "spin", Rect: r, Visible: true, On: true},
+		{Kind: toolkit.NativeStepper, Key: "step", Rect: r, Visible: true, Min: 0, Max: 10, Number: 3, OnNumber: func(float64) {}},
+		{Kind: toolkit.NativeSearch, Key: "srch", Rect: r, Visible: true, Text: "hello", OnText: func(string) {}},
+		{Kind: toolkit.NativeCombo, Key: "cmbo", Rect: r, Visible: true, Items: []string{"a", "b"}, Text: "typed", OnText: func(string) {}},
+		{Kind: toolkit.NativeSegmented, Key: "segm", Rect: r, Visible: true, Items: []string{"one", "two", "three"}, Text: "two", OnText: func(string) {}},
+		{Kind: toolkit.NativeTextView, Key: "text", Rect: r, Visible: true, Text: "multi\nline", OnText: func(string) {}},
+		{Kind: toolkit.NativeLink, Key: "link", Rect: r, Visible: true, Text: "open", OnActivate: func() {}},
+		{Kind: toolkit.NativeDate, Key: "date", Rect: r, Visible: true, Text: "2026-02-14", OnText: func(string) {}},
+		{Kind: toolkit.NativeColor, Key: "colr", Rect: r, Visible: true, Text: "#3366cc", OnText: func(string) {}},
+	}
+	surf := toolkit.NewSurface(func() ([]byte, int, int) { return make([]byte, 400*300*4), 400, 300 })
+	surf.Controls = func() []toolkit.NativeControl { return specs }
+	win.root = surf
+	win.frame()
+
+	for _, k := range []string{"prog", "spin", "step", "srch", "cmbo", "segm", "text", "link", "date", "colr"} {
+		if win.native[k] == nil {
+			t.Fatalf("control %q was not created", k)
+		}
+	}
+	if got := win.native["step"].widget.SpinValue(); got != 3 {
+		t.Errorf("stepper value = %v, want 3", got)
+	}
+	if got := win.native["srch"].widget.Text(); got != "hello" {
+		t.Errorf("search text = %q, want hello", got)
+	}
+	if got := win.native["cmbo"].widget.ComboText(); got != "typed" {
+		t.Errorf("combo text = %q, want typed", got)
+	}
+	if got := win.native["text"].widget.TextViewText(); got != "multi\nline" {
+		t.Errorf("text view = %q, want multi\\nline", got)
+	}
+	if got := win.native["date"].widget.DateISO(); got != "2026-02-14" {
+		t.Errorf("date = %q, want 2026-02-14", got)
+	}
+	// The segmented control's "two" segment is active.
+	if !win.native["segm"].segments[1].Active() {
+		t.Error("segmented: the \"two\" segment should be active")
+	}
+}
