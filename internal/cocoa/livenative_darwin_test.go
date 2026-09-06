@@ -191,3 +191,70 @@ func TestLiveCocoaNativeControlsProvider(t *testing.T) {
 		t.Errorf("after app change, field = %q, want changed (provider descriptor push)", afterAppChange)
 	}
 }
+
+// TestLiveCocoaMoreWidgets proves the ten controls added for full parity build on
+// real AppKit through the provider path and carry their value. Gated behind
+// WINDOW_COCOA_INTEGRATION.
+func TestLiveCocoaMoreWidgets(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the live macOS more-widgets proof")
+	}
+	theme := toolkit.DefaultDark()
+	r := toolkit.Rect{X: 10, Y: 10, W: 200, H: 26}
+	var (
+		win      *Window
+		setupErr error
+		made     int
+		stepVal  float64
+		searchV  string
+		dateV    string
+	)
+	callOnMain(func() {
+		win, setupErr = New("go-widgets/window more-widgets proof", 420, 320, theme)
+		if setupErr != nil {
+			return
+		}
+		surf := toolkit.NewSurface(func() ([]byte, int, int) { return make([]byte, 420*320*4), 420, 320 })
+		surf.Controls = func() []toolkit.NativeControl {
+			return []toolkit.NativeControl{
+				{Kind: toolkit.NativeProgress, Key: "prog", Rect: r, Visible: true, Min: 0, Max: 100, Number: 40},
+				{Kind: toolkit.NativeSpinner, Key: "spin", Rect: r, Visible: true, On: true},
+				{Kind: toolkit.NativeStepper, Key: "step", Rect: r, Visible: true, Min: 0, Max: 10, Number: 3, OnNumber: func(float64) {}},
+				{Kind: toolkit.NativeSearch, Key: "srch", Rect: r, Visible: true, Text: "hello", OnText: func(string) {}},
+				{Kind: toolkit.NativeCombo, Key: "cmbo", Rect: r, Visible: true, Items: []string{"a", "b"}, Text: "typed", OnText: func(string) {}},
+				{Kind: toolkit.NativeSegmented, Key: "segm", Rect: r, Visible: true, Items: []string{"one", "two"}, Text: "two", OnText: func(string) {}},
+				{Kind: toolkit.NativeTextView, Key: "text", Rect: r, Visible: true, Text: "multi\nline", OnText: func(string) {}},
+				{Kind: toolkit.NativeLink, Key: "link", Rect: r, Visible: true, Text: "open", OnActivate: func() {}},
+				{Kind: toolkit.NativeDate, Key: "date", Rect: r, Visible: true, Text: "2026-02-14", OnText: func(string) {}},
+				{Kind: toolkit.NativeColor, Key: "colr", Rect: r, Visible: true, Text: "#3366cc", OnText: func(string) {}},
+			}
+		}
+		win.bindAndSeed(surf)
+		spin(0.4)
+		made = len(win.nativeControls)
+		if lc := win.nativeControls["step"]; lc != nil {
+			stepVal = lc.ctl.Double()
+		}
+		if lc := win.nativeControls["srch"]; lc != nil {
+			searchV = lc.ctl.StringValue()
+		}
+		if lc := win.nativeControls["date"]; lc != nil {
+			dateV = lc.ctl.StringValue()
+		}
+	})
+	if setupErr != nil {
+		t.Fatalf("setup failed: %v", setupErr)
+	}
+	if made != 10 {
+		t.Fatalf("controls created = %d, want 10", made)
+	}
+	if stepVal != 3 {
+		t.Errorf("stepper value = %v, want 3", stepVal)
+	}
+	if searchV != "hello" {
+		t.Errorf("search value = %q, want hello", searchV)
+	}
+	if dateV != "2026-02-14" {
+		t.Errorf("date value = %q, want 2026-02-14", dateV)
+	}
+}

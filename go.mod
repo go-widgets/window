@@ -39,7 +39,7 @@ require (
 	github.com/go-freedesktop/x11 v0.2.0
 	github.com/go-gfx/gfx v0.19.0 // indirect
 	github.com/go-images/images v0.0.0-20260831115433-23d959d868e3 // indirect
-	github.com/go-macos/appkit v0.4.0
+	github.com/go-macos/appkit v0.5.0
 	github.com/go-opentype/fonts v0.9.0 // indirect
 	github.com/go-opentype/shape v0.5.0 // indirect
 	github.com/go-typeset/bidi v0.3.0 // indirect
