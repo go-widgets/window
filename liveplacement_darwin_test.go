@@ -74,14 +74,14 @@ func callOnMain(f func()) {
 func mainScreens(t *testing.T) []Screen {
 	t.Helper()
 	var (
-		ss  []Screen
+		ss  ScreenList
 		err error
 	)
 	callOnMain(func() { ss, err = Screens() })
 	if err != nil {
 		t.Fatalf("Screens() = %v", err)
 	}
-	return ss
+	return ss.All()
 }
 
 // mainOpen is Open() on the reserved thread.

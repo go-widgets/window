@@ -32,19 +32,19 @@ import (
 // It opens its OWN connection and closes it again: enumerating displays is
 // something an application does before it has a window, and borrowing a
 // window's connection would make the answer depend on having one.
-func waylandScreens(name string) ([]Screen, error) {
+func waylandScreens(name string) (ScreenList, error) {
 	path, err := waylandSocketPath(name)
 	if err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	nc, err := net.Dial("unix", path)
 	if err != nil {
-		return nil, fmt.Errorf("window: cannot connect to Wayland compositor: %w", err)
+		return ScreenList{}, fmt.Errorf("window: cannot connect to Wayland compositor: %w", err)
 	}
 	uc, ok := nc.(*net.UnixConn)
 	if !ok { // net.Dial("unix", ...) always yields *net.UnixConn
 		_ = nc.Close()
-		return nil, fmt.Errorf("window: Wayland dial returned %T, want *net.UnixConn", nc)
+		return ScreenList{}, fmt.Errorf("window: Wayland dial returned %T, want *net.UnixConn", nc)
 	}
 	return screensOnWayland(wayland.New(uc))
 }
@@ -52,30 +52,30 @@ func waylandScreens(name string) ([]Screen, error) {
 // screensOnWayland is waylandScreens with the connection already open, which
 // is what makes the whole exchange testable against a scripted compositor.
 // It closes the connection: it is the only owner of it.
-func screensOnWayland(conn *wayland.Conn) ([]Screen, error) {
+func screensOnWayland(conn *wayland.Conn) (ScreenList, error) {
 	defer func() { _ = conn.Close() }()
 
 	reg, err := conn.Display().GetRegistry()
 	if err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	// One round trip for the globals the compositor advertises, a second for
 	// the property burst each bound output then sends. Both are needed: an
 	// output read before its done has no mode and no name.
 	if err := conn.Roundtrip(); err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	outs, err := reg.Outputs()
 	if err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	if err := conn.Roundtrip(); err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	if len(outs) == 0 {
-		return nil, fmt.Errorf("window: the Wayland compositor advertises no output")
+		return ScreenList{}, fmt.Errorf("window: the Wayland compositor advertises no output: %w", ErrNoScreens)
 	}
-	return primaryFirst(waylandScreensOf(outs)), nil
+	return newScreenList(waylandScreensOf(outs))
 }
 
 // waylandScreensOf is the projection onto [Screen], separated from the dialing

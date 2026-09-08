@@ -57,8 +57,8 @@ func TestScreenIsZero(t *testing.T) {
 func TestScreens(t *testing.T) {
 	screens, err := Screens()
 	if err != nil {
-		if len(screens) != 0 {
-			t.Fatalf("Screens() failed (%v) but returned %d screens, want none", err, len(screens))
+		if screens.Len() != 0 {
+			t.Fatalf("Screens() failed (%v) but returned %d screens, want none", err, screens.Len())
 		}
 		if !errors.Is(err, ErrScreensUnsupported) {
 			t.Logf("Screens() unavailable for a platform reason: %v", err)
@@ -66,7 +66,7 @@ func TestScreens(t *testing.T) {
 		return
 	}
 	primaries := 0
-	for i, s := range screens {
+	for i, s := range screens.All() {
 		if s.IsZero() {
 			t.Errorf("screen %d is the zero value", i)
 		}
@@ -80,7 +80,7 @@ func TestScreens(t *testing.T) {
 			primaries++
 		}
 	}
-	if len(screens) > 0 && primaries != 1 {
-		t.Errorf("got %d primary screens among %d, want exactly 1", primaries, len(screens))
+	if screens.Len() > 0 && primaries != 1 {
+		t.Errorf("got %d primary screens among %d, want exactly 1", primaries, screens.Len())
 	}
 }

@@ -20,13 +20,13 @@ import (
 // See [Screen] for what the fields mean; the two back-ends fill them from very
 // different protocols and are documented where they do it (screen_wayland.go
 // and screen_x11.go).
-func Screens() ([]Screen, error) {
+func Screens() (ScreenList, error) {
 	if name := os.Getenv("WAYLAND_DISPLAY"); name != "" {
 		return waylandScreens(name)
 	}
 	disp := os.Getenv("DISPLAY")
 	if disp == "" {
-		return nil, fmt.Errorf("window: cannot enumerate screens: neither WAYLAND_DISPLAY nor DISPLAY is set")
+		return ScreenList{}, fmt.Errorf("window: cannot enumerate screens: neither WAYLAND_DISPLAY nor DISPLAY is set")
 	}
 	return x11Screens(disp)
 }
@@ -40,10 +40,10 @@ func Screens() ([]Screen, error) {
 // every attached panel, not only the primary one.
 func VisibleScreenSize() (w, h int, ok bool) {
 	screens, err := Screens()
-	if err != nil || len(screens) == 0 {
+	if err != nil {
 		return 0, 0, false
 	}
-	s := screens[0]
+	s := screens.Primary()
 	if s.VisibleWidth <= 0 || s.VisibleHeight <= 0 {
 		return 0, 0, false
 	}

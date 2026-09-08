@@ -30,7 +30,7 @@ func TestLiveScreens(t *testing.T) {
 	if os.Getenv("WINDOW_LIVE_SCREENS") != "1" {
 		t.Skip("set WINDOW_LIVE_SCREENS=1 to enumerate this machine's displays")
 	}
-	screens, err := Screens()
+	screens, err := allOf(Screens())
 	if err != nil {
 		t.Fatalf("Screens: %v", err)
 	}

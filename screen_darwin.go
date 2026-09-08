@@ -43,10 +43,10 @@ func VisibleScreenSize() (w, h int, ok bool) {
 // application, and enumerated from a goroutine that is not on the main thread,
 // can therefore come back nameless. Everything placement depends on is exact
 // regardless.
-func Screens() ([]Screen, error) {
+func Screens() (ScreenList, error) {
 	infos, err := cocoa.Screens()
 	if err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	out := make([]Screen, len(infos))
 	for i, s := range infos {
@@ -64,7 +64,7 @@ func Screens() ([]Screen, error) {
 			Primary:       s.Primary,
 		}
 	}
-	return out, nil
+	return newScreenList(out)
 }
 
 // toCocoa is the reverse projection, used by Open to hand a chosen screen back
