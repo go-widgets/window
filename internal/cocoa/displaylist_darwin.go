@@ -102,8 +102,31 @@ func liveDisplays() ([]display, error) {
 	if e := cgGetActiveDisplayList(0, nil, &n); e != 0 {
 		return nil, fmt.Errorf("%w: CGGetActiveDisplayList counted: CGError %d", ErrDisplayList, e)
 	}
+	// ⛔⛔ AN EMPTY LIST IS A FAILED READ, NOT A MAC WITH NO SCREENS, and this
+	// returned (nil, nil) -- so "I could not tell you" and "there are none"
+	// arrived as the same value, and every caller believed the second one.
+	//
+	// A machine running a window server has at least one display: somebody is
+	// looking at something. CGGetActiveDisplayList counting zero with no CGError
+	// means this process could not see the list, not that the hardware went away.
+	//
+	// Measured, 2026-09-08, twice in one evening on a desk somebody was wearing.
+	// go-xrkit/desk looks its display up by name and quit with:
+	//
+	//	desk: "VITURE Beast" is not attached any more; there is  -- stopping,
+	//	and putting back everything this changed
+	//
+	// Note what follows "there is": nothing. That message names every attached
+	// display and it named NONE -- so the desk put the arrangement back and took
+	// a person's screens away, over an answer this function never had.
+	//
+	// ⭐ AND THE PACKAGE ALREADY AGREED, in the other two places it matters:
+	// primaryBounds below calls a display list with nothing in it ErrDisplayList,
+	// and the portable layer has ErrScreensUnsupported for a back-end that cannot
+	// enumerate. This was the one path that answered with a fact instead.
 	if n == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("%w: CGGetActiveDisplayList counted 0 displays, "+
+			"which a machine with a window server does not have", ErrDisplayList)
 	}
 	ids := make([]uint32, n)
 	if e := cgGetActiveDisplayList(n, &ids[0], &n); e != 0 {

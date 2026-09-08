@@ -170,12 +170,14 @@ func Screens() ([]ScreenInfo, error) {
 	if err := loadFrameworks(); err != nil {
 		return nil, err
 	}
+	// ⛔⛔ AND AN EMPTY LIST COMES BACK AS AN ERROR. This used to answer
+	// (nil, nil) for it, which told every caller that the machine has no screens
+	// -- a fact, from a read that had failed. liveDisplays now refuses to say
+	// that, so there is nothing to translate here. See the note there for what
+	// it cost.
 	live, err := liveDisplays()
 	if err != nil {
 		return nil, err
-	}
-	if len(live) == 0 {
-		return nil, nil
 	}
 	// The geometry below comes from the window server and is right whatever
 	// AppKit thinks. The NAME does not: it is AppKit's to know, and a display
