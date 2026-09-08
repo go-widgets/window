@@ -87,7 +87,7 @@ func fakeOutputCompositor(sc *srvConn, outs []outSpec) {
 
 // dialFakeOutputs runs the scripted compositor over a socket pair and returns
 // what screensOnWayland made of it.
-func dialFakeOutputs(t *testing.T, outs []outSpec) ([]Screen, error) {
+func dialFakeOutputs(t *testing.T, outs []outSpec) (ScreenList, error) {
 	t.Helper()
 	cli, srv := socketPairWin(t)
 	t.Cleanup(func() { _ = srv.Close() })
@@ -96,7 +96,7 @@ func dialFakeOutputs(t *testing.T, outs []outSpec) ([]Screen, error) {
 }
 
 func TestWaylandScreensReadTheOutputBurst(t *testing.T) {
-	screens, err := dialFakeOutputs(t, []outSpec{
+	screens, err := allOf(dialFakeOutputs(t, []outSpec{
 		// A 2x laptop panel: 2560x1440 device pixels are 1280x720 points.
 		{Make: "Sharp", Model: "LQ133M1", Connector: "eDP-1", Descr: "the built-in panel",
 			PhysWMM: 294, PhysHMM: 165,
@@ -106,7 +106,7 @@ func TestWaylandScreensReadTheOutputBurst(t *testing.T) {
 		{X: 1280, Make: "DELL", Model: "U2720Q", Connector: "DP-2",
 			PhysWMM: 597, PhysHMM: 336,
 			ModeW: 1920, ModeH: 1080, Refresh: 59951, Scale: 1},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("screensOnWayland: %v", err)
 	}
@@ -130,9 +130,9 @@ func TestWaylandScreensSwapTheAxesOfARotatedPanel(t *testing.T) {
 	// transform 1 is a quarter turn: a 1080x1920 panel in portrait is a
 	// 1920x1080 mode with its axes swapped, and reporting it unswapped would
 	// overlap whatever sits beside it with nothing saying so.
-	screens, err := dialFakeOutputs(t, []outSpec{
+	screens, err := allOf(dialFakeOutputs(t, []outSpec{
 		{Model: "Portrait", Transform: 1, ModeW: 1920, ModeH: 1080, Scale: 1},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("screensOnWayland: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestWaylandScreenNamePrefersTheModel(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.out.ModeW, tc.out.ModeH, tc.out.Scale = 800, 600, 1
-			screens, err := dialFakeOutputs(t, []outSpec{tc.out})
+			screens, err := allOf(dialFakeOutputs(t, []outSpec{tc.out}))
 			if err != nil {
 				t.Fatalf("screensOnWayland: %v", err)
 			}
@@ -184,9 +184,9 @@ func TestWaylandScreensWithNoOutputAtAll(t *testing.T) {
 func TestWaylandScreensIgnoreAnUnfinishedBurst(t *testing.T) {
 	// Properties published without a closing done describe nothing yet: acting
 	// on half a burst would place the output where the compositor never said.
-	screens, err := dialFakeOutputs(t, []outSpec{
+	screens, err := allOf(dialFakeOutputs(t, []outSpec{
 		{X: 500, Model: "Half", ModeW: 1920, ModeH: 1080, Scale: 2, SkipDone: true},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("screensOnWayland: %v", err)
 	}

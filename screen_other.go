@@ -23,6 +23,6 @@ func VisibleScreenSize() (w, h int, ok bool) {
 // or wl_output and Windows through EnumDisplayMonitors; a browser has the
 // Screen Detail API, so this remains a gap to be filled per back-end and not a
 // limit of the API.
-func Screens() ([]Screen, error) {
-	return nil, ErrScreensUnsupported
+func Screens() (ScreenList, error) {
+	return ScreenList{}, ErrScreensUnsupported
 }

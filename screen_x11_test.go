@@ -209,7 +209,7 @@ func TestScreensOnProjectsPixelsOntoPoints(t *testing.T) {
 	conn := dialScripted(t, randrScreenScript(mons, "Xft.dpi:\t192\n",
 		[]uint32{0, 27, 3840, 1053}))
 
-	screens, err := screensOn(conn, 0)
+	screens, err := allOf(screensOn(conn, 0))
 	if err != nil {
 		t.Fatalf("screensOn: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestScreensOnWithNoWindowManagerAndNoScale(t *testing.T) {
 	mons := []monSpec{{NameAtom: 0x40, Name: "screen", Width: 1920, Height: 1080}}
 	conn := dialScripted(t, randrScreenScript(mons, "", nil))
 
-	screens, err := screensOn(conn, 0)
+	screens, err := allOf(screensOn(conn, 0))
 	if err != nil {
 		t.Fatalf("screensOn: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestScreensOnSurvivesAServerThatAnswersNothing(t *testing.T) {
 	// itself is still a display, and a caller that asked for a list must not
 	// get an empty one.
 	conn := dialScripted(t, nil)
-	screens, err := screensOn(conn, 0)
+	screens, err := allOf(screensOn(conn, 0))
 	if err != nil {
 		t.Fatalf("screensOn: %v", err)
 	}

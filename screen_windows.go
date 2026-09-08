@@ -54,7 +54,7 @@ import (
 // See [Screen] for what the fields mean, and winScreensOf for the one place
 // Windows genuinely differs from the other back-ends: it has no single logical
 // coordinate space, so on a mixed-DPI desktop these rectangles do not tile.
-func Screens() ([]Screen, error) {
+func Screens() (ScreenList, error) {
 	// Per-Monitor-V2 first, and its result is deliberately ignored: it fails
 	// when awareness has ALREADY been set, by an earlier call or by the
 	// application manifest, which is not a problem — the process is aware, it
@@ -66,7 +66,7 @@ func Screens() ([]Screen, error) {
 		handles = append(handles, m)
 		return true
 	}); err != nil {
-		return nil, fmt.Errorf("window: cannot enumerate displays: %w", err)
+		return ScreenList{}, fmt.Errorf("window: cannot enumerate displays: %w", err)
 	}
 
 	// Describing the monitors happens OUTSIDE the enumeration callback. The
@@ -104,9 +104,9 @@ func Screens() ([]Screen, error) {
 		})
 	}
 	if len(mons) == 0 {
-		return nil, fmt.Errorf("window: the desktop reports no display")
+		return ScreenList{}, fmt.Errorf("window: the desktop reports no display: %w", ErrNoScreens)
 	}
-	return winScreensOf(mons), nil
+	return newScreenList(winScreensOf(mons))
 }
 
 // VisibleScreenSize returns the usable area of the primary display in LOGICAL
@@ -116,10 +116,10 @@ func Screens() ([]Screen, error) {
 // See [Screens], which supersedes it for anything multi-display.
 func VisibleScreenSize() (w, h int, ok bool) {
 	screens, err := Screens()
-	if err != nil || len(screens) == 0 {
+	if err != nil {
 		return 0, 0, false
 	}
-	s := screens[0]
+	s := screens.Primary()
 	if s.VisibleWidth <= 0 || s.VisibleHeight <= 0 {
 		return 0, 0, false
 	}

@@ -35,14 +35,14 @@ import (
 // has several, but they are separate coordinate spaces that no window can move
 // between, so listing them together would describe a desktop that does not
 // exist.
-func x11Screens(disp string) ([]Screen, error) {
+func x11Screens(disp string) (ScreenList, error) {
 	d, err := parseDisplay(disp)
 	if err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	conn, err := dialAuthenticated(disp)
 	if err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	defer func() { _ = conn.Close() }()
 	return screensOn(conn, d.screen)
@@ -50,15 +50,15 @@ func x11Screens(disp string) ([]Screen, error) {
 
 // screensOn is Screens with the connection already open, which is what makes
 // the whole projection testable against a scripted server.
-func screensOn(conn *x11.Conn, screen int) ([]Screen, error) {
+func screensOn(conn *x11.Conn, screen int) (ScreenList, error) {
 	sc := conn.Setup().ScreenOf(screen)
 	if sc == nil {
-		return nil, fmt.Errorf("window: DISPLAY names screen %d, and this server has %d",
+		return ScreenList{}, fmt.Errorf("window: DISPLAY names screen %d, and this server has %d",
 			screen, len(conn.Setup().Screens))
 	}
 	mons, err := conn.Monitors(screen)
 	if err != nil {
-		return nil, err
+		return ScreenList{}, err
 	}
 	// One scale for the whole desktop, because that is all X11 has: Xft.dpi is
 	// a resource on the root window, not a property of a panel. A mixed-DPI X11
@@ -100,7 +100,7 @@ func screensOn(conn *x11.Conn, screen int) ([]Screen, error) {
 		s.VisibleHeight = points(vh, scale)
 		out = append(out, s)
 	}
-	return primaryFirst(out), nil
+	return newScreenList(out)
 }
 
 // points converts device pixels to logical points. The X11 back-end scales by
