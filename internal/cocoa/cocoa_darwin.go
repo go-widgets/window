@@ -92,6 +92,8 @@ var (
 	selRelease               = objc.RegisterName("release")
 	selSetActivationPolicy   = objc.RegisterName("setActivationPolicy:")
 	selActivateIgnoring      = objc.RegisterName("activateIgnoringOtherApps:")
+	selApplicationIconImage  = objc.RegisterName("applicationIconImage")
+	selSetApplicationIcon    = objc.RegisterName("setApplicationIconImage:")
 	selNextEvent             = objc.RegisterName("nextEventMatchingMask:untilDate:inMode:dequeue:")
 	selSendEvent             = objc.RegisterName("sendEvent:")
 	selRun                   = objc.RegisterName("run")
@@ -722,6 +724,20 @@ func NewWithOptions(o Options) (*Window, error) {
 		policy = activationPolicyAccessory
 	}
 	app.Send(selSetActivationPolicy, policy)
+	// A caller that set applicationIconImage before ever becoming Regular
+	// (an accessory app's own startup, before its first window) has
+	// nothing live to land on: there is no Dock tile yet to update. Apple's
+	// own DTS guidance on exactly this Accessory<->Regular pattern is that
+	// the Dock's reaction to a runtime icon change is not instant and can
+	// revert unexpectedly across a policy transition — re-asserting the
+	// SAME image here, right as a real Dock tile is about to exist, is
+	// what actually lands it. A caller that never set one gets nil back
+	// and this is a harmless no-op re-assignment of nil to nil.
+	if policy == activationPolicyReg {
+		if icon := app.Send(selApplicationIconImage); icon != 0 {
+			app.Send(selSetApplicationIcon, icon)
+		}
+	}
 	syncAppKitScreens(appKitScreenSyncTimeout)
 
 	screen, err := o.resolveScreen()
