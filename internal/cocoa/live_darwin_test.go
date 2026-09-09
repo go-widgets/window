@@ -574,3 +574,67 @@ func TestLiveWindowNumberIsTheCGWindowID(t *testing.T) {
 	}
 	callOnMain(func() { win.Close() })
 }
+
+// TestApplicationIconSurvivesAccessoryToRegular covers the regression this
+// package's Regular-policy re-assert exists for: an accessory-policy
+// process (a menu-bar app) that already set applicationIconImage at its
+// own startup — before ever having a Dock tile to update — must still
+// show that icon once a real window (this package's own NewWithOptions)
+// switches it to Regular. Apple's own DTS guidance on this exact
+// Accessory<->Regular pattern is that the Dock's reaction to a runtime
+// icon change is not instant and can revert unexpectedly across a policy
+// transition; live-verified on-device (a real Dock tile, screenshotted)
+// that WITHOUT the re-assert this package now does, the tile showed a
+// generic icon despite applicationIconImage correctly reporting the
+// custom one throughout.
+func TestApplicationIconSurvivesAccessoryToRegular(t *testing.T) {
+	if os.Getenv("WINDOW_COCOA_INTEGRATION") == "" {
+		t.Skip("set WINDOW_COCOA_INTEGRATION=1 to run the live macOS window proof")
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatalf("encoding a test PNG: %v", err)
+	}
+
+	// applicationIconImage lives on the one shared NSApplication every test
+	// in this binary runs against — left set, it would silently change
+	// window-creation timing for every test declared after this one
+	// (alphabetically, that includes liverepaint_darwin_test.go), not just
+	// this test's own assertions.
+	t.Cleanup(func() {
+		callOnMain(func() { objc.App().Send(objc.RegisterName("setApplicationIconImage:"), objc.ID(0)) })
+	})
+
+	var win *Window
+	var err error
+	var sizeBeforeOpen, sizeAfterOpen toolkit.Rect
+	callOnMain(func() {
+		app := objc.App()
+		app.Send(objc.RegisterName("setActivationPolicy:"), 1) // Accessory
+		app.Send(objc.RegisterName("finishLaunching"))
+		objc.SetApplicationIconImage(buf.Bytes())
+
+		icon := app.Send(objc.RegisterName("applicationIconImage"))
+		sz := objc.Send[nsSize](icon, objc.RegisterName("size"))
+		sizeBeforeOpen = toolkit.Rect{W: int(sz.W), H: int(sz.H)}
+
+		win, err = New("dock icon proof", 200, 120, toolkit.DefaultDark())
+		if err != nil {
+			return
+		}
+		icon = app.Send(objc.RegisterName("applicationIconImage"))
+		sz = objc.Send[nsSize](icon, objc.RegisterName("size"))
+		sizeAfterOpen = toolkit.Rect{W: int(sz.W), H: int(sz.H)}
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer callOnMain(func() { win.Close() })
+
+	if sizeBeforeOpen.W == 0 || sizeBeforeOpen.H == 0 {
+		t.Fatal("setup: applicationIconImage was not set before opening the window")
+	}
+	if sizeAfterOpen != sizeBeforeOpen {
+		t.Errorf("applicationIconImage changed across the Accessory->Regular transition: before=%+v after=%+v", sizeBeforeOpen, sizeAfterOpen)
+	}
+}
