@@ -3,7 +3,7 @@ module github.com/go-widgets/window
 go 1.26.4
 
 require (
-	github.com/go-macos/objc v0.10.1
+	github.com/go-macos/objc v0.10.2
 	github.com/go-mswin/win32 v0.4.0
 	github.com/go-opentype/opentype v0.12.0
 	github.com/go-widgets/android v0.13.1
@@ -47,5 +47,5 @@ require (
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/sergeymakinen/go-ico v1.0.0 // indirect
 	golang.org/x/image v0.45.0 // indirect
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 )
