@@ -25,7 +25,11 @@
 // everything here.
 package cocoa
 
-import "github.com/go-widgets/toolkit"
+import (
+	"slices"
+
+	"github.com/go-widgets/toolkit"
+)
 
 // NSEventModifierFlags bits used by the backend. AppKit reports device-
 // independent modifier state in the high bits of the flags mask.
@@ -354,4 +358,86 @@ func unitToByte(v float64) uint8 {
 	default:
 		return uint8(v*255 + 0.5)
 	}
+}
+
+// Band is a contiguous run of framebuffer ROWS to convert and blit: Y is the
+// first row, H the count. A band is always full width.
+type Band struct{ Y, H int }
+
+// DrawBands reduces damage rectangles to the row runs a draw has to touch,
+// merged, ordered and clamped to a buffer bufH rows tall. Rectangles that fall
+// wholly outside contribute nothing; an empty result means there is nothing to
+// draw.
+//
+// Rows, not rectangles, because a run of rows is CONTIGUOUS in the framebuffer
+// and can therefore be wrapped as a bitmap of its own. That is the whole point:
+// -drawRect: builds an NSBitmapImageRep over the buffer and AppKit converts it
+// to a CGImage to draw it, and that conversion covers every row the rep spans
+// whatever the clip says. Sampling a window presenting at 60 Hz put
+// -[NSBitmapImageRep CGImage] at the top of the draw path, under
+// -[NSImageRep drawInRect:fromRect:...] under -[NSView displayIfNeeded]: the
+// invalid region limited what reached the screen, not what was converted, so
+// reporting damage saved nothing at all (measured: 26.2% of a core without
+// damage reporting, 26.8% with). A rep spanning only the changed rows makes the
+// conversion proportional to the change.
+//
+// The x span is deliberately dropped. Narrowing columns would need a
+// non-contiguous sub-image, which is a copy — and the rows are where the cost
+// is: a changed line of text spans a handful of rows out of a thousand.
+func DrawBands(rects []toolkit.Rect, bufH int) []Band {
+	if bufH <= 0 {
+		return nil
+	}
+	var spans []Band
+	for _, r := range rects {
+		y0, y1 := r.Y, r.Y+r.H
+		if y0 < 0 {
+			y0 = 0
+		}
+		if y1 > bufH {
+			y1 = bufH
+		}
+		if y1 <= y0 {
+			continue
+		}
+		spans = append(spans, Band{Y: y0, H: y1 - y0})
+	}
+	if len(spans) == 0 {
+		return nil
+	}
+	slices.SortFunc(spans, func(a, b Band) int { return a.Y - b.Y })
+	out := []Band{spans[0]}
+	for _, s := range spans[1:] {
+		last := &out[len(out)-1]
+		// Touching counts as overlapping: two bands that meet edge to edge are
+		// one run of rows, and splitting them would convert the seam twice.
+		if s.Y <= last.Y+last.H {
+			if end := s.Y + s.H; end > last.Y+last.H {
+				last.H = end - last.Y
+			}
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// BandDest is where a band of framebuffer rows lands in the flipped view, given
+// the view's bounds in points and the buffer's height in device pixels.
+//
+// Full width, because DrawBands drops the x span; the y arithmetic is the whole
+// of it, and it is the part that can be wrong. The scale is taken from the
+// buffer and the bounds rather than from the window's stored scale, so a band
+// lands exactly where the whole-buffer draw would have put those same rows --
+// including on the frame after a backing-scale change, when the two disagree
+// for one draw.
+//
+// A bounds with no height cannot say where anything goes: the band is returned
+// at the origin with no height, which draws nothing.
+func BandDest(b Band, bufH int, ox, oy, ow, oh float64) (x, y, w, h float64) {
+	if bufH <= 0 || oh <= 0 {
+		return ox, oy, ow, 0
+	}
+	perRow := oh / float64(bufH)
+	return ox, oy + float64(b.Y)*perRow, ow, float64(b.H) * perRow
 }
