@@ -91,10 +91,15 @@ func TestRepoRootOf(t *testing.T) {
 // The two failures a run can really meet, since an untested error path is a
 // promise nobody has heard kept.
 func TestDirWhenThereIsNowhereToPutIt(t *testing.T) {
-	// No configuration directory to derive a default from.
+	// No configuration directory to derive a default from. Every variable
+	// os.UserConfigDir consults, because which one it reads is the platform's
+	// business: AppData on Windows, XDG_CONFIG_HOME then HOME elsewhere.
+	// Clearing only the unix pair passed here and failed on the Windows lane,
+	// where AppData was still set and a directory came back.
 	t.Setenv(Env, "")
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("AppData", "")
 	if dir, _, err := Dir(); err == nil {
 		t.Errorf("Dir answered %q with no configuration directory to put it in", dir)
 	}
