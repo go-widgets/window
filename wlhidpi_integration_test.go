@@ -123,7 +123,7 @@ func captureStripeWidth(t *testing.T, name string, renderScale float64) int {
 	mustRun(t, "grim", shot)
 	img := decodePNG(t, shot)
 	if data, err := os.ReadFile(shot); err == nil {
-		_ = os.WriteFile("live-hidpi-"+name+".png", data, 0o644)
+		_ = os.WriteFile(filepath.Join(captureDir(t), "live-hidpi-"+name+".png"), data, 0o644)
 	}
 	return runsAcross(t, img, img.Bounds().Dy()/2)
 }
