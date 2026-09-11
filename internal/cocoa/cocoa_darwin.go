@@ -182,8 +182,13 @@ type Window struct {
 	// See Options.Passive.
 	passive bool
 
-	root       toolkit.Widget
-	dmg        damageRenderer
+	root toolkit.Widget
+	dmg  damageRenderer
+	// pending is the damage presentRects asked AppKit to redraw, handed to
+	// -drawRect: so it converts only those rows. Empty means "whole buffer",
+	// which is what an AppKit-initiated draw — an expose, a resize, the first
+	// display — needs, since its invalid region is none of our business.
+	pending    []toolkit.Rect
 	buttonHeld bool
 	dnd        *dnd.Controller
 
@@ -324,28 +329,57 @@ func viewDrawRect(self objc.ID, _ objc.SEL) {
 	}
 	w.mu.Lock()
 	buf, bw, bh := w.buf, w.w, w.h
+	pending := w.pending
+	w.pending = nil
 	w.mu.Unlock()
 	if len(buf) == 0 || bw == 0 || bh == 0 {
 		return
 	}
-	rep := newBitmapRep(buf, bw, bh)
-	if rep == 0 {
-		return
-	}
 	bounds := objc.Send[nsRect](self, selBounds)
-	// The full drawInRect: form with respectFlipped:YES honours the flipped
-	// view so the buffer's row 0 lands at the top of the window; fromRect zero =
-	// whole image; fraction 1.0; hints nil. The op is Copy in the ordinary
-	// opaque path; in translucent mode it is SourceOver so the framebuffer's
-	// transparent holes (punched over material regions) reveal the effect views
-	// composited behind this view.
+	// The op is Copy in the ordinary opaque path; in translucent mode it is
+	// SourceOver so the framebuffer's transparent holes (punched over material
+	// regions) reveal the effect views composited behind this view.
 	op := nsCompositingCopy
 	if w.translucent {
 		op = nsCompositingSourceOver
 	}
-	objc.Send[objc.ID](rep, selDrawInRectFull, bounds, nsRect{}, uint(op), 1.0, true, objc.ID(0))
-	rep.Send(selRelease)
+	bands := DrawBands(pending, bh)
+	if len(bands) == 0 {
+		bands = []Band{{Y: 0, H: bh}} // AppKit asked; it gets everything
+	}
+	for _, b := range bands {
+		w.drawBand(buf, bw, bh, b, bounds, op)
+	}
 	runtime.KeepAlive(buf)
+}
+
+// drawBand converts and blits one run of framebuffer rows.
+//
+// A run of rows is contiguous in the buffer, so it can be wrapped as a bitmap of
+// its own — and that is the saving. AppKit converts the rep it is handed to a
+// CGImage in order to draw it, over every row the rep spans, whatever the clip
+// says: a rep over the whole buffer converts the whole buffer even when one line
+// of text changed. Sampling a window presenting at 60 Hz put
+// -[NSBitmapImageRep CGImage] at the top of the draw path, which is why
+// reporting damage at all had saved nothing measurable (26.2% of a core without,
+// 26.8% with).
+func (w *Window) drawBand(buf []byte, bw, bh int, b Band, bounds nsRect, op int) {
+	if b.H <= 0 || b.Y < 0 || b.Y+b.H > bh {
+		return
+	}
+	stride := bw * 4
+	rep := newBitmapRep(buf[b.Y*stride:], bw, b.H)
+	if rep == 0 {
+		return
+	}
+	defer rep.Send(selRelease)
+	x, y, dw, dh := BandDest(b, bh, bounds.Origin.X, bounds.Origin.Y,
+		bounds.Size.W, bounds.Size.H)
+	dst := nsRect{Origin: nsPoint{X: x, Y: y}, Size: nsSize{W: dw, H: dh}}
+	// respectFlipped:YES honours the flipped view so the band's row 0 lands at
+	// the top of its destination; fromRect zero = the whole (banded) image;
+	// fraction 1.0; hints nil.
+	objc.Send[objc.ID](rep, selDrawInRectFull, dst, nsRect{}, uint(op), 1.0, true, objc.ID(0))
 }
 
 // newBitmapRep wraps an RGBA buffer in an NSBitmapImageRep that references (does
@@ -1055,6 +1089,9 @@ func (w *Window) presentFull() {
 	if w.view == 0 {
 		return
 	}
+	w.mu.Lock()
+	w.pending = nil
+	w.mu.Unlock()
 	w.view.Send(selSetNeedsDisplay, true)
 	w.view.Send(selDisplayIfNeeded)
 }
@@ -1065,6 +1102,13 @@ func (w *Window) presentRects(rects []toolkit.Rect) {
 	if w.view == 0 || len(rects) == 0 {
 		return
 	}
+	// Handed to -drawRect: through the window rather than read from AppKit's
+	// dirty region, because these are OUR rectangles and the callback's NSRect
+	// rides in the float registers undeclared. It is consumed there, so a draw
+	// AppKit starts for its own reasons finds nothing and redraws everything.
+	w.mu.Lock()
+	w.pending = rects
+	w.mu.Unlock()
 	for _, r := range rects {
 		x, y, rw, rh := DirtyRect(r, w.scale)
 		w.view.Send(selSetNeedsDisplayRect, nsRect{Origin: nsPoint{X: x, Y: y}, Size: nsSize{W: rw, H: rh}})

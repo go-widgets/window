@@ -302,3 +302,135 @@ func TestUnitToByte(t *testing.T) {
 		}
 	}
 }
+
+func TestDrawBands(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []toolkit.Rect
+		bufH int
+		want []Band
+	}{{
+		name: "nothing to draw",
+		in:   nil, bufH: 100, want: nil,
+	}, {
+		name: "a buffer with no rows",
+		in:   []toolkit.Rect{{Y: 0, H: 10}}, bufH: 0, want: nil,
+	}, {
+		// The case the whole change exists for: a line of text changed, and the
+		// conversion should cover those rows rather than the window.
+		name: "one small rectangle",
+		in:   []toolkit.Rect{{X: 40, Y: 120, W: 200, H: 14}}, bufH: 1000,
+		want: []Band{{Y: 120, H: 14}},
+	}, {
+		name: "two apart stay apart",
+		in:   []toolkit.Rect{{Y: 10, H: 5}, {Y: 100, H: 5}}, bufH: 1000,
+		want: []Band{{Y: 10, H: 5}, {Y: 100, H: 5}},
+	}, {
+		name: "out of order",
+		in:   []toolkit.Rect{{Y: 100, H: 5}, {Y: 10, H: 5}}, bufH: 1000,
+		want: []Band{{Y: 10, H: 5}, {Y: 100, H: 5}},
+	}, {
+		name: "overlapping merge",
+		in:   []toolkit.Rect{{Y: 10, H: 20}, {Y: 20, H: 20}}, bufH: 1000,
+		want: []Band{{Y: 10, H: 30}},
+	}, {
+		// Edge to edge is one run: converting the seam twice costs more than
+		// the row it saves.
+		name: "touching merge",
+		in:   []toolkit.Rect{{Y: 10, H: 10}, {Y: 20, H: 10}}, bufH: 1000,
+		want: []Band{{Y: 10, H: 20}},
+	}, {
+		name: "one swallowed by another",
+		in:   []toolkit.Rect{{Y: 10, H: 100}, {Y: 20, H: 5}}, bufH: 1000,
+		want: []Band{{Y: 10, H: 100}},
+	}, {
+		name: "clamped to the buffer",
+		in:   []toolkit.Rect{{Y: -20, H: 30}, {Y: 990, H: 40}}, bufH: 1000,
+		want: []Band{{Y: 0, H: 10}, {Y: 990, H: 10}},
+	}, {
+		name: "wholly outside contributes nothing",
+		in:   []toolkit.Rect{{Y: -50, H: 10}, {Y: 2000, H: 10}, {Y: 5, H: 0}}, bufH: 1000,
+		want: nil,
+	}}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := DrawBands(c.in, c.bufH)
+			if len(got) != len(c.want) {
+				t.Fatalf("DrawBands = %v, want %v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Fatalf("DrawBands = %v, want %v", got, c.want)
+				}
+			}
+		})
+	}
+}
+
+// Whatever the rectangles, every row one of them names must end up inside a
+// band: a row left out is a row the screen keeps stale, because the
+// framebuffer persists between frames.
+func TestDrawBandsCoversEveryRowItWasGiven(t *testing.T) {
+	const bufH = 200
+	rects := []toolkit.Rect{
+		{Y: 190, H: 30}, {Y: 3, H: 1}, {Y: 3, H: 40}, {Y: -5, H: 7}, {Y: 120, H: 0},
+	}
+	bands := DrawBands(rects, bufH)
+	for _, r := range rects {
+		for y := max(r.Y, 0); y < min(r.Y+r.H, bufH); y++ {
+			in := false
+			for _, b := range bands {
+				if y >= b.Y && y < b.Y+b.H {
+					in = true
+					break
+				}
+			}
+			if !in {
+				t.Fatalf("row %d was asked for and lies outside every band %v", y, bands)
+			}
+		}
+	}
+}
+
+func TestBandDest(t *testing.T) {
+	// A retina window: 1600 buffer rows over 800 points, so two pixels a point.
+	// The band at rows 200..214 lands at points 100..107.
+	if x, y, w, h := BandDest(Band{Y: 200, H: 14}, 1600, 0, 0, 400, 800); x != 0 || y != 100 || w != 400 || h != 7 {
+		t.Fatalf("BandDest retina = (%v,%v,%v,%v), want (0,100,400,7)", x, y, w, h)
+	}
+	// Scale 1: rows are points.
+	if _, y, _, h := BandDest(Band{Y: 30, H: 10}, 600, 0, 0, 400, 600); y != 30 || h != 10 {
+		t.Fatalf("BandDest scale1 = (y%v,h%v), want (y30,h10)", y, h)
+	}
+	// The bounds origin is carried, not assumed to be zero.
+	if x, y, _, _ := BandDest(Band{Y: 0, H: 10}, 600, 12, 34, 400, 600); x != 12 || y != 34 {
+		t.Fatalf("BandDest origin = (%v,%v), want (12,34)", x, y)
+	}
+	// The whole buffer as one band covers the whole bounds, which is what the
+	// AppKit-initiated draw falls back to: it must be pixel-identical to the
+	// draw this replaces.
+	if x, y, w, h := BandDest(Band{Y: 0, H: 1600}, 1600, 0, 0, 400, 800); x != 0 || y != 0 || w != 400 || h != 800 {
+		t.Fatalf("BandDest whole = (%v,%v,%v,%v), want the full bounds", x, y, w, h)
+	}
+	// Nothing to scale by: no height, so nothing is drawn.
+	if _, _, _, h := BandDest(Band{Y: 0, H: 10}, 0, 0, 0, 400, 800); h != 0 {
+		t.Fatalf("BandDest with no rows h = %v, want 0", h)
+	}
+	if _, _, _, h := BandDest(Band{Y: 0, H: 10}, 600, 0, 0, 400, 0); h != 0 {
+		t.Fatalf("BandDest with no bounds h = %v, want 0", h)
+	}
+}
+
+// The bands of one frame must tile the bounds exactly as the whole-buffer draw
+// would: a gap between two adjacent bands is a line of stale pixels across the
+// window.
+func TestBandDestsOfAdjacentBandsMeetExactly(t *testing.T) {
+	const bufH, oh = 1600, 800.0
+	a := Band{Y: 100, H: 20}
+	b := Band{Y: 120, H: 30}
+	_, ay, _, ah := BandDest(a, bufH, 0, 0, 400, oh)
+	_, by, _, _ := BandDest(b, bufH, 0, 0, 400, oh)
+	if ay+ah != by {
+		t.Fatalf("band ends at %v and the next starts at %v; the seam is stale", ay+ah, by)
+	}
+}
