@@ -209,7 +209,7 @@ func TestLiveWaylandDamage(t *testing.T) {
 	assertPixel(t, img1, W/4, 3*H/4, 0, 0, 255, "BL after(blue)")
 
 	if data, err := os.ReadFile(cap1); err == nil {
-		_ = os.WriteFile("live-wayland-damage.png", data, 0o644)
+		_ = os.WriteFile(filepath.Join(captureDir(t), "live-wayland-damage.png"), data, 0o644)
 	}
 
 	if err := b.Close(); err != nil {

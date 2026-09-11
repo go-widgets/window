@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/go-widgets/window/internal/capture"
 )
 
 // captureDir is where a picture of somebody's screen may be written: somewhere
@@ -29,47 +31,16 @@ import (
 // runs is a guard no CI lane ever exercises.
 func captureDir(t *testing.T) string {
 	t.Helper()
-	const env = "WINDOW_CAPTURE_DIR"
-	dir, chose := os.Getenv(env), env
-	if dir == "" {
-		chose = "the default capture directory"
-		base, err := os.UserConfigDir()
-		if err != nil {
-			t.Fatalf("no user configuration directory to keep captures in: %v", err)
-		}
-		dir = filepath.Join(base, "go-widgets-window", "captures")
-	}
-	abs, err := filepath.Abs(dir)
+	dir, chose, err := capture.Dir()
 	if err != nil {
-		t.Fatalf("%s (%q): %v", chose, dir, err)
+		t.Fatalf("%s: %v", chose, err)
 	}
-	if root := repoRootOf(abs); root != "" {
-		t.Fatalf("%s (%q) is inside the git work tree at %s; a picture of somebody's "+
-			"screen must never be written where it can be committed", chose, abs, root)
-	}
-	if err := os.MkdirAll(abs, 0o755); err != nil {
-		t.Fatalf("%s (%q): %v", chose, abs, err)
-	}
-	return abs
+	return dir
 }
 
-// repoRootOf returns the work tree dir is inside, or "" if it is in none.
-//
-// A .git that is a FILE rather than a directory is a worktree, and commits just
-// as well — so both count.
-func repoRootOf(dir string) string {
-	for d := dir; ; {
-		if fi, err := os.Stat(filepath.Join(d, ".git")); err == nil &&
-			(fi.IsDir() || fi.Mode().IsRegular()) {
-			return d
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return ""
-		}
-		d = parent
-	}
-}
+// repoRootOf is kept as the name this package's tests read, over the one
+// implementation of the rule.
+func repoRootOf(dir string) string { return capture.RepoRootOf(dir) }
 
 // TestCaptureDirRefusesARepository is the assertion that matters: a guard nobody
 // has seen refuse is not a guard. It runs on every platform and every lane.
@@ -92,7 +63,7 @@ func TestCaptureDirRefusesARepository(t *testing.T) {
 // TestCaptureDirDefaultsOutsideEveryRepository checks the path a run with no
 // environment set actually takes.
 func TestCaptureDirDefaultsOutsideEveryRepository(t *testing.T) {
-	t.Setenv("WINDOW_CAPTURE_DIR", "")
+	t.Setenv(capture.Env, "")
 	dir := captureDir(t)
 	if root := repoRootOf(dir); root != "" {
 		t.Errorf("the default capture directory %s is inside the repository %s", dir, root)

@@ -81,7 +81,7 @@ func TestLiveWayland(t *testing.T) {
 
 	// Persist the capture as a build artifact.
 	if data, err := os.ReadFile(capture); err == nil {
-		_ = os.WriteFile("live-wayland-capture.png", data, 0o644)
+		_ = os.WriteFile(filepath.Join(captureDir(t), "live-wayland-capture.png"), data, 0o644)
 		t.Logf("saved capture to live-wayland-capture.png")
 	}
 
