@@ -434,3 +434,24 @@ func TestBandDestsOfAdjacentBandsMeetExactly(t *testing.T) {
 		t.Fatalf("band ends at %v and the next starts at %v; the seam is stale", ay+ah, by)
 	}
 }
+
+func TestTitled(t *testing.T) {
+	for _, k := range []toolkit.NativeKind{
+		toolkit.NativeButton, toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch,
+	} {
+		if !Titled(k) {
+			t.Errorf("%v has a caption and was not treated as having one", k)
+		}
+	}
+	// The other way is worse than useless: pushing a label's text as a title
+	// would replace what a text control is showing.
+	for _, k := range []toolkit.NativeKind{
+		toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry,
+		toolkit.NativePopUp, toolkit.NativeList, toolkit.NativeSlider,
+		toolkit.NativeProgress, toolkit.NativeTextView,
+	} {
+		if Titled(k) {
+			t.Errorf("%v has no caption and would have had its contents overwritten", k)
+		}
+	}
+}

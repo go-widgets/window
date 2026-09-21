@@ -441,3 +441,19 @@ func BandDest(b Band, bufH int, ox, oy, ow, oh float64) (x, y, w, h float64) {
 	perRow := oh / float64(bufH)
 	return ox, oy + float64(b.Y)*perRow, ow, float64(b.H) * perRow
 }
+
+// Titled says whether a control kind has a CAPTION that can be set -- the kinds
+// backed by an NSButton.
+//
+// It is a decision and not a detail: get it wrong the permissive way and a text
+// field's contents are replaced by its label; get it wrong the other way and a
+// button's caption is frozen for the life of the control, which is what it was.
+// A caption carrying a number -- a tab that says how many -- then says the
+// number it was born with for ever.
+func Titled(k toolkit.NativeKind) bool {
+	switch k {
+	case toolkit.NativeButton, toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
+		return true
+	}
+	return false
+}
