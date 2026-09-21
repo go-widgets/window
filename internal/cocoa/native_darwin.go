@@ -44,6 +44,7 @@ type liveControl struct {
 	onActivate func()
 
 	lastText  string
+	lastTitle string
 	lastBool  bool
 	lastNum   float64
 	lastItems []string
@@ -184,8 +185,17 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			lc.lastNum = spec.Number
 		}
 	}
-	// A Button's title is fixed at creation (NSButton has no stringValue), so it
-	// is not pushed here.
+	// A caption, for the kinds that HAVE one. It was not pushed at all, on the
+	// reasoning that an NSButton has no stringValue -- true, and beside the
+	// point: it has setTitle:, which appkit now exposes. Until it did, a button
+	// whose caption carries a number said that number once, at creation, and
+	// went on saying it: a consumer drawing filter tabs as buttons showed "All
+	// 68" and "Downloading 0" frozen at whatever they were when the window
+	// opened, while the list underneath updated perfectly well.
+	if Titled(spec.Kind) && spec.Text != lc.lastTitle {
+		_ = lc.ctl.SetTitle(spec.Text)
+		lc.lastTitle = spec.Text
+	}
 
 	lc.applyMenu(spec.Menu)
 	lc.applyImage(spec.Image, spec.ImageOnly)
