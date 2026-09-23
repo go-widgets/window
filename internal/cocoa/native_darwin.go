@@ -51,6 +51,11 @@ type liveControl struct {
 	lastNum   float64
 	lastItems []string
 	lastMenu  []toolkit.NativeMenuItem
+	// clip is the view this control is inside when only part of it shows, and
+	// lastClip what that part was. Nil when all of it shows, which is the
+	// ordinary case: a view per control would cost one for nothing.
+	clip      *appkit.Control
+	lastClip  toolkit.Rect
 	lastImage []byte
 	lastOnly  bool
 }
@@ -213,9 +218,51 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	lc.applyMenu(spec.Menu)
 	lc.applyImage(spec.Image, spec.ImageOnly)
 
-	r := spec.Rect
-	_ = lc.ctl.SetFrame(float64(r.X)/w.scale, float64(r.Y)/w.scale, float64(r.W)/w.scale, float64(r.H)/w.scale)
+	w.place(lc, spec)
 	_ = lc.ctl.SetHidden(!spec.Visible)
+}
+
+// place puts a control where the descriptor says, inside a clipping view when
+// only part of it shows.
+//
+// Clip was carried by every descriptor and honoured by NO backend -- cocoa,
+// x11, wayland, win32 and wasmbox were all at zero references. What a backend
+// could do was hide a control scrolled ENTIRELY out of view, since Visible is
+// derived from an empty clip; one scrolled HALF out was drawn whole, over
+// whatever the viewport is not.
+func (w *Window) place(lc *liveControl, spec toolkit.NativeControl) {
+	frame := func(c *appkit.Control, r toolkit.Rect) {
+		_ = c.SetFrame(float64(r.X)/w.scale, float64(r.Y)/w.scale,
+			float64(r.W)/w.scale, float64(r.H)/w.scale)
+	}
+	if !Clipped(spec.Rect, spec.Clip) {
+		// Back out of a clipping view it no longer needs: a control that has
+		// scrolled fully into view is an ordinary control again, and leaving it
+		// wrapped would keep a view nothing clips.
+		if lc.clip != nil {
+			_ = lc.ctl.Remove()
+			_ = lc.ctl.AddTo(w.view)
+			lc.clip.Close()
+			lc.clip, lc.lastClip = nil, toolkit.Rect{}
+		}
+		frame(lc.ctl, spec.Rect)
+		return
+	}
+	if lc.clip == nil {
+		c, err := appkit.NewClipView()
+		if err != nil || c == nil {
+			frame(lc.ctl, spec.Rect) // no clipping to be had; better whole than gone
+			return
+		}
+		_ = c.AddTo(w.view)
+		_ = lc.ctl.Remove()
+		_ = c.AddChild(lc.ctl)
+		lc.clip = c
+	}
+	outer, inner := ClipFrames(spec.Rect, spec.Clip)
+	frame(lc.clip, outer)
+	frame(lc.ctl, inner)
+	lc.lastClip = spec.Clip
 }
 
 // makeControl builds the AppKit control for a descriptor, wires its native
