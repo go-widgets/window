@@ -45,6 +45,8 @@ type liveControl struct {
 
 	lastText  string
 	lastTitle string
+	lastMin   float64
+	lastMax   float64
 	lastBool  bool
 	lastNum   float64
 	lastItems []string
@@ -151,11 +153,32 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 	lc.onNumber = spec.OnNumber
 	lc.onActivate = spec.OnActivate
 
+	// The ITEMS first, for every kind that has them, because a value is chosen
+	// among them: pushing a selection against the old list chooses the wrong
+	// entry -- or none, if the list has grown shorter. Only NativeList used to
+	// get this; a pop-up's, combo's or segmented control's choices were fixed
+	// for the life of the control.
+	// revalue says the value must be pushed again even when the application has
+	// not moved it: replacing the items drops the selection, and moving the
+	// bounds clamps whatever sits inside them.
+	revalue := false
+	if Listed(spec.Kind) && !sameStrings(spec.Items, lc.lastItems) {
+		_ = lc.ctl.SetItems(spec.Items)
+		lc.lastItems = append(lc.lastItems[:0], spec.Items...)
+		revalue = true
+	}
+	// The bounds, before the value that sits inside them: a value pushed
+	// against the old range is clamped by it.
+	if Ranged(spec.Kind) && (spec.Min != lc.lastMin || spec.Max != lc.lastMax) {
+		_ = lc.ctl.SetRange(spec.Min, spec.Max)
+		lc.lastMin, lc.lastMax = spec.Min, spec.Max
+		revalue = true
+	}
 	switch spec.Kind {
 	case toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativePopUp,
 		toolkit.NativeSearch, toolkit.NativeCombo, toolkit.NativeSegmented, toolkit.NativeTextView,
 		toolkit.NativeDate, toolkit.NativeColor:
-		if spec.Text != lc.lastText {
+		if spec.Text != lc.lastText || revalue {
 			_ = lc.ctl.SetStringValue(spec.Text)
 			lc.lastText = spec.Text
 		}
@@ -165,22 +188,12 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			lc.lastBool = spec.On
 		}
 	case toolkit.NativeSlider, toolkit.NativeStepper, toolkit.NativeProgress:
-		if spec.Number != lc.lastNum {
+		if spec.Number != lc.lastNum || revalue {
 			_ = lc.ctl.SetDouble(spec.Number)
 			lc.lastNum = spec.Number
 		}
 	case toolkit.NativeList:
-		// The ROWS first: a selection is an index into them, so pushing it
-		// against the old list would choose the wrong entry -- or none, if the
-		// list has grown shorter and the row no longer exists.
-		if !sameStrings(spec.Items, lc.lastItems) {
-			_ = lc.ctl.SetItems(spec.Items)
-			lc.lastItems = append(lc.lastItems[:0], spec.Items...)
-			// Replacing them drops the selection, so it is pushed again even
-			// when the application has not moved it.
-			lc.lastNum = -2
-		}
-		if spec.Number != lc.lastNum {
+		if spec.Number != lc.lastNum || revalue {
 			_ = lc.ctl.SetDouble(spec.Number)
 			lc.lastNum = spec.Number
 		}

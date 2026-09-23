@@ -455,3 +455,34 @@ func TestTitled(t *testing.T) {
 		}
 	}
 }
+
+func TestListedAndRanged(t *testing.T) {
+	for _, k := range []toolkit.NativeKind{
+		toolkit.NativeList, toolkit.NativePopUp, toolkit.NativeCombo, toolkit.NativeSegmented,
+	} {
+		if !Listed(k) {
+			t.Errorf("%v shows a list of choices and was not treated as having items", k)
+		}
+		if Ranged(k) {
+			t.Errorf("%v has no bounds and would have had a range pushed at it", k)
+		}
+	}
+	for _, k := range []toolkit.NativeKind{
+		toolkit.NativeSlider, toolkit.NativeStepper, toolkit.NativeProgress,
+	} {
+		if !Ranged(k) {
+			t.Errorf("%v has bounds and they would stay as they were built", k)
+		}
+		if Listed(k) {
+			t.Errorf("%v has no items and its value would be re-pushed for nothing", k)
+		}
+	}
+	// A plain button is neither, and must not be dragged into either path.
+	for _, k := range []toolkit.NativeKind{
+		toolkit.NativeButton, toolkit.NativeLabel, toolkit.NativeEntry, toolkit.NativeCheckbox,
+	} {
+		if Listed(k) || Ranged(k) {
+			t.Errorf("%v is neither listed nor ranged", k)
+		}
+	}
+}
