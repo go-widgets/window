@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"github.com/go-macos/appkit"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/nativeclip"
 )
 
 // This file is the Cocoa backing for toolkit's native-control seam. Each frame
@@ -235,7 +236,7 @@ func (w *Window) place(lc *liveControl, spec toolkit.NativeControl) {
 		_ = c.SetFrame(float64(r.X)/w.scale, float64(r.Y)/w.scale,
 			float64(r.W)/w.scale, float64(r.H)/w.scale)
 	}
-	if !Clipped(spec.Rect, spec.Clip) {
+	if !nativeclip.Clipped(spec.Rect, spec.Clip) {
 		// Back out of a clipping view it no longer needs: a control that has
 		// scrolled fully into view is an ordinary control again, and leaving it
 		// wrapped would keep a view nothing clips.
@@ -259,7 +260,7 @@ func (w *Window) place(lc *liveControl, spec toolkit.NativeControl) {
 		_ = c.AddChild(lc.ctl)
 		lc.clip = c
 	}
-	outer, inner := ClipFrames(spec.Rect, spec.Clip)
+	outer, inner := nativeclip.Frames(spec.Rect, spec.Clip)
 	frame(lc.clip, outer)
 	frame(lc.ctl, inner)
 	lc.lastClip = spec.Clip

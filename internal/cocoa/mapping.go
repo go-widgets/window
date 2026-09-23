@@ -482,32 +482,3 @@ func Ranged(k toolkit.NativeKind) bool {
 	}
 	return false
 }
-
-// Clipped says whether a control shows only PART of itself: its clip is a real
-// rectangle, and smaller than where it wants to be.
-//
-// Equal rectangles are not clipped -- that is the ordinary case and wrapping it
-// would cost a view per control for nothing. An empty clip is not clipped
-// either: the descriptor already reports that as not Visible, and the backend
-// hides it, which is cheaper and was the only part of this a backend could
-// honour before.
-func Clipped(rect, clip toolkit.Rect) bool {
-	if clip.W <= 0 || clip.H <= 0 {
-		return false
-	}
-	return clip != rect
-}
-
-// ClipFrames is where the clipping view goes and where the control goes inside
-// it: the view takes the visible rectangle, and the control keeps its full size
-// at the offset that puts the right part of it on show.
-//
-// The control is NOT resized to the clip. A button squashed to the sliver of it
-// that shows would redraw its label to fit and look like a different button;
-// moved behind a smaller window, it is the same button with part of it out of
-// sight, which is what scrolling means.
-func ClipFrames(rect, clip toolkit.Rect) (outer, inner toolkit.Rect) {
-	return clip, toolkit.Rect{
-		X: rect.X - clip.X, Y: rect.Y - clip.Y, W: rect.W, H: rect.H,
-	}
-}

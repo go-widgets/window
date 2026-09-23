@@ -9,6 +9,7 @@ package gtk
 import (
 	"github.com/go-gtk/gtk4"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/nativeclip"
 )
 
 // liveControl is one embedded GTK widget, the app callbacks for the frame, and
@@ -30,6 +31,12 @@ type liveControl struct {
 	lastNum  float64
 	items    []string      // a pop-up's/segmented's item strings
 	segments []gtk4.Widget // a segmented control's toggle buttons, in item order
+
+	// clip is the GtkFixed a partly-scrolled control sits in, 0 while the
+	// control shows whole. It exists only for as long as the control is
+	// clipped: a box per control, permanently, would cost a widget each for
+	// nothing.
+	clip gtk4.Widget
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -76,6 +83,12 @@ func (w *Window) syncNative(root toolkit.Widget) {
 	for key, lc := range w.native {
 		if !seen[key] {
 			lc.widget.Unparent()
+			if lc.clip != 0 {
+				// The box outlives its child otherwise: unparenting the control
+				// does not unparent what was wrapped around it.
+				lc.clip.Unparent()
+				lc.clip = 0
+			}
 			delete(w.native, key)
 		}
 	}
@@ -172,9 +185,55 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 		}
 	}
 
-	w.fixed.Move(lc.widget, w.pt(spec.Rect.X), w.pt(spec.Rect.Y))
-	lc.widget.SetSizeRequest(int(w.pt(spec.Rect.W)), int(w.pt(spec.Rect.H)))
+	w.place(lc, spec)
 	lc.widget.SetVisible(spec.Visible)
+}
+
+// place puts a control where this frame's descriptor says, showing only the part
+// of it the descriptor's Clip says is still inside whatever scrolls it.
+//
+// A control that shows whole sits directly in the window's GtkFixed. One that
+// shows only partly is moved into a box sized to the visible part, which clips
+// what its child draws, at an offset that puts the right part of the control on
+// show -- and moved back out, the box dropped, as soon as it shows whole again.
+//
+// The control is never resized to the visible part: a button squashed to the
+// sliver of it that shows would re-lay its label to fit and look like a
+// different button.
+func (w *Window) place(lc *liveControl, spec toolkit.NativeControl) {
+	lc.widget.SetSizeRequest(int(w.pt(spec.Rect.W)), int(w.pt(spec.Rect.H)))
+
+	if !nativeclip.Clipped(spec.Rect, spec.Clip) {
+		if lc.clip != 0 {
+			w.unclip(lc)
+		}
+		w.fixed.Move(lc.widget, w.pt(spec.Rect.X), w.pt(spec.Rect.Y))
+		return
+	}
+
+	outer, inner := nativeclip.Frames(spec.Rect, spec.Clip)
+	if lc.clip == 0 {
+		box := gtk4.FixedNew()
+		box.SetOverflowHidden(true)
+		lc.widget.Unparent()
+		w.fixed.Put(box, w.pt(outer.X), w.pt(outer.Y))
+		box.Put(lc.widget, w.pt(inner.X), w.pt(inner.Y))
+		lc.clip = box
+	} else {
+		w.fixed.Move(lc.clip, w.pt(outer.X), w.pt(outer.Y))
+		lc.clip.Move(lc.widget, w.pt(inner.X), w.pt(inner.Y))
+	}
+	lc.clip.SetSizeRequest(int(w.pt(outer.W)), int(w.pt(outer.H)))
+}
+
+// unclip takes a control that has scrolled fully back into view out of its
+// clipping box and drops the box. The control is re-parented to the window's
+// own GtkFixed; place moves it to where it belongs immediately afterwards.
+func (w *Window) unclip(lc *liveControl) {
+	lc.widget.Unparent()
+	w.fixed.Put(lc.widget, 0, 0)
+	lc.clip.Unparent()
+	lc.clip = 0
 }
 
 // makeControl builds the GTK widget for a descriptor, puts it in the fixed over
