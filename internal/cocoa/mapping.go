@@ -457,3 +457,28 @@ func Titled(k toolkit.NativeKind) bool {
 	}
 	return false
 }
+
+// Listed says whether a kind's Items mean anything: the kinds that show a list
+// of choices. A value is chosen AMONG them, so a frame that changes both must
+// push the items first -- pushing a selection against the old list chooses the
+// wrong one, or none when the list has grown shorter.
+func Listed(k toolkit.NativeKind) bool {
+	switch k {
+	case toolkit.NativeList, toolkit.NativePopUp, toolkit.NativeCombo, toolkit.NativeSegmented:
+		return true
+	}
+	return false
+}
+
+// Ranged says whether a kind has bounds. They were pushed nowhere, so a control
+// whose scale depends on something that changes -- a progress bar over a total
+// nobody knew yet -- kept the range it was born with, and its position then
+// meant something other than what the application intended. The sibling Win32
+// backend has always pushed them; this one had not.
+func Ranged(k toolkit.NativeKind) bool {
+	switch k {
+	case toolkit.NativeSlider, toolkit.NativeStepper, toolkit.NativeProgress:
+		return true
+	}
+	return false
+}
