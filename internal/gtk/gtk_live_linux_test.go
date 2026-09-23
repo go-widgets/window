@@ -194,16 +194,21 @@ func TestGTKBackendList(t *testing.T) {
 }
 
 // TestGTKBackendClipsAControlScrolledOutOfView is the on-device proof that a
-// native control shows only the part of itself its viewport still shows: it
-// drives a real GTK window through the four transitions -- fully in view, part
-// of the way out, fully back in, and reconciled away while clipped -- and reads
-// each one back through GTK, asking who holds the widget rather than trusting
-// the backend's own record of where it put it.
+// control scrolling out of view keeps being held -- by the same box, for its
+// whole life.
 //
-// ⛔ What it does not prove: that the pixels outside the box are withheld. That
-// is GTK's side of gtk_widget_set_overflow, witnessed in the binding's own live
-// test; the geometry that decides where box and control go is proven in
-// internal/nativeclip.
+// It exists because the first version of this backend re-parented the control
+// into a clipping box as it scrolled out, and GTK4 does not permit that:
+// gtk_widget_unparent drops the last reference and DESTROYS the widget. Nothing
+// failed. Put on the freed pointer reported nothing, the backend's own record
+// still named a box, and only asking GTK who held the control gave 0. So the
+// test asks GTK, at every transition, and holds the box to being the SAME one
+// throughout -- which is what "never re-parented" means.
+//
+// ⛔ What it does not prove: that the box is resized, that the control is offset
+// inside it, or that the pixels outside are withheld. The geometry is proven in
+// internal/nativeclip and the clipping itself in the gtk4 binding's own live
+// test; neither a widget's allocation nor its overflow is readable from here.
 func TestGTKBackendClipsAControlScrolledOutOfView(t *testing.T) {
 	win, err := Open("gtk clip test", 320, 200, nil, 1)
 	if err != nil {
@@ -226,60 +231,53 @@ func TestGTKBackendClipsAControlScrolledOutOfView(t *testing.T) {
 	}
 	win.root = surf
 
-	// Fully in view: no box, and GTK says the window's own fixed holds it.
 	win.frame()
 	lc := win.native["row"]
 	if lc == nil {
 		t.Fatal("no GTK control created for the row descriptor")
 	}
-	if lc.clip != 0 {
-		t.Error("a control that shows whole was wrapped in a clipping box, " +
-			"which costs a widget per control for nothing")
-	}
-	if got := lc.widget.Parent(); got != win.fixed {
-		t.Errorf("an unclipped control is held by %d, want the window's fixed %d", got, win.fixed)
+	box := lc.box
+	if box == 0 {
+		t.Fatal("the control was created with no box to clip it")
 	}
 
-	// Scrolled most of the way out: a box appears and GTK says it holds the
-	// control now. The control keeps its own size -- it is not squashed.
+	held := func(when string) {
+		t.Helper()
+		if got := lc.widget.Parent(); got != box {
+			t.Errorf("%s: the control is held by %d, want its box %d "+
+				"(0 means GTK destroyed it)", when, got, box)
+		}
+		if got := box.Parent(); got != win.fixed {
+			t.Errorf("%s: the box is held by %d, want the window's fixed %d",
+				when, got, win.fixed)
+		}
+		if lc.box != box {
+			t.Errorf("%s: the control changed boxes (%d -> %d): it must never be "+
+				"re-parented", when, box, lc.box)
+		}
+	}
+
+	held("fully in view")
+
 	clip = tail
 	win.frame()
-	if lc.clip == 0 {
-		t.Fatal("a control showing only part of itself was not clipped")
-	}
-	box := lc.clip
-	if got := lc.widget.Parent(); got != box {
-		t.Errorf("the clipped control is held by %d, want its clipping box %d", got, box)
-	}
+	held("scrolled most of the way out")
 
-	// Fully back in view: the box is dropped, and GTK says nothing holds it.
 	clip = full
 	win.frame()
-	if lc.clip != 0 {
-		t.Error("the clipping box outlived the scroll that needed it")
-	}
-	if got := lc.widget.Parent(); got != win.fixed {
-		t.Errorf("after scrolling back into view the control is held by %d, "+
-			"want the window's fixed %d", got, win.fixed)
-	}
-	if got := box.Parent(); got != 0 {
-		t.Errorf("the dropped clipping box is still held by %d", got)
-	}
+	held("scrolled fully back in")
 
-	// Reconciled away WHILE clipped: the box must go too. Unparenting the
-	// control does not unparent what was wrapped around it.
+	// Reconciled away while clipped: the box goes, and takes the control with
+	// it. Unparenting the control separately would destroy it first and leave
+	// the box holding a freed pointer.
 	clip = tail
 	win.frame()
-	left := lc.clip
-	if left == 0 {
-		t.Fatal("the control was not clipped again")
-	}
 	surf.Controls = func() []toolkit.NativeControl { return nil }
 	win.frame()
 	if _, ok := win.native["row"]; ok {
 		t.Error("control was not reconciled away after the descriptor disappeared")
 	}
-	if got := left.Parent(); got != 0 {
-		t.Errorf("the clipping box of a removed control is still held by %d", got)
+	if got := box.Parent(); got != 0 {
+		t.Errorf("the box of a removed control is still held by %d", got)
 	}
 }
