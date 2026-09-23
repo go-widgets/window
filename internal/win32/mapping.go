@@ -494,3 +494,24 @@ func PackBGRARect(dst, src []byte, width, height, x, y, w0, h0 int) {
 		}
 	}
 }
+
+// Titled says whether a control kind has a CAPTION that can be set -- the kinds
+// this backend creates from the "BUTTON" class.
+//
+// It is a decision and not a detail: get it wrong the permissive way and an
+// EDIT's contents are replaced by its label; get it wrong the other way and a
+// button's caption is frozen for the life of the control. A caption carrying a
+// number -- a tab that says how many -- then says the number it was born with
+// for ever, while the list underneath updates perfectly well.
+//
+// internal/cocoa has a twin, and they agree. The rule is stated in both because
+// the question is about the control class each backend HOSTS a kind with, which
+// is that backend's own business: a kind that is a button here need not be one
+// there, and then the two answers must differ.
+func Titled(k toolkit.NativeKind) bool {
+	switch k {
+	case toolkit.NativeButton, toolkit.NativeCheckbox, toolkit.NativeRadio, toolkit.NativeSwitch:
+		return true
+	}
+	return false
+}

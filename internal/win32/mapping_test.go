@@ -442,3 +442,29 @@ func TestPackBGRARect(t *testing.T) {
 		t.Fatalf("PackBGRARect short dst = %v", shortDst)
 	}
 }
+
+// TestTitledNamesTheKindsWithACaption pins the decision both ways round, because
+// both ways round are damaging: a kind wrongly called titled has its VALUE
+// overwritten by its label, and a kind wrongly left out has its caption frozen
+// for the life of the control -- which is what a tab showing a count did.
+func TestTitledNamesTheKindsWithACaption(t *testing.T) {
+	for _, k := range []toolkit.NativeKind{
+		toolkit.NativeButton, toolkit.NativeCheckbox,
+		toolkit.NativeRadio, toolkit.NativeSwitch,
+	} {
+		if !Titled(k) {
+			t.Errorf("kind %v is hosted as a BUTTON and its caption must be pushed, "+
+				"or it says whatever it was born saying for ever", k)
+		}
+	}
+	for _, k := range []toolkit.NativeKind{
+		toolkit.NativeEntry, toolkit.NativeSecureEntry, toolkit.NativeSearch,
+		toolkit.NativeTextView, toolkit.NativeCombo, toolkit.NativePopUp,
+		toolkit.NativeLabel, toolkit.NativeSlider, toolkit.NativeProgress,
+	} {
+		if Titled(k) {
+			t.Errorf("kind %v takes its VALUE through its text: calling it titled "+
+				"would overwrite what the user typed with its label", k)
+		}
+	}
+}

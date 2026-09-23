@@ -203,6 +203,11 @@ type liveControl struct {
 	// this geometry does -- which is when EITHER the control or its clip moves.
 	lastRegion toolkit.Rect
 	clipped    bool
+
+	// lastTitle is tracked apart from lastText: a checkbox's caption and its
+	// checked state are two independent things, and lastText is the value for
+	// the kinds whose value IS their text.
+	lastTitle string
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -317,8 +322,15 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			lc.lastBool = spec.On
 		}
 	}
-	// A Button's title is fixed at creation, mirroring the Cocoa backend, so it
-	// is not pushed here.
+	// A caption is pushed here and not in the switch above: the checkbox-like
+	// kinds already took their STATE there, and their caption is a second,
+	// independent thing that also changes. (This used to say a button's title
+	// was fixed at creation "mirroring the Cocoa backend" -- a mirror that
+	// stopped holding when Cocoa's was fixed, and was never a reason anyway.)
+	if Titled(spec.Kind) && spec.Text != lc.lastTitle {
+		setWindowText(lc.hwnd, spec.Text)
+		lc.lastTitle = spec.Text
+	}
 
 	x, y, cw, ch := w.controlRect(spec.Rect)
 	_ = win32.SetWindowPos(win32.HWND(lc.hwnd), 0, x, y, cw, ch, swpNoZOrder|swpNoActivate)
