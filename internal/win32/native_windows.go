@@ -43,6 +43,7 @@ import (
 
 	"github.com/go-mswin/win32"
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/nativeclip"
 )
 
 // Win32 messages, window/control styles and control messages (winuser.h,
@@ -194,6 +195,14 @@ type liveControl struct {
 	shown    bool
 
 	sliderMin, sliderMax float64 // the trackbar's float range, for pos<->value
+
+	// lastRegion is the region currently confining this control, in the
+	// control's own coordinates, and clipped says whether there is one.
+	// Rebuilding a GDI region every frame would burn a handle per frame for a
+	// rectangle that hardly ever changes, so the region is rebuilt only when
+	// this geometry does -- which is when EITHER the control or its clip moves.
+	lastRegion toolkit.Rect
+	clipped    bool
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -313,6 +322,7 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 
 	x, y, cw, ch := w.controlRect(spec.Rect)
 	_ = win32.SetWindowPos(win32.HWND(lc.hwnd), 0, x, y, cw, ch, swpNoZOrder|swpNoActivate)
+	w.clipTo(lc, spec)
 
 	if spec.Visible != lc.shown {
 		cmd := int32(swHide)
@@ -322,6 +332,48 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 		procShowWindow.Call(lc.hwnd, uintptr(cmd))
 		lc.shown = spec.Visible
 	}
+}
+
+// clipTo shows only the part of a control that its viewport still shows, by
+// confining the control's own window to a region covering that part. Windows
+// otherwise draws a child control whole, past the viewport it belongs to.
+//
+// The control is NOT resized to the visible part: a button squashed to the
+// sliver of it that shows would re-lay its label to fit and look like a
+// different button. It keeps its size and the system withholds the rest.
+//
+// A control that shows whole has its region taken off rather than set to its
+// full rectangle -- an unconfined window is the system's cheap path, and it is
+// also the state every control starts in.
+func (w *Window) clipTo(lc *liveControl, spec toolkit.NativeControl) {
+	if !nativeclip.Clipped(spec.Rect, spec.Clip) {
+		if lc.clipped {
+			_ = win32.SetWindowRgn(win32.HWND(lc.hwnd), 0, true)
+			lc.clipped = false
+			lc.lastRegion = toolkit.Rect{}
+		}
+		return
+	}
+
+	region := nativeclip.Region(spec.Rect, spec.Clip)
+	if lc.clipped && region == lc.lastRegion {
+		return
+	}
+	x, y, rw, rh := w.controlRect(region)
+	rgn, err := win32.CreateRectRgn(x, y, x+rw, y+rh)
+	if err != nil {
+		return
+	}
+	if err := win32.SetWindowRgn(win32.HWND(lc.hwnd), rgn, true); err != nil {
+		// Ownership only passes to the system on success, so this one is still
+		// ours to destroy -- and leaking it would burn a GDI handle per frame.
+		win32.DeleteObject(win32.HANDLE(rgn))
+		return
+	}
+	// The region now belongs to the system, which frees it with the window (or
+	// when the next one replaces it). Deliberately not deleted here.
+	lc.clipped = true
+	lc.lastRegion = region
 }
 
 // makeControl builds the Win32 child control for a descriptor, parents it to the

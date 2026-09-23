@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/go-macos/objc v0.10.2
-	github.com/go-mswin/win32 v0.4.0
+	github.com/go-mswin/win32 v0.5.0
 	github.com/go-opentype/opentype v0.12.0
 	github.com/go-widgets/android v0.13.1
 	github.com/go-widgets/painter v0.13.0
@@ -13,7 +13,7 @@ require (
 )
 
 require (
-	github.com/go-gtk/gtk4 v0.6.0
+	github.com/go-gtk/gtk4 v0.8.0
 	github.com/go-macos/virtualdisplay v0.3.0
 )
 

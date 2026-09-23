@@ -71,7 +71,7 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: go test -race -timeout 300s .
-      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa + internal/win32)
+      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa + internal/win32 + internal/nativeclip)
         shell: bash
         # -race needs cgo, so this step (and only this step) enables it. All five
         # sovereign layers stay CGO-free, proven by the CGO=0 arch matrix below.
@@ -82,10 +82,13 @@ jobs:
         # mapping.go) — 100% by construction. The cocoa AppKit glue is proven live
         # on the darwin lane below; the Win32 glue is proven live on a Windows 11
         # arm64 VM (internal/win32/win32-capture-2026-08-10.png).
+        # internal/nativeclip is OS-independent throughout: it is the clipping
+        # geometry all three native-control backends share, and the one place
+        # the rule that decides WHETHER to clip is written down.
         env:
           CGO_ENABLED: "1"
         run: |
-          for pkg in internal/x11 internal/wayland internal/wasmbox internal/cocoa internal/win32; do
+          for pkg in internal/x11 internal/wayland internal/wasmbox internal/cocoa internal/win32 internal/nativeclip; do
             go test -race -timeout 300s -coverprofile=cover.out "./$pkg/"
             go tool cover -func=cover.out | tail -n 60
             cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
