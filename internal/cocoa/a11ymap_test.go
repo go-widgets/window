@@ -43,10 +43,23 @@ func TestAXRole(t *testing.T) {
 		{toolkit.RoleAlert, "AXSheet"},
 		{toolkit.RoleDialog, "AXSheet"},
 		{toolkit.RoleTooltip, "AXHelpTag"},
-		// Unmapped and unknown roles both fall back to the container role
-		// rather than to a wrong announcement.
+		{toolkit.RoleListItem, "AXRow"},
+		{toolkit.RoleTree, "AXOutline"},
+		{toolkit.RoleTablist, "AXTabGroup"},
+		{toolkit.RoleTab, "AXRadioButton"},
+		{toolkit.RoleLink, "AXLink"},
+		{toolkit.RoleHeading, "AXStaticText"},
+		// These return the container role DELIBERATELY: AppKit has no landmark,
+		// log or document role, so a group whose meaning is its contents is the
+		// only honest answer. A role this table has never seen returns the same
+		// thing, which is why TestEveryToolkitRoleIsDecided exists: the two
+		// cases are indistinguishable from outside.
 		{toolkit.RoleGroup, "AXGroup"},
 		{toolkit.RoleDocument, "AXGroup"},
+		{toolkit.RoleBanner, "AXGroup"},
+		{toolkit.RoleNavigation, "AXGroup"},
+		{toolkit.RoleLog, "AXGroup"},
+		{toolkit.RolePresentation, "AXGroup"},
 		{toolkit.Role("no-such-role"), "AXGroup"},
 	}
 	for _, c := range cases {
@@ -198,5 +211,64 @@ func TestA11yShouldPublish(t *testing.T) {
 	// A changed tree past the interval publishes.
 	if !a11yShouldPublish(false, true, 8, 7, mi, mi) {
 		t.Fatal("a changed tree past the interval must publish")
+	}
+}
+
+// containerByDesign are the roles AXRole answers with the container role on
+// purpose, because AppKit has nothing better: ARIA landmarks, a log (liveness
+// is not a role on macOS), a document (AXWebArea is WebKit's, not AppKit's),
+// a plain group, and presentation -- which never reaches a reader anyway, since
+// it carries no name and A11ySkip drops it.
+var containerByDesign = map[toolkit.Role]bool{
+	toolkit.RoleGroup:        true,
+	toolkit.RoleBanner:       true,
+	toolkit.RoleNavigation:   true,
+	toolkit.RoleDocument:     true,
+	toolkit.RoleLog:          true,
+	toolkit.RolePresentation: true,
+}
+
+// TestEveryToolkitRoleIsDecided is the guard that would have caught RoleListItem.
+//
+// Every row of every list carries it, and AXRole had no case for it, so every
+// row was announced as a group -- for months, invisibly, because a missing case
+// and a deliberate container answer return the SAME string. Nothing could tell
+// them apart, so nothing did.
+//
+// This test can: it names all the roles the toolkit defines, and demands that
+// each either maps to a real AppKit role or is listed above as deliberate. The
+// count is asserted too -- a role added upstream lands in neither list, the
+// count fails, and somebody decides what it should announce as instead of the
+// silence that hid the last one.
+func TestEveryToolkitRoleIsDecided(t *testing.T) {
+	all := []toolkit.Role{
+		toolkit.RoleAlert, toolkit.RoleBanner, toolkit.RoleButton,
+		toolkit.RoleCheckbox, toolkit.RoleCombobox, toolkit.RoleDialog,
+		toolkit.RoleDocument, toolkit.RoleGrid, toolkit.RoleGroup,
+		toolkit.RoleHeading, toolkit.RoleImg, toolkit.RoleLink,
+		toolkit.RoleList, toolkit.RoleListItem, toolkit.RoleListbox,
+		toolkit.RoleLog, toolkit.RoleMenu, toolkit.RoleMenuBar,
+		toolkit.RoleMeter, toolkit.RoleNavigation, toolkit.RolePresentation,
+		toolkit.RoleProgressbar, toolkit.RoleRadio, toolkit.RoleSearchbox,
+		toolkit.RoleSlider, toolkit.RoleSpinbutton, toolkit.RoleStatus,
+		toolkit.RoleSwitch, toolkit.RoleTab, toolkit.RoleTablist,
+		toolkit.RoleText, toolkit.RoleTextbox, toolkit.RoleToolbar,
+		toolkit.RoleTooltip, toolkit.RoleTree,
+	}
+	const known = 35
+	if len(all) != known {
+		t.Fatalf("this list holds %d roles, not %d: keep it whole, it is the "+
+			"only thing standing between a new role and a silent AXGroup", len(all), known)
+	}
+	seen := make(map[toolkit.Role]bool, len(all))
+	for _, r := range all {
+		if seen[r] {
+			t.Errorf("role %q is listed twice, so the count means less than it looks", r)
+		}
+		seen[r] = true
+		if AXRole(r) == "AXGroup" && !containerByDesign[r] {
+			t.Errorf("role %q announces as a plain group: either give it an AppKit "+
+				"role or say in containerByDesign that AppKit has none", r)
+		}
 	}
 }

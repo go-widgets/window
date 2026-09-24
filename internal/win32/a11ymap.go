@@ -24,28 +24,30 @@ import (
 // UI Automation control type identifiers. A wrong number renames every element
 // for the user, so these are the documented values rather than a guess.
 const (
-	CtButton   = 50000
-	CtEdit     = 50004
-	CtImage    = 50006
-	CtListItem = 50007
-	CtList     = 50008
-	CtMenu     = 50009
-	CtMenuBar  = 50010
-	CtProgress = 50012
-	CtSlider   = 50015
-	CtSpinner  = 50016
-	CtTab      = 50018
-	CtText     = 50020
-	CtToolBar  = 50021
-	CtTree     = 50023
-	CtGroup    = 50026
-	CtDataGrid = 50028
-	CtDocument = 50030
-	CtWindow   = 50032
-	CtPane     = 50033
-	CtCheckBox = 50002
-	CtComboBox = 50003
-	CtRadio    = 50013
+	CtButton    = 50000
+	CtEdit      = 50004
+	CtHyperlink = 50005
+	CtImage     = 50006
+	CtListItem  = 50007
+	CtList      = 50008
+	CtMenu      = 50009
+	CtMenuBar   = 50010
+	CtProgress  = 50012
+	CtSlider    = 50015
+	CtSpinner   = 50016
+	CtTab       = 50018
+	CtTabItem   = 50019
+	CtText      = 50020
+	CtToolBar   = 50021
+	CtToolTip   = 50022
+	CtTree      = 50023
+	CtGroup     = 50026
+	CtDataGrid  = 50028
+	CtDocument  = 50030
+	CtWindow    = 50032
+	CtCheckBox  = 50002
+	CtComboBox  = 50003
+	CtRadio     = 50013
 )
 
 // UIAControlType maps a toolkit role to its UI Automation control type.
@@ -74,6 +76,21 @@ func UIAControlType(r toolkit.Role) int32 {
 		return CtImage
 	case toolkit.RoleList, toolkit.RoleListbox:
 		return CtList
+	case toolkit.RoleListItem:
+		return CtListItem
+	case toolkit.RoleLink:
+		return CtHyperlink
+	case toolkit.RoleTooltip:
+		return CtToolTip
+	case toolkit.RoleAlert, toolkit.RoleDialog:
+		// UI Automation has no dialog type: a dialog IS a window to it, which
+		// is also what a screen reader announces when one opens.
+		return CtWindow
+	case toolkit.RoleHeading:
+		// Nor a heading type. UIA carries heading depth as a property of text,
+		// not as a control type; CtHeader is a TABLE header and would be a
+		// wrong announcement.
+		return CtText
 	case toolkit.RoleGrid:
 		return CtDataGrid
 	case toolkit.RoleToolbar:
@@ -86,10 +103,20 @@ func UIAControlType(r toolkit.Role) int32 {
 		return CtProgress
 	case toolkit.RoleTablist:
 		return CtTab
+	case toolkit.RoleTab:
+		return CtTabItem
 	case toolkit.RoleTree:
 		return CtTree
 	case toolkit.RoleDocument:
 		return CtDocument
+	case toolkit.RoleGroup, toolkit.RoleBanner, toolkit.RoleNavigation,
+		toolkit.RoleLog, toolkit.RolePresentation:
+		// Named, not left to the default, so that the default means ONE thing:
+		// a role this table has never been shown. UI Automation has no landmark
+		// and no log control type -- it carries liveness as a PROPERTY, not a
+		// type -- and RolePresentation never gets this far (no name, so
+		// A11ySkip drops it).
+		return CtGroup
 	default:
 		return CtGroup
 	}

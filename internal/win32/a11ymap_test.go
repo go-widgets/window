@@ -42,10 +42,26 @@ func TestUIAControlType(t *testing.T) {
 		{toolkit.RoleTablist, CtTab},
 		{toolkit.RoleTree, CtTree},
 		{toolkit.RoleDocument, CtDocument},
-		// Unmapped and unknown both fall back to the container type rather than
-		// to a wrong announcement.
+		{toolkit.RoleTab, CtTabItem},
+		{toolkit.RoleListItem, CtListItem},
+		{toolkit.RoleLink, CtHyperlink},
+		{toolkit.RoleTooltip, CtToolTip},
+		// A dialog IS a window to UI Automation, which has no dialog type -- and
+		// a window is also what a reader announces when one opens. This row used
+		// to say CtGroup: the test was pinning the gap.
+		{toolkit.RoleAlert, CtWindow},
+		{toolkit.RoleDialog, CtWindow},
+		// UIA carries heading depth as a property of text, not as a type, and
+		// CtHeader is a TABLE header -- it would rename the element.
+		{toolkit.RoleHeading, CtText},
+		// These return the container type DELIBERATELY. A role this table has
+		// never seen returns the same one, which is why
+		// TestEveryToolkitRoleIsDecided exists.
 		{toolkit.RoleGroup, CtGroup},
-		{toolkit.RoleAlert, CtGroup},
+		{toolkit.RoleBanner, CtGroup},
+		{toolkit.RoleNavigation, CtGroup},
+		{toolkit.RoleLog, CtGroup},
+		{toolkit.RolePresentation, CtGroup},
 		{toolkit.Role("no-such-role"), CtGroup},
 	}
 	for _, c := range cases {
@@ -126,6 +142,61 @@ func TestParsePressPointRefusesGarbage(t *testing.T) {
 	for _, s := range []string{"", "25", "a,40", "25,b", "25;40"} {
 		if x, y, ok := ParsePressPoint(s); ok {
 			t.Errorf("ParsePressPoint(%q) = %d,%d ok=true, want refusal", s, x, y)
+		}
+	}
+}
+
+// containerByDesign are the roles UIAControlType answers with the container type
+// on purpose: ARIA landmarks and a log, for which UI Automation has no control
+// type at all (it carries liveness as a PROPERTY), a plain group, and
+// presentation -- which never reaches a reader, carrying no name.
+var containerByDesign = map[toolkit.Role]bool{
+	toolkit.RoleGroup:        true,
+	toolkit.RoleBanner:       true,
+	toolkit.RoleNavigation:   true,
+	toolkit.RoleLog:          true,
+	toolkit.RolePresentation: true,
+}
+
+// TestEveryToolkitRoleIsDecided is the guard that would have caught RoleListItem
+// -- which this package had even DECLARED a control type for (CtListItem, the
+// documented 50007) and never returned. The constant sat there unused while
+// every row of every list was announced as a group.
+//
+// A missing case and a deliberate container answer return the same number, so
+// nothing could tell them apart. This test can: every role the toolkit defines
+// must either map to a real UIA control type or be listed above as deliberate,
+// and the count is asserted so a role added upstream fails here rather than
+// disappearing into the default.
+func TestEveryToolkitRoleIsDecided(t *testing.T) {
+	all := []toolkit.Role{
+		toolkit.RoleAlert, toolkit.RoleBanner, toolkit.RoleButton,
+		toolkit.RoleCheckbox, toolkit.RoleCombobox, toolkit.RoleDialog,
+		toolkit.RoleDocument, toolkit.RoleGrid, toolkit.RoleGroup,
+		toolkit.RoleHeading, toolkit.RoleImg, toolkit.RoleLink,
+		toolkit.RoleList, toolkit.RoleListItem, toolkit.RoleListbox,
+		toolkit.RoleLog, toolkit.RoleMenu, toolkit.RoleMenuBar,
+		toolkit.RoleMeter, toolkit.RoleNavigation, toolkit.RolePresentation,
+		toolkit.RoleProgressbar, toolkit.RoleRadio, toolkit.RoleSearchbox,
+		toolkit.RoleSlider, toolkit.RoleSpinbutton, toolkit.RoleStatus,
+		toolkit.RoleSwitch, toolkit.RoleTab, toolkit.RoleTablist,
+		toolkit.RoleText, toolkit.RoleTextbox, toolkit.RoleToolbar,
+		toolkit.RoleTooltip, toolkit.RoleTree,
+	}
+	const known = 35
+	if len(all) != known {
+		t.Fatalf("this list holds %d roles, not %d: keep it whole, it is the "+
+			"only thing standing between a new role and a silent CtGroup", len(all), known)
+	}
+	seen := make(map[toolkit.Role]bool, len(all))
+	for _, r := range all {
+		if seen[r] {
+			t.Errorf("role %q is listed twice, so the count means less than it looks", r)
+		}
+		seen[r] = true
+		if UIAControlType(r) == CtGroup && !containerByDesign[r] {
+			t.Errorf("role %q announces as a plain group: either give it a UIA "+
+				"control type or say in containerByDesign that UIA has none", r)
 		}
 	}
 }
