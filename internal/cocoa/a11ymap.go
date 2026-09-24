@@ -100,6 +100,25 @@ func AXRole(r toolkit.Role) string {
 		return "AXImage"
 	case toolkit.RoleList, toolkit.RoleListbox:
 		return "AXList"
+	case toolkit.RoleListItem:
+		return "AXRow"
+	case toolkit.RoleTree:
+		return "AXOutline"
+	case toolkit.RoleTablist:
+		return "AXTabGroup"
+	case toolkit.RoleTab:
+		// Surprising and correct: AppKit publishes an NSTabViewItem as a RADIO
+		// BUTTON inside the tab group, with "tab" only as its role
+		// description. Announcing it any other way would make our tabs sound
+		// unlike every other Mac application's.
+		return "AXRadioButton"
+	case toolkit.RoleLink:
+		return "AXLink"
+	case toolkit.RoleHeading:
+		// AppKit has no heading role -- AXHeading is WebKit's, not
+		// NSAccessibility's. Static text at least announces the words; as a
+		// group VoiceOver said "group" first and the heading second.
+		return "AXStaticText"
 	case toolkit.RoleGrid:
 		return "AXTable"
 	case toolkit.RoleToolbar:
@@ -116,6 +135,14 @@ func AXRole(r toolkit.Role) string {
 		return "AXSheet"
 	case toolkit.RoleTooltip:
 		return "AXHelpTag"
+	case toolkit.RoleGroup, toolkit.RoleBanner, toolkit.RoleNavigation,
+		toolkit.RoleDocument, toolkit.RoleLog, toolkit.RolePresentation:
+		// Named, not left to the default, so that the default means ONE thing:
+		// a role this table has never been shown. AppKit has no landmark, no
+		// log and no document role -- a group whose meaning is its contents is
+		// the honest answer for all of these, and RolePresentation never gets
+		// this far anyway (it carries no name, so A11ySkip drops it).
+		return "AXGroup"
 	default:
 		return "AXGroup"
 	}
