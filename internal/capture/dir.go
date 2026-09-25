@@ -11,9 +11,9 @@
 package capture
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
+
+	"github.com/go-appdirs/outdir"
 )
 
 // Env names the directory override.
@@ -34,48 +34,33 @@ const Env = "WINDOW_CAPTURE_DIR"
 // gone before anyone can open it. The default is the user's own configuration
 // directory.
 func Dir() (dir, chose string, err error) {
-	dir, chose = os.Getenv(Env), Env
-	if dir == "" {
-		chose = "the default capture directory"
-		base, uerr := os.UserConfigDir()
-		if uerr != nil {
-			return "", chose, fmt.Errorf("no user configuration directory to keep captures in: %w", uerr)
-		}
-		dir = filepath.Join(base, "go-widgets-window", "captures")
+	// ⛔ The decision moved to go-appdirs/outdir, which owns the question and
+	// is now used by go-macos/screencapture and go-mswin/screencapture too.
+	// The sixty lines that were here also lived in both of those and in
+	// go-aiquota/tray, and adopting the shared one CLOSED A HOLE: this copy
+	// walked up from the path as given, resolving nothing, so a capture
+	// directory reached through a symbolic link found no work tree and was
+	// accepted. outdir resolves the path first and refuses it.
+	//
+	// The phrase stays here because it is this package's, not outdir's: an
+	// error a person can act on has to say WHICH choice produced the path.
+	chose = "the default capture directory"
+	if os.Getenv(Env) != "" {
+		chose = Env
 	}
-	// Not reachable in an ordinary run -- Abs only fails when the working
-	// directory cannot be read, and the default is already absolute -- but a
-	// relative override with a deleted cwd would reach it, and answering a
-	// half-resolved path is exactly how a capture escapes its directory.
-	abs, err := filepath.Abs(dir)
+	dir, err = outdir.Ensure(outdir.Spec{
+		App: "go-widgets-window",
+		Env: Env,
+		Sub: "captures",
+	})
 	if err != nil {
-		return "", chose, fmt.Errorf("%s (%q): %w", chose, dir, err)
+		return "", chose, err
 	}
-	if root := RepoRootOf(abs); root != "" {
-		return "", chose, fmt.Errorf("%s (%q) is inside the git work tree at %s; a picture "+
-			"of somebody's screen must never be written where it can be committed",
-			chose, abs, root)
-	}
-	if err := os.MkdirAll(abs, 0o755); err != nil {
-		return "", chose, fmt.Errorf("%s (%q): %w", chose, abs, err)
-	}
-	return abs, chose, nil
+	return dir, chose, nil
 }
 
 // RepoRootOf returns the work tree dir is inside, or "" if it is in none.
 //
 // A .git that is a FILE rather than a directory is a worktree, and commits just
 // as well — so both count.
-func RepoRootOf(dir string) string {
-	for d := dir; ; {
-		if fi, err := os.Stat(filepath.Join(d, ".git")); err == nil &&
-			(fi.IsDir() || fi.Mode().IsRegular()) {
-			return d
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return ""
-		}
-		d = parent
-	}
-}
+func RepoRootOf(dir string) string { return outdir.RepoRootOf(dir) }

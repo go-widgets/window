@@ -13,6 +13,7 @@ require (
 )
 
 require (
+	github.com/go-appdirs/outdir v0.2.0
 	github.com/go-gtk/gtk4 v0.8.0
 	github.com/go-macos/virtualdisplay v0.3.0
 )
