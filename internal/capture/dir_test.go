@@ -83,8 +83,23 @@ func TestRepoRootOf(t *testing.T) {
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if root := RepoRootOf(deep); root != wt {
-		t.Errorf("RepoRootOf(worktree) = %q, want %q", root, wt)
+	// ⛔ Compared after resolving both sides, not as strings. outdir answers
+	// with the RESOLVED work tree, and t.TempDir() hands back a path through
+	// a link on macOS -- /var is /private/var -- so the two name the same
+	// directory and differ as text. The question this test asks is whether
+	// the work tree was FOUND; pinning the spelling of the answer made it
+	// fail on a correct one.
+	wantResolved, err := filepath.EvalSymlinks(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := RepoRootOf(deep)
+	gotResolved, err := filepath.EvalSymlinks(got)
+	if err != nil {
+		t.Fatalf("RepoRootOf(worktree) = %q: %v", got, err)
+	}
+	if gotResolved != wantResolved {
+		t.Errorf("RepoRootOf(worktree) = %q, want the work tree at %q", got, wt)
 	}
 }
 

@@ -8,6 +8,8 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/ebitengine/purego v0.11.1 h1:2zpWRSQNVKN4eKsKO9eM1ILDgWfYMY9GwqRmK6XeQ/0=
 github.com/ebitengine/purego v0.11.1/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/go-appdirs/outdir v0.2.0 h1:1TdK1U7d0kaHMIYp3BJkrVJwLxBJtxiDB1eOMTdi0As=
+github.com/go-appdirs/outdir v0.2.0/go.mod h1:A/F6uTrvD3bMiof2UXK5FUNemDN1tC7vOZxi8LdrhJs=
 github.com/go-crdt/collab v0.62.0 h1:5N4rp4CHqFvCGUwKpWfD6K0pBH2vT11dyXjHJnY5gxw=
 github.com/go-crdt/collab v0.62.0/go.mod h1:By0a0D53ql9VRU45Tl/uim09NaOuUEIiTflQ4QWo8Pc=
 github.com/go-crdt/crdt v0.49.0 h1:5usO+6ugN8qNfuEDC9m7X5X0Msq097AO8oLgOQZ9bfQ=
