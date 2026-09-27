@@ -5,10 +5,10 @@ go 1.26.4
 require (
 	github.com/go-macos/objc v0.10.2
 	github.com/go-mswin/win32 v0.5.0
-	github.com/go-opentype/opentype v0.12.0
+	github.com/go-opentype/opentype v0.13.0
 	github.com/go-widgets/android v0.13.1
 	github.com/go-widgets/painter v0.13.0
-	github.com/go-widgets/toolkit v0.320.0
+	github.com/go-widgets/toolkit v0.321.0
 	github.com/godbus/dbus/v5 v5.2.2
 )
 
@@ -23,8 +23,8 @@ require (
 	github.com/ajroetker/go-jpeg2000 v0.0.2 // indirect
 	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
-	github.com/go-crdt/collab v0.62.0 // indirect
-	github.com/go-crdt/crdt v0.49.0 // indirect
+	github.com/go-crdt/collab v0.70.0 // indirect
+	github.com/go-crdt/crdt v0.51.0 // indirect
 	github.com/go-icons/iconoir v0.2.0 // indirect
 	github.com/go-richdoc/richdoc v0.3.0 // indirect
 	github.com/tannevaled/gobig2 v0.1.0 // indirect
