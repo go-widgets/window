@@ -122,15 +122,16 @@ jobs:
       - name: Live Cocoa window proof (on-device NSWindow + input round-trip)
         env:
           WINDOW_COCOA_INTEGRATION: "1"
+          # Captures go outside the checkout (internal/capture refuses a work
+          # tree), so the upload below reads them from here.
+          WINDOW_CAPTURE_DIR: ${{ runner.temp }}/window-captures
         run: CGO_ENABLED=0 go test -tags=integration -run 'TestLiveCocoaWindow|TestLiveShowHideRaise' -v ./internal/cocoa/
       - name: Upload the on-device window render as a build artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: cocoa-capture
-          path: |
-            internal/cocoa/cocoa-capture-2026-08-10.png
-            internal/cocoa/cocoa-screencapture-2026-08-10.png
+          path: ${{ runner.temp }}/window-captures/*.png
           if-no-files-found: warn
 
   # A SECOND MACHINE for the Windows back-end. The Win32 window itself needs an
