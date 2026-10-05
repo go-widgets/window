@@ -7,6 +7,7 @@
 package window
 
 import (
+	"errors"
 	"image/color"
 	"runtime"
 
@@ -65,6 +66,19 @@ func (b darwinBackend) Appearance() Appearance {
 	}
 }
 
+// Show, Hide and Raise implement Visibility over the back-end's own, putting
+// its closed-window error in this package's vocabulary.
+func (b darwinBackend) Show() error  { return cocoaErr(b.Window.Show()) }
+func (b darwinBackend) Hide() error  { return cocoaErr(b.Window.Hide()) }
+func (b darwinBackend) Raise() error { return cocoaErr(b.Window.Raise()) }
+
+func cocoaErr(err error) error {
+	if errors.Is(err, cocoa.ErrClosed) {
+		return ErrClosed
+	}
+	return err
+}
+
 // The Cocoa back-end carries the OS pasteboard. Asserting it here, where the
 // capability is declared, is what stops a rename inside the back-end from
 // silently turning `w.(window.Clipboard)` into a failed assertion and an app
@@ -76,4 +90,5 @@ var (
 	_ Repainter        = (*cocoa.Window)(nil)
 	_ Placement        = (*cocoa.Window)(nil)
 	_ Backend          = darwinBackend{}
+	_ Visibility       = darwinBackend{}
 )

@@ -7,6 +7,7 @@
 package window
 
 import (
+	"errors"
 	"image/color"
 	"runtime"
 
@@ -56,7 +57,21 @@ func (b windowsBackend) Appearance() Appearance {
 	}
 }
 
+// Show, Hide and Raise implement Visibility over the back-end's own, putting
+// its closed-window error in this package's vocabulary.
+func (b windowsBackend) Show() error  { return win32Err(b.Window.Show()) }
+func (b windowsBackend) Hide() error  { return win32Err(b.Window.Hide()) }
+func (b windowsBackend) Raise() error { return win32Err(b.Window.Raise()) }
+
+func win32Err(err error) error {
+	if errors.Is(err, win32.ErrClosed) {
+		return ErrClosed
+	}
+	return err
+}
+
 var (
+	_ Visibility       = windowsBackend{}
 	_ Backend          = windowsBackend{}
 	_ AppearanceReader = windowsBackend{}
 	_ Clipboard        = (*win32.Window)(nil)

@@ -294,6 +294,10 @@ type Window struct {
 	repaintAtom uint32
 	repaint     repaintState
 
+	// netActiveAtom is _NET_ACTIVE_WINDOW, the EWMH request Raise sends; 0 when
+	// the server would not intern it. See visibility_x11.go.
+	netActiveAtom uint32
+
 	root   toolkit.Widget
 	dmg    DamageRenderer // non-nil when root opts into incremental present
 	dnd    *dnd.Controller
@@ -409,6 +413,9 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 	// on input, as it did before the capability existed -- so the error is kept
 	// rather than returned, and Repaint answers by doing nothing.
 	w.repaintAtom, _ = conn.InternAtom(repaintAtomName, false)
+	// The same reasoning for the atom Raise asks the window manager with: a
+	// window that cannot be activated through EWMH can still be stacked on top.
+	w.netActiveAtom, _ = conn.InternAtom(x11.NetActiveWindowAtom, false)
 
 	if err := conn.CreateGC(w.gc, w.win); err != nil {
 		return nil, err

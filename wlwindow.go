@@ -95,6 +95,13 @@ type wlWindow struct {
 	quit    bool
 	closed  bool
 
+	// Show and Hide; see visibility_wayland.go. hidden is the surface unmapped
+	// on purpose; remap is a Show whose first frame must be presented WHOLE,
+	// since the compositor dropped the old content when the surface unmapped.
+	vis    visReq
+	hidden bool
+	remap  bool
+
 	// The window's size in LOGICAL points, which is what the compositor
 	// configures and what input arrives in; w/h above are the framebuffer, which
 	// is logW*scale by logH*scale. See wlscale.go.
@@ -662,6 +669,9 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 		if w.inputErr != nil {
 			return w.inputErr
 		}
+		if err := w.applyVisibility(); err != nil {
+			return err
+		}
 		if err := w.flushAck(); err != nil {
 			return err
 		}
@@ -713,8 +723,18 @@ func (w *wlWindow) paintFrame() error {
 	// and activations are applied even on frames that cannot yet present.
 	refreshA11y(w.root, w.title, 0, 0)
 	if w.dmg == nil {
+		w.remap = false // a plain root presents the whole surface anyway
 		w.draw()
 		return w.present()
+	}
+	if w.remap && w.configured {
+		// Back from Hide: the compositor dropped what it showed of ours, and an
+		// incremental root has no damage to report for a frame that did not
+		// change. So whatever it does report is drawn, and the whole surface is
+		// presented -- through presentDamaged, so both pool buffers are told.
+		w.remap = false
+		full := toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h}
+		return w.presentDamaged(append(w.drawIncremental(), full))
 	}
 	if !w.configured {
 		return nil // cannot present yet; keep the pending damage for later

@@ -31,6 +31,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -221,6 +222,10 @@ type Window struct {
 	lastA11yTime time.Time
 
 	closed bool
+	// gone is closed as seen from OTHER goroutines: closed is the main thread's
+	// own, and Show/Hide/Raise ask before they queue anything. Set by both
+	// close paths, the user's and Close's.
+	gone atomic.Bool
 }
 
 // renderScaleOverride, when > 0, forces the framebuffer render scale (framebuffer
@@ -295,7 +300,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 				{Cmd: objc.RegisterName("viewDidChangeBackingProperties"), Fn: viewDidChangeBackingProperties},
 				{Cmd: selRepaintNow, Fn: viewRepaintNow},
 				{Cmd: selCloseNow, Fn: viewCloseNow},
-			}, a11yMethods()...))
+			}, append(visibilityMethods(), a11yMethods()...)...))
 		if classesErr != nil {
 			return
 		}
@@ -490,6 +495,7 @@ func keyEvent(event objc.ID, press bool) {
 func windowShouldClose(_ objc.ID, _ objc.SEL, _ objc.ID) bool {
 	if active != nil {
 		active.closed = true
+		active.gone.Store(true)
 	}
 	// -stop: is honoured at the END of the current event cycle, and this runs
 	// inside one, so no synthetic wake-up event is needed: Run returns to its
@@ -693,6 +699,7 @@ func viewCloseNow(_ objc.ID, _ objc.SEL) {
 		return
 	}
 	w.closed = true
+	w.gone.Store(true)
 	if w.win != 0 {
 		w.win.Send(selClose)
 	}
