@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - run: go version
       - run: CGO_ENABLED=0 go vet ./...
       - run: CGO_ENABLED=0 go build ./...
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - run: CGO_ENABLED=0 go vet ./...
       - run: CGO_ENABLED=0 go build ./...
       - run: CGO_ENABLED=0 go test ./...
@@ -151,7 +151,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - run: go vet ./...
         env:
           CGO_ENABLED: "0"
@@ -201,7 +201,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
         run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
       - name: Vet (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -218,7 +218,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - name: arm64 links CGO-free
         run: CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build ./...
       - name: The android tests compile
@@ -250,7 +250,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - run: go env GOARCH && CGO_ENABLED=0 go test ./...
 
   arch-qemu:
@@ -268,7 +268,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
       - name: Test under qemu (${{ matrix.goarch }})
         run: CGO_ENABLED=0 GOARCH=${{ matrix.goarch }} go test -exec=${{ matrix.qemu }} ./...
@@ -288,7 +288,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - name: Install X utilities
         run: sudo apt-get update && sudo apt-get install -y xvfb x11-apps xdotool imagemagick dbus
       - name: Run live integration test under Xvfb
@@ -326,7 +326,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - name: Install a headless Wayland compositor + capture/keymap tools
         run: sudo apt-get update && sudo apt-get install -y sway grim libxkbcommon-tools dbus
       - name: Run live integration test under sway (headless)
@@ -388,7 +388,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - name: Install an X server and capture tools
         run: sudo apt-get update && sudo apt-get install -y xvfb xdotool imagemagick
       - name: Run the HiDPI proof under a 192 dpi desktop
@@ -426,7 +426,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - name: Install a headless Wayland compositor + capture tools
         run: sudo apt-get update && sudo apt-get install -y sway grim dbus
       - name: Run the HiDPI proof under a scale-2 sway
@@ -485,7 +485,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: 1.27.1
       - name: Install GTK4 runtime + a headless X server
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth
       - name: internal/gtk on real GTK4
