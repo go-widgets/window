@@ -30,6 +30,7 @@ import (
 	"image/png"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"unsafe"
@@ -193,8 +194,14 @@ func TestLiveCocoaWindow(t *testing.T) {
 		pngData  []byte
 		btnRect  toolkit.Rect
 		setupErr error
+		shot     string
 	)
 
+	// Where the captures go is decided HERE, on the test goroutine: captureDir
+	// fails the test when the directory is refused, and a t.Fatal from inside
+	// callOnMain would end the main thread's closure, not the test -- the test
+	// would wait for it forever.
+	captures := captureDir(t)
 	callOnMain(func() {
 		win, setupErr = New("go-widgets/window cocoa proof", 480, 320, theme)
 		if setupErr != nil {
@@ -246,8 +253,11 @@ func TestLiveCocoaWindow(t *testing.T) {
 
 		// Best-effort true on-screen screenshot artifact (needs Screen Recording
 		// permission; ignored if it fails / is unavailable, e.g. headless CI).
-		trySystemScreencapture(win)
+		shot = trySystemScreencapture(captures, win)
 	})
+	if shot != "" {
+		t.Logf("window-server capture: %s", shot)
+	}
 
 	if setupErr != nil {
 		t.Fatalf("window setup/capture failed: %v", setupErr)
@@ -263,7 +273,7 @@ func TestLiveCocoaWindow(t *testing.T) {
 		t.Fatalf("rendered image too small: %v", b)
 	}
 	// Save the captured render as a dated artifact.
-	out := "cocoa-capture-2026-08-10.png"
+	out := filepath.Join(captures, "cocoa-capture.png")
 	if werr := os.WriteFile(out, pngData, 0o644); werr != nil {
 		t.Logf("could not save %s: %v", out, werr)
 	} else {
@@ -428,8 +438,11 @@ func TestCocoaLegibilityBeforeAfter(t *testing.T) {
 // png2img decodes PNG bytes into an image.
 func png2img(b []byte) (image.Image, error) { return png.Decode(bytes.NewReader(b)) }
 
-// writeArtifact saves a capture, logging (not failing) on write error.
+// writeArtifact saves a capture under captureDir, logging (not failing) on
+// write error.
 func writeArtifact(t *testing.T, name string, data []byte) {
+	t.Helper()
+	name = filepath.Join(captureDir(t), filepath.Base(name))
 	if err := os.WriteFile(name, data, 0o644); err != nil {
 		t.Logf("could not save %s: %v", name, err)
 		return
@@ -466,11 +479,19 @@ func firstLabelInkHeight(img image.Image, bg toolkit.RGBA) int {
 }
 
 // trySystemScreencapture attempts a real window-server screenshot of the window
-// and saves it; failures (missing permission / headless) are non-fatal.
-func trySystemScreencapture(w *Window) {
+// into dir and returns its path; failures (missing permission / headless) are
+// non-fatal and return "". It runs on the main thread, so it takes no *testing.T.
+//
+// ⛔ dir is captureDir, never the working directory. The capture used to land in
+// the package directory -- this repository, which is public -- one `git add -f`
+// from publication; a .gitignore entry is not a barrier.
+func trySystemScreencapture(dir string, w *Window) string {
 	wn := int(w.win.Send(selWindowNumber))
-	out := "cocoa-screencapture-2026-08-10.png"
-	_ = exec.Command("screencapture", "-x", "-o", "-l", fmt.Sprintf("%d", wn), out).Run()
+	out := filepath.Join(dir, "cocoa-screencapture.png")
+	if err := exec.Command("screencapture", "-x", "-o", "-l", fmt.Sprintf("%d", wn), out).Run(); err != nil {
+		return ""
+	}
+	return out
 }
 
 func near(a, b uint8) bool {
