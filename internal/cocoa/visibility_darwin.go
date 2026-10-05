@@ -68,11 +68,23 @@ func (w *Window) Raise() error { return w.perform(selRaiseNow) }
 
 // The main-thread halves. They act on the ACTIVE window for the same reason
 // every other view callback does: a method on a registered class has no other
-// way back to Go state, and this process runs one window at a time.
+// way back to Go state, and this process runs one window at a time. And only
+// when the view they were sent to is that window's, for the reason
+// viewCloseNow gives: a request queued for one window must not be delivered to
+// the next.
 
-func viewShowNow(_ objc.ID, _ objc.SEL) {
+// target is the active window, if self is its view and it is still open.
+func target(self objc.ID) *Window {
 	w := active
-	if w == nil || w.closed {
+	if w == nil || w.closed || w.view != self {
+		return nil
+	}
+	return w
+}
+
+func viewShowNow(self objc.ID, _ objc.SEL) {
+	w := target(self)
+	if w == nil {
 		return
 	}
 	if w.passive {
@@ -82,17 +94,17 @@ func viewShowNow(_ objc.ID, _ objc.SEL) {
 	w.win.Send(selOrderFront, objc.ID(0))
 }
 
-func viewHideNow(_ objc.ID, _ objc.SEL) {
-	w := active
-	if w == nil || w.closed {
+func viewHideNow(self objc.ID, _ objc.SEL) {
+	w := target(self)
+	if w == nil {
 		return
 	}
 	w.win.Send(selOrderOut, objc.ID(0))
 }
 
-func viewRaiseNow(_ objc.ID, _ objc.SEL) {
-	w := active
-	if w == nil || w.closed {
+func viewRaiseNow(self objc.ID, _ objc.SEL) {
+	w := target(self)
+	if w == nil {
 		return
 	}
 	steps := PlanRaise(objc.Send[bool](w.win, selIsMiniaturized), w.passive)

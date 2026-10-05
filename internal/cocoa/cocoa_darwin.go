@@ -693,9 +693,15 @@ const nsAppKitDefined = 15
 // That is not a corner case. A borderless full-screen window has no close
 // button and cannot be closed by the user at all, so closing itself is the ONLY
 // way such an application can end.
-func viewCloseNow(_ objc.ID, _ objc.SEL) {
+//
+// ⛔ It acts only if the view it was sent to is the ACTIVE window's. The
+// request is queued on the main run loop, and one that was queued after its
+// window's loop had stopped -- a Close sent once Run had returned -- is
+// delivered by the NEXT loop, while the next window is active. Acting on
+// whatever is active then closed that window the moment it opened.
+func viewCloseNow(self objc.ID, _ objc.SEL) {
 	w := active
-	if w == nil || w.closed {
+	if w == nil || w.closed || w.view != self {
 		return
 	}
 	w.closed = true
