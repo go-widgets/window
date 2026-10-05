@@ -234,6 +234,28 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   displays should know.
 - `window.VisibleScreenSize() (w, h int, ok bool)` — the usable area of the
   primary display, superseded by `Screens` for anything multi-display.
+- `window.Show(b)`, `window.Hide(b)`, `window.Raise(b)` — the `Visibility`
+  capability: take an open window off the screen **without closing it** (`Run`
+  keeps running and the widget tree keeps its state), put it back, and bring it
+  to the front with the keyboard focus. It is what a system-tray application
+  needs: its "Open" item raises the window already there, and its window can
+  hide while the application carries on in the tray. Safe from any goroutine;
+  each returns once the request is on its way to the window's own thread.
+  A back-end that cannot do one says so with `window.ErrNotSupported`, and a
+  closed window answers `window.ErrClosed`.
+
+  | back-end | Show | Hide | Raise |
+  |---|---|---|---|
+  | X11 | `MapWindow` | ICCCM withdraw (unmap + synthetic `UnmapNotify`), so it leaves the taskbar | map, stack above, EWMH `_NET_ACTIVE_WINDOW` |
+  | Wayland | the initial commit again, then the next configure maps it | null buffer + commit (unmap) | `ErrNotSupported`: xdg-shell has no such request, and xdg-activation needs a token from the user's input to this window |
+  | macOS (Cocoa) | `orderFront:` | `orderOut:` | out of the Dock, activate the app, `makeKeyAndOrderFront:` (a passive window is only ordered front) |
+  | Windows (Win32) | `SW_SHOWNA` | `SW_HIDE` | `SW_RESTORE`/`SW_SHOW` + `SetForegroundWindow` |
+  | GTK, Android, wasmbox | `ErrNotSupported` | `ErrNotSupported` | `ErrNotSupported` |
+
+  Focus is the platform's to grant: under focus-stealing prevention a window
+  manager, or Windows' foreground lock, may mark the window as wanting
+  attention instead, and Raise cannot tell. Under an X11 window manager a
+  window shown again is placed by the manager, as a new one would be.
 
 ## Design notes
 
@@ -259,6 +281,15 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   under Xvfb: it opens a window, presents a known four-quadrant pattern,
   captures it with `import`, asserts the sampled pixels, then synthesises a
   click and a key with `xdotool` and asserts the dispatched `toolkit.Event`.
+  `TestLiveX11Visibility` hides, shows and raises real windows there and reads
+  the result from the server (`xdotool search --onlyvisible`, and the pixel on
+  top where two windows overlap); the same assertions are made against
+  scripted fakes in-process. The Cocoa lane's `TestLiveShowHideRaise…` asks a
+  real `NSWindow` from another goroutine and reads `-isVisible` /
+  `-isMiniaturized` back from AppKit. The Wayland request order is proven
+  against a fake compositor that enforces xdg-shell's map/unmap rules; the
+  Win32 decision table is unit-tested, and its UI-thread calls are
+  compile-verified only.
 
 ## License
 

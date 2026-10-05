@@ -36,6 +36,7 @@ const (
 	atomWMDeleteWindow  = 0x101
 	atomRepaint         = 0x102 // _GO_WIDGETS_REPAINT, the Repainter wakeup
 	atomResourceManager = 0x103 // RESOURCE_MANAGER, where a desktop publishes Xft.dpi
+	atomNetActive       = 0x104 // _NET_ACTIVE_WINDOW, what Raise asks the window manager with
 )
 
 // setupReply builds a success connection-setup reply (LE): one screen, one
@@ -173,6 +174,7 @@ func serverScript(events ...[]byte) []byte {
 	out = append(out, internReply(atomWMProtocols)...)
 	out = append(out, internReply(atomWMDeleteWindow)...)
 	out = append(out, internReply(atomRepaint)...)
+	out = append(out, internReply(atomNetActive)...)
 	out = append(out, keymapReply(2, []uint32{0x61, 0x41, 0xff0d, 0})...) // kc8=a/A, kc9=Return
 	for _, e := range events {
 		out = append(out, e...)
@@ -202,6 +204,7 @@ func dialFakeWithKeymap(t *testing.T, cfg Config, perCode byte, syms []uint32, e
 	script = append(script, internReply(atomWMProtocols)...)
 	script = append(script, internReply(atomWMDeleteWindow)...)
 	script = append(script, internReply(atomRepaint)...)
+	script = append(script, internReply(atomNetActive)...)
 	script = append(script, keymapReply(perCode, syms)...)
 	for _, e := range events {
 		script = append(script, e...)
@@ -508,6 +511,7 @@ func dialFakeWithResources(t *testing.T, cfg Config, db string) (*Window, *fakeT
 	script = append(script, internReply(atomWMProtocols)...)
 	script = append(script, internReply(atomWMDeleteWindow)...)
 	script = append(script, internReply(atomRepaint)...)
+	script = append(script, internReply(atomNetActive)...)
 	script = append(script, keymapReply(2, []uint32{0x61, 0x41, 0xff0d, 0})...)
 
 	ft := &fakeTransport{in: bytes.NewReader(script)}

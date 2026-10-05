@@ -43,6 +43,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -179,6 +180,10 @@ type Window struct {
 	// The Repainter capability: at most one posted wakeup in flight. See
 	// repaint.go for why the flag is ours and not the message queue's.
 	repaint repaintFlag
+
+	// gone is closed as seen from other goroutines, which Show, Hide and Raise
+	// are called from; closed is the UI thread's own.
+	gone atomic.Bool
 }
 
 // Repaint asks the message loop for a frame. Implements the window.Repainter
@@ -462,6 +467,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.repaint.take()
 		w.paintFrame(false)
 		return 0
+	case WMAppVisibility:
+		// Show, Hide or Raise, asked for from outside the message loop.
+		w.onVisibility(VisibilityOp(wParam))
+		return 0
 	case wmSize:
 		w.onSize(int(loWord(uint32(lParam))), int(hiWord(uint32(lParam))))
 		return 0
@@ -531,6 +540,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// The teardown, on the thread that owns the window -- which is the only
 		// thread allowed to do it, and is why Close only posts.
 		w.closed = true
+		w.gone.Store(true)
 		w.hwnd = 0
 		if active == w {
 			active = nil
