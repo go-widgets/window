@@ -7,7 +7,10 @@
 package window
 
 import (
+	"syscall/js"
+
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/tab"
 	"github.com/go-widgets/window/internal/wasmbox"
 )
 
@@ -28,6 +31,11 @@ func Open(cfg Config) (Backend, error) {
 	theme := cfg.Theme
 	if theme == nil {
 		theme = toolkit.DefaultDark()
+	}
+	// A wasmdesk/wasmbox worker installs this hook before the client runs; an
+	// ordinary page has a document and no hook, and gets a <canvas> instead.
+	if !js.Global().Get("__gowidgetsInstall").Truthy() && js.Global().Get("document").Truthy() {
+		return tab.Open(cfg.Canvas, cfg.Width, cfg.Height, theme)
 	}
 	return wasmbox.Dial(cfg.Title, cfg.Width, cfg.Height, theme)
 }
