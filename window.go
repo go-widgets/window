@@ -110,6 +110,10 @@ type Config struct {
 	//
 	// Honoured today by the macOS (Cocoa) back-end.
 	Screen *Screen
+	// Canvas is the id of the <canvas> a browser tab draws into, when the page
+	// is an ordinary tab rather than a wasmdesk/wasmbox client. Empty means
+	// "screen". Ignored by every other back-end.
+	Canvas string
 	// Fullscreen sizes the window to cover its screen entirely, with no title bar
 	// and no frame. With Screen nil it covers the primary display.
 	//

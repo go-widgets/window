@@ -7,7 +7,7 @@ Cocoa/AppKit**, **Windows Win32/GDI**, **Android** and **wasmbox** (the
 [wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox) browser compositor).
 `Open` auto-selects per environment: a real X11/Wayland window on Linux, a real
 NSWindow on macOS, a real Win32 window on Windows, a real Activity surface on
-Android, and — when built for `js/wasm` — a wasmbox external client.
+Android, and — when built for `js/wasm` — a wasmbox external client, or a `<canvas>` in an ordinary browser tab.
 **One go-widgets application runs unchanged natively AND inside wasmdesk.**
 
 The macOS backend reaches AppKit through the fleet's shared purego Objective-C
@@ -81,6 +81,7 @@ backend-agnostic. The environment selects the implementation:
 | Android, `$GW_ANDROID_SOCKET` set | **Android host** ([`go-widgets/android`](https://github.com/go-widgets/android)) | framed protocol over an abstract `LocalSocket` + a memfd surface shared with the Java host |
 | Android, else | Wayland or X11, as on Linux | a shell under Termux still has a display server to dial |
 | `js/wasm` | **wasmbox** (`internal/wasmbox`) | wasmbox client protocol over a `MessagePort` + a `SharedArrayBuffer` surface |
+| `js/wasm`, an ordinary page | **browser tab** (`internal/tab`) | a `<canvas>` through [go-widgets/webcanvas](https://github.com/go-widgets/webcanvas): no compositor, no `SharedArrayBuffer`, no cross-origin isolation |
 | other (BSD, …) | stub → `ErrUnsupported` | — |
 
 ### macOS Cocoa/AppKit backend (`darwin`)
@@ -147,6 +148,28 @@ binary serves both, chosen by what is actually there rather than by a build tag.
 `amd64` and `386` all require external cgo linking. CI asserts both halves of
 that — the one that works and the three that do not — so the day Go widens it,
 the build says so.
+
+### Browser tab backend (`js/wasm`, an ordinary page)
+
+When the page is not a wasmbox client -- it has a `document` and the wasmbox
+worker never installed its hook -- `Open` returns a backend that draws into a
+`<canvas>` of the page (`Config.Canvas`, default `"screen"`) through
+[go-widgets/webcanvas](https://github.com/go-widgets/webcanvas). The page needs
+nothing special: no COOP/COEP headers, so it can be served as static files from
+anywhere, behind any web tier. The same `w.Run(root)` drives the tree: pointer,
+wheel and keyboard become toolkit events carrying Ctrl, Shift, Alt and Meta,
+drag-and-drop goes through the same controller as the other backends, the
+canvas follows the page's layout, and a root that renders incrementally repaints
+only its damage.
+
+```html
+<canvas id="screen" style="width:100vw;height:100vh"></canvas>
+<script src="wasm_exec.js"></script>
+<script>
+  const go = new Go();
+  WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject).then(r => go.run(r.instance));
+</script>
+```
 
 ### wasmbox client backend (`js/wasm`)
 
