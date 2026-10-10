@@ -14,10 +14,10 @@ require (
 	github.com/go-opentype/opentype v0.15.0
 	github.com/go-widgets/android v0.15.0
 	github.com/go-widgets/painter v0.15.0
-	github.com/go-widgets/toolkit v0.326.0
+	github.com/go-widgets/toolkit v0.328.0
 	github.com/go-widgets/webcanvas v0.4.0
 	github.com/godbus/dbus/v5 v5.2.2
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 )
 
 require (
