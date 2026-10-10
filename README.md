@@ -1,10 +1,11 @@
 # go-widgets/window
 
 A **pure-Go, CGO-free** windowing backend for the
-[go-widgets](https://github.com/go-widgets) toolkit, with six interchangeable
-backends behind one `Open`/`Run` API — **X11**, **Wayland**, **macOS
-Cocoa/AppKit**, **Windows Win32/GDI**, **Android** and **wasmbox** (the
-[wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox) browser compositor).
+[go-widgets](https://github.com/go-widgets) toolkit, with eight interchangeable
+backends behind one `Open`/`Run` API — **X11**, **Wayland**, **GTK4** (opt-in),
+**macOS Cocoa/AppKit**, **Windows Win32/GDI**, **Android**, **wasmbox** (the
+[wasmdesk/wasmbox](https://github.com/wasmdesk/wasmbox) browser compositor) and
+a **browser tab** `<canvas>`.
 `Open` auto-selects per environment: a real X11/Wayland window on Linux, a real
 NSWindow on macOS, a real Win32 window on Windows, a real Activity surface on
 Android, and — when built for `js/wasm` — a wasmbox external client, or a `<canvas>` in an ordinary browser tab.
@@ -74,6 +75,7 @@ backend-agnostic. The environment selects the implementation:
 
 | GOOS/env | Backend | Transport |
 | --- | --- | --- |
+| Linux, `$GO_WIDGETS_GTK` set | **GTK4** (`internal/gtk`), opt-in | GTK owns the window; the framebuffer is a `GtkPicture`, and native controls (`toolkit.NativeControl`) are real GTK widgets above it. Needs the libgtk-4 runtime |
 | Linux, `$WAYLAND_DISPLAY` set | Wayland (`internal/wayland`) | xdg-shell over the compositor unix socket |
 | Linux, else `$DISPLAY` | X11 (`internal/x11`) | X11 core protocol over the unix socket (+ MIT-SHM) |
 | macOS (`darwin`) | **Cocoa/AppKit** (`internal/cocoa`) | NSWindow + NSView via `go-macos/objc` (purego), NSBitmapImageRep present |
@@ -221,14 +223,14 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
 
 ## Public API
 
-- `window.Open(cfg Config) (*Window, error)` — dial `$DISPLAY`, authenticate,
-  create and map the window. Linux only; returns `window.ErrUnsupported`
-  elsewhere so cross-builds stay green.
-- `(*Window).Run(root toolkit.Widget) error` — the host loop: initial
-  layout/draw/present, then translate X events (`Expose`, `KeyPress/Release`,
-  `ButtonPress/Release`, `MotionNotify`, `ConfigureNotify`, `ClientMessage`) into
-  `toolkit.Event` and dispatch them, re-laying-out on resize.
-- `(*Window).Close() error`, `(*Window).Size() (int, int)`.
+- `window.Open(cfg Config) (Backend, error)` — open a window on the back-end
+  the environment calls for (see [Backends](#backends)). Where there is none
+  (the BSDs, …) it returns `window.ErrUnsupported`, so cross-builds stay green.
+- `Backend.Run(root toolkit.Widget) error` — the host loop: initial
+  layout/draw/present, then translate the platform's input (on X11: `Expose`,
+  `KeyPress/Release`, `ButtonPress/Release`, `MotionNotify`, `ConfigureNotify`,
+  `ClientMessage`) into `toolkit.Event` and dispatch it, re-laying-out on resize.
+- `Backend.Close() error`, `Backend.Size() (int, int)`, `Backend.String() string`.
 - `window.Screens() ([]Screen, error)` — enumerate the attached displays,
   primary first, in logical points with the desktop's panels excluded. Safe to
   call before `Open`, since picking an output is something an application does
@@ -314,10 +316,11 @@ func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
 - **Present.** The toolkit's `painter.PixelPainter` renders into the backing
   RGBA buffer; the backend converts to the screen visual's pixel layout
   (channel masks + image byte order) and tiles `PutImage` under the server's
-  maximum request length. A `presentRect` damage-region path is ready for when
-  a scene damage list becomes available (`toolkit` exposes none today, so a
-  full-surface present follows input).
-- **Wayland** is a separate future backend, intentionally out of scope here.
+  maximum request length. A root that implements `DamageRenderer`
+  (`toolkit/scene.HostRoot` is the reference) reports the rectangles it
+  repainted, and X11 (MIT-SHM `ShmPutImage`), Wayland (`wl_shm` damage),
+  Cocoa, Win32 and wasmbox present only those. The first frame, a resize and
+  an X11 `Expose` still present the whole surface.
 
 ## Verification
 
