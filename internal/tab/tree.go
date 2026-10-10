@@ -13,6 +13,8 @@
 package tab
 
 import (
+	"sync/atomic"
+
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/webcanvas"
@@ -34,6 +36,9 @@ type Tree struct {
 	dnd        *dnd.Controller
 	buttonHeld bool
 	mods       webcanvas.Modifiers
+	// request asks webcanvas for a frame (RepaintWith); nil until Run
+	// hands it over. Read from any goroutine.
+	request atomic.Pointer[func()]
 }
 
 var (
@@ -41,6 +46,7 @@ var (
 	_ webcanvas.Resizer       = (*Tree)(nil)
 	_ webcanvas.Scroller      = (*Tree)(nil)
 	_ webcanvas.ModifierAware = (*Tree)(nil)
+	_ webcanvas.RepaintAware  = (*Tree)(nil)
 )
 
 // NewTree adapts root, laid out on a w×h surface painted with theme.
@@ -144,4 +150,15 @@ func (t *Tree) Resize(w, h int) (int, int) {
 		t.w, t.h = w, h
 	}
 	return t.w, t.h
+}
+
+// RepaintWith keeps webcanvas's way to ask for a frame.
+func (t *Tree) RepaintWith(request func()) { t.request.Store(&request) }
+
+// Repaint asks for a frame, from any goroutine. Before Run hands over the
+// request it does nothing: the first frame is drawn anyway.
+func (t *Tree) Repaint() {
+	if r := t.request.Load(); r != nil {
+		(*r)()
+	}
 }

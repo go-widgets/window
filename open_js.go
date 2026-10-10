@@ -39,3 +39,6 @@ func Open(cfg Config) (Backend, error) {
 	}
 	return wasmbox.Dial(cfg.Title, cfg.Width, cfg.Height, theme)
 }
+
+// The browser tab wakes its loop like every other back-end.
+var _ Repainter = (*tab.Backend)(nil)

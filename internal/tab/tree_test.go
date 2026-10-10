@@ -5,6 +5,8 @@
 package tab
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-widgets/painter"
@@ -115,5 +117,22 @@ func TestTheTreeFollowsTheCanvas(t *testing.T) {
 	}
 	if w, h := tr.Resize(0, 0); w != 800 || h != 600 {
 		t.Fatalf("a zero size changed the surface to %dx%d", w, h)
+	}
+}
+
+// Repaint before Run does nothing; after RepaintWith it asks once per call,
+// from any goroutine (run under -race).
+func TestRepaintAsksWebcanvas(t *testing.T) {
+	tr := NewTree(toolkit.NewLabel("x"), 10, 10, nil)
+	tr.Repaint() // nothing handed over yet: no panic, nothing asked
+	var asked atomic.Int64
+	tr.RepaintWith(func() { asked.Add(1) })
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(tr.Repaint)
+	}
+	wg.Wait()
+	if asked.Load() != 8 {
+		t.Fatalf("%d requests for 8 repaints", asked.Load())
 	}
 }
