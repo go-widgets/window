@@ -160,7 +160,9 @@ anywhere, behind any web tier. The same `w.Run(root)` drives the tree: pointer,
 wheel and keyboard become toolkit events carrying Ctrl, Shift, Alt and Meta,
 drag-and-drop goes through the same controller as the other backends, the
 canvas follows the page's layout, and a root that renders incrementally repaints
-only its damage.
+only its damage. It is a `Repainter` like the native backends: `Repaint`, from
+any goroutine, draws the next animation frame, so a result that arrives with
+nobody touching the page still reaches it.
 
 ```html
 <canvas id="screen" style="width:100vw;height:100vh"></canvas>
@@ -279,6 +281,28 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   manager, or Windows' foreground lock, may mark the window as wanting
   attention instead, and Raise cannot tell. Under an X11 window manager a
   window shown again is placed by the manager, as a new one would be.
+
+### Results from other goroutines
+
+Every backend that has a run loop to wake is a `Repainter`: X11, Wayland, GTK,
+macOS, Windows and the browser tab. `Repaint` is safe from any goroutine, but
+widget state is not, so post the change to an
+[`mvvm.Queue`](https://github.com/go-widgets/mvvm) whose wake is `Repaint`, and
+drain it in the root container's `SetBounds`, which every backend calls before it
+draws:
+
+```go
+w, _ := window.Open(cfg)
+var wake func()
+if r, ok := w.(window.Repainter); ok {
+	wake = r.Repaint
+}
+q := mvvm.NewQueue(wake)
+go func() { v := fetch(); q.Post(func() { vm.Result.Set(v) }) }()
+
+type root struct{ *toolkit.VBox; q *mvvm.Queue }
+func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
+```
 
 ## Design notes
 

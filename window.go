@@ -193,7 +193,14 @@ type Config struct {
 // back-end marshals the work to whatever thread its platform demands. Calling it
 // more often than the display refreshes is not an error, just wasted frames.
 //
-// Implemented today by the macOS (Cocoa) back-end.
+// Implemented by every back-end that has a run loop to wake: X11 (a
+// SendEvent to its own window), Wayland, GTK, macOS (Cocoa), Windows (Win32),
+// and the browser tab (the next animation frame).
+//
+// An application whose results arrive on other goroutines posts them to an
+// mvvm.Queue whose wake is Repaint, and drains the queue at the start of a
+// frame -- in its root container's SetBounds, which every back-end calls before
+// drawing. Repaint wakes the loop; the queue is what makes the change safe.
 type Repainter interface {
 	Repaint()
 }

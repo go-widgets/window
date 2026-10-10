@@ -8,6 +8,7 @@ package tab
 
 import (
 	"fmt"
+	"sync/atomic"
 	"syscall/js"
 
 	"github.com/go-widgets/toolkit"
@@ -19,6 +20,7 @@ type Backend struct {
 	canvas string
 	w, h   int
 	theme  *toolkit.Theme
+	tree   atomic.Pointer[Tree]
 }
 
 // Open checks that the page has the canvas, and returns a Backend for it.
@@ -41,8 +43,18 @@ func Open(canvas string, w, h int, theme *toolkit.Theme) (*Backend, error) {
 
 // Run drives root until the page goes away.
 func (b *Backend) Run(root toolkit.Widget) error {
-	webcanvas.Run(b.canvas, NewTree(root, b.w, b.h, b.theme))
+	t := NewTree(root, b.w, b.h, b.theme)
+	b.tree.Store(t)
+	webcanvas.Run(b.canvas, t)
 	return nil
+}
+
+// Repaint asks for a frame from any goroutine (window.Repainter): the next
+// animation frame redraws the tree. Before Run it does nothing.
+func (b *Backend) Repaint() {
+	if t := b.tree.Load(); t != nil {
+		t.Repaint()
+	}
 }
 
 // Close does nothing: a tab ends when the page does.
