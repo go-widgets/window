@@ -289,7 +289,11 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
 Every backend that has a run loop to wake is a `Repainter`: X11, Wayland, GTK,
 macOS, Windows and the browser tab. `Repaint` is safe from any goroutine, but
 widget state is not, so post the change to an
-[`mvvm.Queue`](https://github.com/go-widgets/mvvm) whose wake is `Repaint`, and
+[`mvvm.Queue`](https://github.com/go-widgets/mvvm) whose wake is `Repaint`
+(`Queue` is in go-widgets/mvvm **v0.14.0 or later**; this module itself builds
+against an older mvvm, so an application that uses it requires
+`github.com/go-widgets/mvvm` at v0.14.0 or above in its own go.mod), and
+<!-- docsym:allow mvvm.Queue mvvm.NewQueue -- application code: Queue is in mvvm v0.14.0+, and this module does not import mvvm itself -->
 drain it in the root container's `SetBounds`, which every backend calls before it
 draws:
 
