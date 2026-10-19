@@ -3,7 +3,7 @@ module github.com/go-widgets/window
 go 1.27.2
 
 require (
-	github.com/ebitengine/purego v0.11.1
+	github.com/ebitengine/purego v0.11.2
 	github.com/go-appdirs/outdir v0.3.0
 	github.com/go-freedesktop/x11 v0.3.0
 	github.com/go-gtk/gtk4 v0.9.0
@@ -11,7 +11,7 @@ require (
 	github.com/go-macos/objc v0.11.2
 	github.com/go-macos/virtualdisplay v0.5.0
 	github.com/go-mswin/win32 v0.6.0
-	github.com/go-opentype/opentype v0.15.0
+	github.com/go-opentype/opentype v0.16.0
 	github.com/go-widgets/android v0.16.0
 	github.com/go-widgets/painter v0.16.0
 	github.com/go-widgets/toolkit v0.329.0
