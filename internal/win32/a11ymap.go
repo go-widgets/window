@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/a11yrole"
 )
 
 // UI Automation control type identifiers. A wrong number renames every element
@@ -122,12 +123,14 @@ func UIAControlType(r toolkit.Role) int32 {
 	}
 }
 
-// A11ySkip reports whether a node should be left out of the published tree. An
-// element with no name says nothing a screen reader could announce, and one
-// with no area cannot be pointed at; either is a stop the user has to skip past
-// for nothing.
+// A11ySkip reports whether a node should be left out of the published tree. A
+// static element with no name says nothing a screen reader could announce, and
+// one with no area cannot be pointed at; either is a stop the user has to skip
+// past for nothing. A nameless element that can take focus or input (an Edit)
+// is kept: UI Automation keeps its Name empty and reads its text through the
+// Value pattern. The role set is shared with the other bridges, see a11yrole.
 func A11ySkip(n toolkit.A11yNode) bool {
-	return n.Name == "" || n.Rect.W <= 0 || n.Rect.H <= 0
+	return a11yrole.Skip(n)
 }
 
 // A11yNodes is the tree to publish for a widget root: every meaningful element,

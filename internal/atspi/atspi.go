@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/a11yrole"
 )
 
 // AT-SPI role numbers, read out of pyatspi on a live system rather than
@@ -185,11 +186,20 @@ const (
 	StateVisible   uint32 = 30
 )
 
-// Skip reports whether a node should be left out of the published tree. An
-// element with no name says nothing a reader could announce and one with no
-// area cannot be pointed at; either is a stop the user has to skip past.
+// Skip reports whether a node should be left out of the published tree. A
+// static element with no name says nothing a reader could announce and one with
+// no area cannot be pointed at; either is a stop the user has to skip past. A
+// nameless element that can take focus or input (an entry) is kept. The role
+// set is shared with the other bridges, see a11yrole.
 func Skip(n toolkit.A11yNode) bool {
-	return n.Name == "" || n.Rect.W <= 0 || n.Rect.H <= 0
+	return a11yrole.Skip(n)
+}
+
+// Name is the accessible name published for a node: its own, or, for a nameless
+// entry-like node, its value. This bridge publishes no Text interface yet, so
+// the value is the only way Orca can read a field's content.
+func Name(n toolkit.A11yNode) string {
+	return a11yrole.Label(n)
 }
 
 // Nodes is the tree to publish for a widget root: every meaningful element, in

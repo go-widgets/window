@@ -77,7 +77,8 @@ func TestA11ySkip(t *testing.T) {
 		want bool
 	}{
 		{"named with area", node(toolkit.RoleButton, "OK", full), false},
-		{"unnamed", node(toolkit.RoleButton, "", full), true},
+		{"unnamed button is still focusable", node(toolkit.RoleButton, "", full), false},
+		{"unnamed text is static", node(toolkit.RoleText, "", full), true},
 		{"zero width", node(toolkit.RoleButton, "OK", toolkit.Rect{W: 0, H: 20}), true},
 		{"zero height", node(toolkit.RoleButton, "OK", toolkit.Rect{W: 10, H: 0}), true},
 		{"negative", node(toolkit.RoleButton, "OK", toolkit.Rect{W: -5, H: -5}), true},
@@ -134,7 +135,7 @@ func TestA11yNodesFiltersWhatNoReaderCouldUse(t *testing.T) {
 	box := toolkit.NewContainer(nil)
 	ok := toolkit.NewButton("OK", nil)
 	ok.SetBounds(toolkit.Rect{X: 0, Y: 0, W: 40, H: 20})
-	blank := toolkit.NewButton("", nil) // no name: nothing to announce
+	blank := toolkit.NewLabel("") // no name: nothing to announce
 	blank.SetBounds(toolkit.Rect{X: 0, Y: 30, W: 40, H: 20})
 	collapsed := toolkit.NewButton("Hidden", nil) // no area: cannot be pointed at
 	collapsed.SetBounds(toolkit.Rect{X: 0, Y: 60, W: 0, H: 0})

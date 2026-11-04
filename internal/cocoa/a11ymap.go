@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-widgets/toolkit"
+	"github.com/go-widgets/window/internal/a11yrole"
 )
 
 // a11yMinInterval bounds how often the accessibility tree is rebuilt while it is
@@ -150,13 +151,16 @@ func AXRole(r toolkit.Role) string {
 
 // A11ySkip reports whether a node should be left out of the published tree.
 //
-// An element with no name says nothing a reader could announce, and one with no
-// area cannot be pointed at; either lands in VoiceOver's rotor as an unlabelled
-// stop the user has to skip past for nothing. The toolkit deliberately does not
-// make this decision — it reports faithfully — because it is the platform that
-// knows what its own screen reader does with an empty element.
+// A static element with no name says nothing a reader could announce, and one
+// with no area cannot be pointed at; either lands in VoiceOver's rotor as an
+// unlabelled stop the user has to skip past for nothing. A nameless element that
+// can take focus or input (a text field) is kept: VoiceOver announces it from its
+// role and AXValue. The toolkit deliberately does not make this decision — it
+// reports faithfully — because it is the platform that knows what its own screen
+// reader does with an empty element. The role set is shared with the other
+// bridges, see a11yrole.
 func A11ySkip(n toolkit.A11yNode) bool {
-	return n.Name == "" || n.Rect.W <= 0 || n.Rect.H <= 0
+	return a11yrole.Skip(n)
 }
 
 // A11yFrame converts a node's rectangle from the framebuffer's render pixels to

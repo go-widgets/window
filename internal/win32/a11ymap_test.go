@@ -79,7 +79,8 @@ func TestA11ySkip(t *testing.T) {
 		want bool
 	}{
 		{"named with area", a11yNode(toolkit.RoleButton, "OK", full), false},
-		{"unnamed", a11yNode(toolkit.RoleButton, "", full), true},
+		{"unnamed button is still focusable", a11yNode(toolkit.RoleButton, "", full), false},
+		{"unnamed text is static", a11yNode(toolkit.RoleText, "", full), true},
 		{"zero width", a11yNode(toolkit.RoleButton, "OK", toolkit.Rect{W: 0, H: 20}), true},
 		{"zero height", a11yNode(toolkit.RoleButton, "OK", toolkit.Rect{W: 10, H: 0}), true},
 		{"negative", a11yNode(toolkit.RoleButton, "OK", toolkit.Rect{W: -1, H: -1}), true},
@@ -95,7 +96,7 @@ func TestA11yNodesFilters(t *testing.T) {
 	box := toolkit.NewContainer(nil)
 	ok := toolkit.NewButton("OK", nil)
 	ok.SetBounds(toolkit.Rect{X: 0, Y: 0, W: 40, H: 20})
-	blank := toolkit.NewButton("", nil)
+	blank := toolkit.NewLabel("")
 	blank.SetBounds(toolkit.Rect{X: 0, Y: 30, W: 40, H: 20})
 	box.AddWidget(ok).AddWidget(blank)
 
