@@ -63,7 +63,7 @@ func (c *accChild) node() (nodeInfo, bool) {
 	c.b.mu.Lock()
 	ox, oy := c.b.originX, c.b.originY
 	c.b.mu.Unlock()
-	return nodeInfo{name: n.Name, role: Role(n.Role), node: n, ox: ox, oy: oy}, true
+	return nodeInfo{name: Name(n), role: Role(n.Role), node: n, ox: ox, oy: oy}, true
 }
 
 type nodeInfo struct {
@@ -198,7 +198,7 @@ func (c *accCache) item(i int) (cacheItem, bool) {
 		Index:      int32(i),
 		ChildCount: 0,
 		Interfaces: []string{ifaceAccessible, ifaceComponent, ifaceAction},
-		Name:       n.Name,
+		Name:       Name(n),
 		Role:       Role(n.Role),
 		State:      stateSet(),
 	}, true

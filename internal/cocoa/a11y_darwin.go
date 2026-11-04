@@ -211,7 +211,12 @@ func (w *Window) buildA11yChildren() objc.ID {
 			continue
 		}
 		el.Send(selSetAccessibilityRole, objc.NSString(AXRole(n.Role)))
-		el.Send(selSetAccessibilityLabel, objc.NSString(n.Name))
+		if n.Name != "" {
+			// accessibilityLabel is nullable (NSAccessibilityProtocols.h): a
+			// nameless text field has no label and is announced from its role
+			// and value.
+			el.Send(selSetAccessibilityLabel, objc.NSString(n.Name))
+		}
 		el.Send(selSetAccessibilityFrame, onScreen)
 		el.Send(selSetAccessibilityParent, w.view)
 		el.Send(selSetAccessibilityIdent, objc.NSString(PressPoint(n)))

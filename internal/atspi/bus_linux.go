@@ -218,7 +218,7 @@ func (b *Bridge) publishProps() {
 		}
 		_, _ = prop.Export(b.conn, childPath(i), prop.Map{
 			ifaceAccessible: {
-				"Name":        {Value: n.Name},
+				"Name":        {Value: Name(n)},
 				"Description": {Value: ""},
 				"ChildCount":  {Value: int32(0)},
 				"Parent":      {Value: root},

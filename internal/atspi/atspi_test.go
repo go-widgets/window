@@ -104,7 +104,8 @@ func TestSkip(t *testing.T) {
 		want bool
 	}{
 		{"named with area", node(toolkit.RoleButton, "OK", full), false},
-		{"unnamed", node(toolkit.RoleButton, "", full), true},
+		{"unnamed button is still focusable", node(toolkit.RoleButton, "", full), false},
+		{"unnamed text is static", node(toolkit.RoleText, "", full), true},
 		{"zero width", node(toolkit.RoleButton, "OK", toolkit.Rect{W: 0, H: 20}), true},
 		{"zero height", node(toolkit.RoleButton, "OK", toolkit.Rect{W: 10, H: 0}), true},
 		{"negative", node(toolkit.RoleButton, "OK", toolkit.Rect{W: -3, H: -3}), true},
@@ -120,7 +121,7 @@ func TestNodes(t *testing.T) {
 	box := toolkit.NewContainer(nil)
 	ok := toolkit.NewButton("OK", nil)
 	ok.SetBounds(toolkit.Rect{X: 0, Y: 0, W: 40, H: 20})
-	blank := toolkit.NewButton("", nil)
+	blank := toolkit.NewLabel("")
 	blank.SetBounds(toolkit.Rect{X: 0, Y: 30, W: 40, H: 20})
 	box.AddWidget(ok).AddWidget(blank)
 
