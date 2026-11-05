@@ -9,7 +9,9 @@ package cocoa
 import (
 	"bytes"
 	"errors"
+	"syscall"
 	"testing"
+	"time"
 
 	gpumetal "github.com/go-gfx/gpu2d/metal"
 	mtl "github.com/go-macos/metal"
@@ -185,6 +187,57 @@ func TestLiveCocoaWindowTranslucentStaysOnTheCPU(t *testing.T) {
 	}
 	if win.GPUError() != nil {
 		t.Fatalf("staying on the CPU for a material is not an error: %v", win.GPUError())
+	}
+}
+
+// cpuTime is the process's user + system time so far.
+func cpuTime() time.Duration {
+	var ru syscall.Rusage
+	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
+	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+}
+
+// BenchmarkLiveCocoaWindowFrame paints and presents one whole frame of a
+// live window, on the CPU path (PixelPainter, then the NSBitmapImageRep blit
+// in -drawRect:) and on the GPU path (gpupainter, then Present). Besides wall
+// time it reports cpu-ns/op, the process's CPU time per frame: the cost the
+// GPU path exists to take off the processor.
+func BenchmarkLiveCocoaWindowFrame(b *testing.B) {
+	for _, size := range []struct {
+		name string
+		w, h int
+	}{{"960x640", 960, 640}, {"1920x1200", 1920, 1200}} {
+		for _, gpu := range []bool{false, true} {
+			name := size.name + "/cpu"
+			if gpu {
+				name = size.name + "/gpu"
+			}
+			b.Run(name, func(b *testing.B) {
+				var win *Window
+				var err error
+				callOnMain(func() {
+					win, err = NewWithOptions(Options{Title: "frame", Width: size.w, Height: size.h, Theme: toolkit.DefaultDark(), GPU: gpu})
+					if err == nil {
+						win.bindAndSeed(gpuTree())
+					}
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+				defer callOnMain(func() { win.stopGPU(); _ = win.Close() })
+				if gpu && !win.GPU() {
+					b.Skip(win.GPUError())
+				}
+				b.ReportAllocs()
+				start := cpuTime()
+				b.ResetTimer()
+				for b.Loop() {
+					callOnMain(func() { win.paintFrame(false) })
+				}
+				b.StopTimer()
+				b.ReportMetric(float64(cpuTime()-start)/float64(b.N), "cpu-ns/op")
+			})
+		}
 	}
 }
 
