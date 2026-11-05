@@ -400,6 +400,11 @@ type Options struct {
 	// window cannot show, which means a scrollbar in a dialogue that never needs
 	// to scroll, or a layout that reflows into something nobody designed.
 	FixedSize bool
+	// GPU draws frames on the GPU through Metal and presents them in a
+	// CAMetalLayer, instead of painting on the CPU and blitting. A window with a
+	// translucent material, or a machine where Metal will not start, stays on
+	// the CPU path; Window.GPU and Window.GPUError say which happened.
+	GPU bool
 	// Passive makes the window a picture and nothing else: it never takes the
 	// keyboard, never takes a click, and the application never activates.
 	//

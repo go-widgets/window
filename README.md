@@ -103,6 +103,29 @@ damage→dirty-rect conversion live in a sovereign, 100%-covered codec
 `darwin (cocoa)` CI lane (open a window, render it, assert sampled pixels,
 synthesise a click + key and assert the dispatched event + the button counter).
 
+**On the GPU (`Config.GPU`):**
+- **Drawing:** the widgets are recorded through
+  [go-widgets/gpupainter](https://github.com/go-widgets/gpupainter) into a
+  [go-gfx/gpu2d](https://github.com/go-gfx/gpu2d) list, which its Metal renderer
+  draws.
+- **Presenting:** a second kernel copies the frame into a **CAMetalLayer**
+  inserted as the bottom sublayer of the view's layer. The frame never comes
+  back to the CPU, and `-drawRect:` has nothing to blit.
+- **Native controls:** they are subviews, so they stay above the frame.
+- **Exactness:** the frame is the CPU path's, byte for byte.
+  `TestLiveCocoaWindowOnTheGPUDrawsTheCPUFrame` compares it with
+  `PixelPainter` on a live window, before and after a resize. gpu2d's own test
+  reads the drawable back on the GPU and finds every byte.
+- **Fallbacks:** a window with a translucent material stays on the CPU path,
+  because its effect views show through holes punched in the CPU framebuffer.
+  So does a machine where Metal will not start. The window works as it would
+  without the option, and `GPU()` / `GPUError()` on the back-end say which
+  happened.
+
+```go
+w, err := window.Open(window.Config{Title: "on the GPU", GPU: true})
+```
+
 ### Windows Win32/GDI backend (`windows`)
 
 On Windows `Open` declares **Per-Monitor-V2 DPI awareness**, registers a window
