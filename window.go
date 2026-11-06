@@ -177,6 +177,23 @@ type Config struct {
 	//
 	// Honoured today by the macOS (Cocoa) back-end; ignored elsewhere.
 	Immersive bool
+
+	// GPU draws frames on the GPU. The widgets are recorded through
+	// go-widgets/gpupainter into a go-gfx/gpu2d list, drawn by its Metal
+	// renderer, and presented in a CAMetalLayer; the frame never returns to the
+	// CPU. The pixels are those of the CPU path, byte for byte (gpu2d and
+	// gpupainter hold that by test).
+	//
+	// It pays where pixels dominate: large and HiDPI windows, images,
+	// animation. A small window at 1x is already cheap on the CPU.
+	//
+	// A window with a translucent material stays on the CPU path, because the
+	// effect views behind it show through holes punched in the CPU framebuffer;
+	// so does a machine where Metal will not start. Neither is an error: the
+	// window works as without the option.
+	//
+	// Honoured today by the macOS (Cocoa) back-end; ignored elsewhere.
+	GPU bool
 }
 
 // Repainter is an optional [Backend] capability: ask for a repaint from ANY

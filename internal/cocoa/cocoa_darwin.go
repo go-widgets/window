@@ -221,6 +221,12 @@ type Window struct {
 	// rebuilds of a continuously-changing tree (a scroll) to a11yMinInterval.
 	lastA11yTime time.Time
 
+	// GPU path (Options.GPU): wantGPU is the request, gpu the live path once it
+	// started (nil on the CPU path), gpuErr why it did not or stopped.
+	wantGPU bool
+	gpu     *gpuPath
+	gpuErr  error
+
 	closed bool
 	// gone is closed as seen from OTHER goroutines: closed is the main thread's
 	// own, and Show/Hide/Raise ask before they queue anything. Set by both
@@ -331,6 +337,9 @@ func viewDrawRect(self objc.ID, _ objc.SEL) {
 	w := active
 	if w == nil {
 		return
+	}
+	if w.gpu != nil {
+		return // the frame is the Metal sublayer's; the view's own content is unseen
 	}
 	w.mu.Lock()
 	buf, bw, bh := w.buf, w.w, w.h
@@ -706,6 +715,7 @@ func viewCloseNow(self objc.ID, _ objc.SEL) {
 	}
 	w.closed = true
 	w.gone.Store(true)
+	w.stopGPU()
 	if w.win != 0 {
 		w.win.Send(selClose)
 	}
@@ -902,6 +912,7 @@ func NewWithOptions(o Options) (*Window, error) {
 		scale:   scale,
 		backing: backing,
 		passive: o.Passive,
+		wantGPU: o.GPU,
 	}
 	w.buf = make([]byte, 4*w.w*w.h)
 	active = w
@@ -1022,6 +1033,11 @@ func (w *Window) bindAndSeed(root toolkit.Widget) {
 			w.draw()
 		}
 	}
+	// Materials and native controls are known now, so the GPU path can decide
+	// whether it may take over; if it does, the first frame is drawn there.
+	if w.startGPU(); w.gpu != nil {
+		w.draw()
+	}
 	w.presentFull()
 }
 
@@ -1030,6 +1046,10 @@ func (w *Window) bindAndSeed(root toolkit.Widget) {
 func (w *Window) draw() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.gpu != nil {
+		w.drawGPU()
+		return
+	}
 	p := painter.NewPixelPainter(w.buf, w.w, w.h)
 	full := toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h}
 	p.FillRect(full, w.theme.Background)
@@ -1084,7 +1104,9 @@ func (w *Window) paintFrame(resize bool) {
 			w.presentFull()
 		}
 	}()
-	if w.dmg == nil {
+	// The GPU path redraws the whole frame: the work that damage regions save
+	// is the CPU's, and the CPU is not drawing.
+	if w.dmg == nil || w.gpu != nil {
 		w.draw()
 		w.presentFull()
 		return
@@ -1100,6 +1122,10 @@ func (w *Window) paintFrame(resize bool) {
 // presentFull invalidates and re-blits the whole content view.
 func (w *Window) presentFull() {
 	if w.view == 0 {
+		return
+	}
+	if w.gpu != nil {
+		w.presentGPU()
 		return
 	}
 	w.mu.Lock()
@@ -1139,6 +1165,7 @@ func (w *Window) resize(nw, nh int, scale float64) {
 	w.w, w.h, w.scale = nw, nh, scale
 	w.buf = make([]byte, 4*nw*nh)
 	w.mu.Unlock()
+	w.resizeGPU()
 	if w.translucent {
 		// Relayout at the new size so the materials report fresh bounds, rebuild
 		// the effect views over them, then repaint so the holes match, and blit.
