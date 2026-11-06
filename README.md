@@ -126,6 +126,19 @@ synthesise a click + key and assert the dispatched event + the button counter).
 w, err := window.Open(window.Config{Title: "on the GPU", GPU: true})
 ```
 
+`BenchmarkLiveCocoaWindowFrame` measures one whole frame painted and presented
+in a live window. Setup: Apple M4 Max, 8 interleaved rounds under abbench
+`--max-load 8`, benchstat medians, process CPU time per frame:
+
+| window | CPU path | GPU path |
+|---|---:|---:|
+| 960 × 640 | 1.58 ms | 0.59 ms (−62.6 %) |
+| 1920 × 1200 | 5.96 ms | 0.99 ms (−83.4 %) |
+
+On the GPU path the wall time per frame is the display's refresh (8.3 ms on a
+120 Hz panel). Presenting faster than the display shows frames waits in
+`nextDrawable`, which is the intended vsync.
+
 ### Windows Win32/GDI backend (`windows`)
 
 On Windows `Open` declares **Per-Monitor-V2 DPI awareness**, registers a window
