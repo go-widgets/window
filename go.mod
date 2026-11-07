@@ -13,7 +13,7 @@ require (
 	github.com/go-macos/objc v0.12.0
 	github.com/go-macos/virtualdisplay v0.5.0
 	github.com/go-mswin/win32 v0.6.0
-	github.com/go-opentype/opentype v0.16.2-0.20261101005254-2c8922cb87c6
+	github.com/go-opentype/opentype v0.18.0
 	github.com/go-widgets/android v0.16.0
 	github.com/go-widgets/gpupainter v0.4.0
 	github.com/go-widgets/painter v0.17.0
