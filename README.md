@@ -194,6 +194,27 @@ Under lavapipe the GPU path costs more CPU time than the CPU path (about ten
 times) and more wall time (35 to 52 %): there is no GPU to take the work. The
 fractal run (RADV) that decides whether it pays on a real one is pending.
 
+**On the GPU on Windows (`Config.GPU`, opt-in):**
+- **Drawing:** the same recording through gpupainter into a gpu2d list, drawn by
+  gpu2d's **Direct3D 11** back-end (`gpu2d/d3d11`, over go-mswin/d3d11), and
+  copied by a second kernel into the back buffer of a **flip-model swap chain**
+  (`FLIP_DISCARD`, `R8G8B8A8_UNORM`, back buffers used as UAVs) on the window's own
+  HWND: the frame never returns to the CPU. While the swap chain exists `WM_PAINT`
+  only validates the update region, because a flip-model window shows nothing but
+  its swap chain.
+- **Proof, and what it is not:** `TestLiveGPUWindowPresentsTheCPUFrame` runs on
+  `windows-latest`, with a real window and gpu2d's **WARP** (software) device:
+  the back buffer, read through staging just before the swap chain presents it,
+  equals the frame `PixelPainter` draws from the same widgets, byte for byte,
+  before and after a resize. Nothing observed what a screen showed (a hosted
+  runner has no one to look), and **no Windows GPU has run it**: whether a
+  given GPU's driver accepts a UAV on a flip-model back buffer is unknown (the
+  documentation neither promises nor forbids it; WARP accepts it) and is
+  gpu2d's parity measurement to make. A frame the device refuses, or a device
+  that will not start, leaves the window on the GDI path, with `GPUError()`
+  saying why; both are tested. Child controls (the native-control seam) over a
+  swap chain have not been tried.
+
 ### Windows Win32/GDI backend (`windows`)
 
 On Windows `Open` declares **Per-Monitor-V2 DPI awareness**, registers a window
