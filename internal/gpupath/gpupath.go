@@ -119,6 +119,17 @@ func (p *Path) Err() error {
 	return p.err
 }
 
+// Device names the device the frames are drawn on when the renderer says (gpu2d's
+// does: "llvmpipe (LLVM 19.1.7, 256 bits)"), and is empty otherwise.
+func (p *Path) Device() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n, ok := p.r.(interface{ Name() string }); ok {
+		return n.Name()
+	}
+	return ""
+}
+
 // TakeDropped reports whether the path stopped since the last call, and clears
 // that. A window with an incremental root calls it to learn that its
 // framebuffer was not kept up to date while the GPU drew, so the next frame must

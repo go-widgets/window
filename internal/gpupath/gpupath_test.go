@@ -50,7 +50,32 @@ func (r *cpuRenderer) Resize(w, h int) error {
 	r.w, r.h, r.pix = w, h, bytes.Repeat([]byte{0xAA}, 4*w*h)
 	return nil
 }
-func (r *cpuRenderer) Close() { r.closed++ }
+func (r *cpuRenderer) Close()       { r.closed++ }
+func (r *cpuRenderer) Name() string { return "the CPU reference" }
+
+// nameless hides a renderer's Name.
+type nameless struct{ Renderer }
+
+func TestDeviceIsNamedWhenTheRendererSaysSo(t *testing.T) {
+	var p Path
+	if p.Device() != "" {
+		t.Fatal("a path that is down names a device")
+	}
+	p.Ask(true)
+	use(t, func(w, h int) (Renderer, error) { return newCPU(w, h), nil })
+	p.Start(8, 8)
+	if got := p.Device(); got != "the CPU reference" {
+		t.Fatalf("Device = %q", got)
+	}
+	p.Close()
+	use(t, func(w, h int) (Renderer, error) { return nameless{newCPU(w, h)}, nil })
+	var q Path
+	q.Ask(true)
+	q.Start(8, 8)
+	if got := q.Device(); got != "" {
+		t.Fatalf("Device = %q for a renderer that has no name", got)
+	}
+}
 
 // use installs open as the Open seam for one test and returns the renderers it
 // handed out.

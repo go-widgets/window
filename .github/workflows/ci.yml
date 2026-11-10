@@ -71,7 +71,7 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: go test -race -timeout 300s .
-      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa + internal/win32 + internal/nativeclip)
+      - name: 100% coverage gate (internal/x11 + internal/wayland + internal/wasmbox + internal/cocoa + internal/win32 + internal/nativeclip + internal/gpupath)
         shell: bash
         # -race needs cgo, so this step (and only this step) enables it. All five
         # sovereign layers stay CGO-free, proven by the CGO=0 arch matrix below.
@@ -85,10 +85,14 @@ jobs:
         # internal/nativeclip is OS-independent throughout: it is the clipping
         # geometry all three native-control backends share, and the one place
         # the rule that decides WHETHER to clip is written down.
+        # internal/gpupath is the Config.GPU state machine of the X11 and
+        # Wayland back-ends; its tests run it over a CPU-reference renderer, so
+        # the gate does not depend on this runner having a Vulkan device (the
+        # live-gpu lane below is the one that does).
         env:
           CGO_ENABLED: "1"
         run: |
-          for pkg in internal/x11 internal/wayland internal/wasmbox internal/cocoa internal/win32 internal/nativeclip; do
+          for pkg in internal/x11 internal/wayland internal/wasmbox internal/cocoa internal/win32 internal/nativeclip internal/gpupath; do
             go test -race -timeout 300s -coverprofile=cover.out "./$pkg/"
             go tool cover -func=cover.out | tail -n 60
             cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
@@ -409,6 +413,35 @@ jobs:
           name: live-wayland-capture
           path: live-wayland-capture.png
           if-no-files-found: warn
+
+  # Live proof of Config.GPU on Linux: gpu2d's Vulkan back-end draws under
+  # lavapipe (Mesa's software Vulkan), the window presents through the path it
+  # always had, and the bytes the display server holds are compared with the CPU
+  # path's for the same scene: X11 read back from Xvfb (XGetImage, through
+  # ImageMagick's import), Wayland the committed wl_shm buffer and grim's capture
+  # of a headless sway. The tests start Xvfb and sway themselves
+  # (WINDOW_GPU_SPAWN). WINDOW_GPU_REQUIRE makes a missing Vulkan device a
+  # failure: a lane that skips for want of a driver proves nothing. These are
+  # software numbers and software arithmetic, not a GPU's; see README.
+  live-gpu:
+    name: live GPU (lavapipe, X11 + Wayland)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.3
+      - name: Install lavapipe, an X server, a headless Wayland compositor and capture tools
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1 vulkan-tools xvfb imagemagick xdotool sway grim
+      - name: Which Vulkan device
+        run: vulkaninfo --summary
+      - name: Run the live GPU proof
+        env:
+          WINDOW_GPU_INTEGRATION: "1"
+          WINDOW_GPU_SPAWN: "1"
+          WINDOW_GPU_REQUIRE: "1"
+          CGO_ENABLED: "0"
+        run: go test -count=1 -tags=integration -run TestLiveGPU -v .
 
   # Live HiDPI proof on X11: an Xvfb whose desktop publishes Xft.dpi, which is
   # where every toolkit reads the scale from (X11 itself has no notion of one).

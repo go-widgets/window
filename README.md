@@ -139,6 +139,60 @@ On the GPU path the wall time per frame is the display's refresh (8.3 ms on a
 120 Hz panel). Presenting faster than the display shows frames waits in
 `nextDrawable`, which is the intended vsync.
 
+**On the GPU on Linux (`Config.GPU`, X11 and Wayland):**
+- **Drawing:** the same recording through gpupainter into a gpu2d list, drawn by
+  gpu2d's **Vulkan** back-end (`gpu2d/vulkan`, over
+  [go-gfx/vulkan](https://github.com/go-gfx/vulkan): pure Go, `libvulkan.so.1`
+  through purego, no cgo).
+- **Presenting:** the renderer's `Pixels()` are copied into the window's own
+  framebuffer, which the back-end presents as it always did: MIT-SHM (or
+  `PutImage`) on X11, `wl_shm` on Wayland. The frame therefore crosses the CPU
+  once; nothing is shared with the display server by dma-buf yet (that is L2
+  and L3 of gpu2d's `docs/NATIVE.md`). It is the "Vulkan raster with CPU
+  present" fallback of that design, shipped as the first step.
+- **Exactness:** the frame is the CPU path's, byte for byte, under lavapipe.
+  `TestLiveGPUX11ShowsTheCPUFrame` reads the window back from Xvfb with
+  `XGetImage` and compares it with a window that did not ask for the GPU and
+  with `PixelPainter`, before and after a resize.
+  `TestLiveGPUWaylandShowsTheCPUFrame` compares the `wl_shm` buffer the window
+  committed with the CPU window's and with `PixelPainter` packed as ARGB8888,
+  and, under its own headless sway, grim's capture of the output. Whether a
+  given hardware device agrees is gpu2d's parity measurement, not this
+  package's.
+- **Fallbacks:** where Vulkan is unavailable (`gpu2d/vulkan.ErrUnsupported`: no
+  loader, no driver) or a frame is refused (`gpu2d.ErrTooLarge`, a lost device,
+  a timeout), the window draws on the CPU, keeps running, and says why through
+  `GPU()` and `GPUError()` on the back-end, as on macOS. As on macOS a refusal
+  is for good: the renderer is released and every later frame is a CPU frame
+  (the first of them a whole one, even for an incremental root, whose damage was
+  not tracked while the GPU drew). While the GPU draws, an incremental root is
+  redrawn whole. On android the GPU path never starts: go-gfx/vulkan's build
+  constraint admits `GOOS=android`, where purego needs cgo.
+- **The live proof off a GPU:** `test/gpu-linux/Dockerfile` is lavapipe, Xvfb
+  and headless sway in a container; the tests start the servers themselves
+  (`WINDOW_GPU_SPAWN=1`) and `WINDOW_GPU_REQUIRE=1` makes a missing device a
+  failure. The same tests are the `live GPU (lavapipe, X11 + Wayland)` CI lane.
+
+`BenchmarkLiveGPUFrame` measures one whole frame painted and presented in a live
+window. **These are software numbers:** the "GPU" is lavapipe (llvmpipe, LLVM
+19.1.7, 16 threads) in a linux/arm64 container on an Apple M4 Max, so the GPU
+path is a CPU rasterizer plus the copy, and a hardware device is a different
+measurement. 6 interleaved rounds (cpu, gpu, cpu, ...) under abbench
+`--max-load 8`, 30 frames each, benchstat medians; `cpu-ns` is the process's
+CPU time per frame, every thread. A Wayland frame includes one round trip with
+the compositor, for both paths.
+
+| window | protocol | CPU path, wall / cpu | GPU path (lavapipe), wall / cpu | allocs/op CPU / GPU |
+|---|---|---:|---:|---:|
+| 960 × 640 | X11 | 2.47 ms / 2.48 ms | 3.62 ms / 25.8 ms | 30 / 89 |
+| 960 × 640 | Wayland | 2.14 ms / 2.13 ms | 3.26 ms / 23.3 ms | 64 / 127 |
+| 1920 × 1200 | X11 | 8.41 ms / 8.46 ms | 11.7 ms / 89.7 ms | 30 / 89 |
+| 1920 × 1200 | Wayland | 7.75 ms / 7.71 ms | 10.5 ms / 86.9 ms | 64 / 128 |
+
+Under lavapipe the GPU path costs more CPU time than the CPU path (about ten
+times) and more wall time (35 to 52 %): there is no GPU to take the work. The
+fractal run (RADV) that decides whether it pays on a real one is pending.
+
 ### Windows Win32/GDI backend (`windows`)
 
 On Windows `Open` declares **Per-Monitor-V2 DPI awareness**, registers a window
