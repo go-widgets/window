@@ -6,7 +6,7 @@ require (
 	github.com/ebitengine/purego v0.11.3
 	github.com/go-appdirs/outdir v0.3.0
 	github.com/go-freedesktop/x11 v0.3.0
-	github.com/go-gfx/gpu2d v0.9.1
+	github.com/go-gfx/gpu2d v0.9.2
 	github.com/go-gtk/gtk4 v0.9.0
 	github.com/go-macos/appkit v0.9.0
 	github.com/go-macos/metal v0.6.0
