@@ -28,6 +28,7 @@ import (
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/window/internal/dnd"
+	"github.com/go-widgets/window/internal/gpupath"
 	"github.com/go-widgets/window/internal/x11"
 
 	xproto "github.com/go-freedesktop/x11"
@@ -179,20 +180,28 @@ type Config struct {
 	Immersive bool
 
 	// GPU draws frames on the GPU. The widgets are recorded through
-	// go-widgets/gpupainter into a go-gfx/gpu2d list, drawn by its Metal
-	// renderer, and presented in a CAMetalLayer; the frame never returns to the
-	// CPU. The pixels are those of the CPU path, byte for byte (gpu2d and
-	// gpupainter hold that by test).
+	// go-widgets/gpupainter into a go-gfx/gpu2d list. On macOS gpu2d's Metal
+	// renderer draws it and the frame is presented in a CAMetalLayer, never
+	// returning to the CPU. On Linux (X11 and Wayland) gpu2d's Vulkan renderer
+	// draws it and the frame is copied from the renderer into the window's
+	// framebuffer, which is presented through the path the window always had
+	// (wl_shm, MIT-SHM or PutImage): the frame crosses the CPU once, and nothing
+	// is shared with the display server by dma-buf yet. The pixels are those of
+	// the CPU path, byte for byte (gpu2d and gpupainter hold that by test).
 	//
 	// It pays where pixels dominate: large and HiDPI windows, images,
 	// animation. A small window at 1x is already cheap on the CPU.
 	//
-	// A window with a translucent material stays on the CPU path, because the
-	// effect views behind it show through holes punched in the CPU framebuffer;
-	// so does a machine where Metal will not start. Neither is an error: the
-	// window works as without the option.
+	// A window with a translucent material (macOS) stays on the CPU path,
+	// because the effect views behind it show through holes punched in the CPU
+	// framebuffer; so does a machine where Metal or Vulkan will not start. On
+	// Linux a frame the device refuses (gpu2d.ErrTooLarge, a lost device) stops
+	// the GPU path for good and is drawn on the CPU, like every frame after it.
+	// None of this is an error: the window works as without the option, and its
+	// GPU and GPUError methods say which happened.
 	//
-	// Honoured today by the macOS (Cocoa) back-end; ignored elsewhere.
+	// Honoured today by the macOS (Cocoa), X11 and Wayland back-ends; ignored
+	// elsewhere.
 	GPU bool
 }
 
@@ -299,6 +308,10 @@ type Window struct {
 	buf   []byte // RGBA framebuffer, 4*w*h bytes
 	theme *toolkit.Theme
 
+	// gpu is the Config.GPU path: it draws the frame on a Vulkan device and
+	// copies it into buf, which is presented as ever. Inert without the option.
+	gpu gpupath.Path
+
 	keymap *x11.Keymap
 
 	// fbmu guards the MIT-SHM segment and everything that writes into it.
@@ -401,6 +414,7 @@ func newWindow(conn *x11.Conn, cfg Config) (*Window, error) {
 		// is what the user already knows it by.
 		title: cfg.Title,
 	}
+	w.gpu.Ask(cfg.GPU)
 	w.win = conn.NewID()
 	w.gc = conn.NewID()
 
@@ -503,12 +517,20 @@ func (w *Window) ensureSegment() {
 // Size returns the current client size in pixels.
 func (w *Window) Size() (int, int) { return w.w, w.h }
 
+// GPU reports whether frames are being drawn on the GPU ([Config.GPU]).
+func (w *Window) GPU() bool { return w.gpu.Active() }
+
+// GPUError is why a window that asked for the GPU is not using it: nil when it
+// is, or when it never asked. The GPU path starts when Run does.
+func (w *Window) GPUError() error { return w.gpu.Err() }
+
 // Close closes the window's connection to the server.
 //
 // Safe from any goroutine: the shared segment is detached under fbmu, so a run
 // loop mirroring pixels into it finishes its frame first and finds the window
 // closed on the next one.
 func (w *Window) Close() error {
+	w.gpu.Close() // waits for a frame the run loop is drawing
 	w.fbmu.Lock()
 	if w.closed {
 		w.fbmu.Unlock()
@@ -527,6 +549,9 @@ func (w *Window) Close() error {
 // draw repaints the whole framebuffer: background fill then the root widget
 // laid out to fill the client area.
 func (w *Window) draw() {
+	if w.gpu.Render(w.buf, w.w, w.h, w.root, w.theme) {
+		return
+	}
 	p := painter.NewPixelPainter(w.buf, w.w, w.h)
 	full := toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h}
 	p.FillRect(full, w.theme.Background)
@@ -598,6 +623,7 @@ func (w *Window) resize(nw, nh int) {
 	}
 	w.w, w.h = nw, nh
 	w.buf = make([]byte, 4*nw*nh)
+	w.gpu.Resize(nw, nh)
 	// Grow the shared segment to match, if the SHM path is active.
 	w.ensureSegment()
 }
@@ -617,7 +643,12 @@ func (w *Window) Run(root toolkit.Widget) error {
 	// for the window's first map. When the root is incremental, draw through it
 	// so its full-surface seed damage is consumed here — the first interaction
 	// is then already a purely incremental frame.
-	if w.dmg != nil {
+	//
+	// A window that asked for the GPU takes it over here, once the root is
+	// known; it then redraws whole frames (the damage that saves work is the
+	// CPU's, and the CPU is not drawing).
+	w.gpu.Start(w.w, w.h)
+	if w.dmg != nil && !w.gpu.Active() {
 		w.drawIncremental()
 	} else {
 		w.draw()
@@ -670,7 +701,10 @@ func (w *Window) paintFrame(resize, expose bool) error {
 	// The window knows its own position, so extents are reported in real screen
 	// coordinates. Shared with the Wayland back-end — see refreshA11y.
 	refreshA11y(w.root, w.title, w.originX, w.originY)
-	if w.dmg == nil {
+	// A whole frame when the GPU draws, and for the first one after it stopped:
+	// the framebuffer was not kept up to date meanwhile, so no damage list can
+	// be trusted to cover it.
+	if w.dmg == nil || w.gpu.Active() || w.gpu.TakeDropped() {
 		w.draw()
 		return w.present()
 	}
