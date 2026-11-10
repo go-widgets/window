@@ -45,8 +45,8 @@ var ErrSize = errors.New("gpupath: the renderer's frame is not the window's size
 
 // Open is the seam a test replaces to make the GPU path fail to start. By
 // default it is gpu2d's Vulkan renderer, on the best device the loader offers
-// (open_vulkan.go), and on android, where go-gfx/vulkan cannot be linked
-// without cgo, a refusal (open_android.go).
+// (open.go); where go-gfx/vulkan has no binding (android included, since
+// v0.2.1) it refuses with vulkan.ErrUnsupported.
 var Open = open
 
 // Path is one window's GPU state, whether or not the window asked for it. The

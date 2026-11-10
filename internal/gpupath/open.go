@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-//go:build !android
-
 package gpupath
 
 import "github.com/go-gfx/gpu2d/vulkan"

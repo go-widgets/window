@@ -166,8 +166,9 @@ On the GPU path the wall time per frame is the display's refresh (8.3 ms on a
   is for good: the renderer is released and every later frame is a CPU frame
   (the first of them a whole one, even for an incremental root, whose damage was
   not tracked while the GPU drew). While the GPU draws, an incremental root is
-  redrawn whole. On android the GPU path never starts: go-gfx/vulkan's build
-  constraint admits `GOOS=android`, where purego needs cgo.
+  redrawn whole. On android (CGO-free) there is no Vulkan binding
+  (go-gfx/vulkan v0.2.1 builds its stub there), so the window stays on the CPU
+  and `GPUError` says so.
 - **The live proof off a GPU:** `test/gpu-linux/Dockerfile` is lavapipe, Xvfb
   and headless sway in a container; the tests start the servers themselves
   (`WINDOW_GPU_SPAWN=1`) and `WINDOW_GPU_REQUIRE=1` makes a missing device a
