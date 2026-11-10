@@ -200,8 +200,14 @@ type Config struct {
 	// None of this is an error: the window works as without the option, and its
 	// GPU and GPUError methods say which happened.
 	//
-	// Honoured today by the macOS (Cocoa), X11 and Wayland back-ends; ignored
-	// elsewhere.
+	// On Windows (opt-in, like the others) gpu2d's Direct3D 11 renderer draws the
+	// frame and a flip-model swap chain on the window's HWND presents it, the
+	// frame never returning to the CPU; a device that cannot make one, or a frame
+	// it refuses, leaves the window on the GDI path. The Direct3D 11 back-end is
+	// proven on WARP (the software device) in CI and on no GPU.
+	//
+	// Honoured today by the macOS (Cocoa), X11, Wayland and Windows back-ends;
+	// ignored elsewhere.
 	GPU bool
 }
 
