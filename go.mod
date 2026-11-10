@@ -6,7 +6,7 @@ require (
 	github.com/ebitengine/purego v0.11.3
 	github.com/go-appdirs/outdir v0.3.0
 	github.com/go-freedesktop/x11 v0.3.0
-	github.com/go-gfx/gpu2d v0.4.0
+	github.com/go-gfx/gpu2d v0.9.1
 	github.com/go-gtk/gtk4 v0.9.0
 	github.com/go-macos/appkit v0.9.0
 	github.com/go-macos/metal v0.6.0
@@ -27,6 +27,7 @@ require (
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
 	github.com/go-crdt/crdt v0.57.0 // indirect
 	github.com/go-gfx/gfx v0.41.0 // indirect
+	github.com/go-gfx/vulkan v0.2.0 // indirect
 	github.com/go-icons/iconoir v0.3.0 // indirect
 	github.com/go-images/images v0.1.1-0.20261026203936-4ac989d310a1 // indirect
 	github.com/go-opentype/fonts v0.14.0 // indirect

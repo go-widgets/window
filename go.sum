@@ -13,8 +13,12 @@ github.com/go-freedesktop/x11 v0.3.0 h1:DAZN7uAt8eQOyav90VduelaEJyTdWlAZjOTZOKvu
 github.com/go-freedesktop/x11 v0.3.0/go.mod h1:6GsirPySzG8JmIhqUYc0bDcMfrXuaGf9iRsOWSP8JsU=
 github.com/go-gfx/gfx v0.41.0 h1:MVEnory0Zx8ypzuVDrTIWz4Cekv8hn5ilcYg3glJPrk=
 github.com/go-gfx/gfx v0.41.0/go.mod h1:4OenoKrgdht6UXYf5SV8w2tb41hfAdy4QoxJRPsRDz4=
-github.com/go-gfx/gpu2d v0.4.0 h1:ULV3yjE3zYfJF4MWzKa6itlnHd3yxvTvbi1hshCv4Mo=
-github.com/go-gfx/gpu2d v0.4.0/go.mod h1:o49M4VSvllY2WkvlDNE1bu9IfI8UWjIIcE3lwBqNAuA=
+github.com/go-gfx/gpu2d v0.9.1 h1:nE85AevDVyUJ+YGjFtdaaDvg+7KThGhs01blW8LpuTY=
+github.com/go-gfx/gpu2d v0.9.1/go.mod h1:Bc0oQvpFfYLAopkE4Ei2sxCNxd6Ko6jUt9UryfkNL1I=
+github.com/go-gfx/vulkan v0.2.0 h1:Mw6SxhdSspfhUL+KlqcoOue6hH3C1bi5NUsreyQ37Jc=
+github.com/go-gfx/vulkan v0.2.0/go.mod h1:IYZuEIwS3vtystKZRIp+DtuPWX3Nfq86yMC4gJ5ebhw=
+github.com/go-gfx/wgsl v0.8.0 h1:zU4tEy9k2HQ2pQIgEuQqpPlpfPi5M7O8QbAzoSs6EZ0=
+github.com/go-gfx/wgsl v0.8.0/go.mod h1:Fzzw0jXvB+zxCqmTDwvcu3B7PkIVJBcygl2dyDyDAgQ=
 github.com/go-gtk/gtk4 v0.9.0 h1:5Efx48jeWL1LTmKIqqPcseSoa4U8Pf0Sbzo/rU4nmGA=
 github.com/go-gtk/gtk4 v0.9.0/go.mod h1:BTpReN9ONh5ZO4p2ETjt8n7km3yEYOFW/Q9HprOC13g=
 github.com/go-icons/iconoir v0.3.0 h1:kHG2sU5IsCvtBS1JICuXgfFo5f8UfwY1m7KYMVy97CI=

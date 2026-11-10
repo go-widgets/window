@@ -104,6 +104,7 @@ func (w *wlWindow) resizeFramebuffer() {
 	}
 	w.w, w.h = pw, ph
 	w.buf = make([]byte, 4*w.w*w.h)
+	w.gpu.Resize(w.w, w.h)
 }
 
 // RenderScale reports how many framebuffer pixels this window allocates per

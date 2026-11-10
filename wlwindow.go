@@ -12,6 +12,7 @@ import (
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/window/internal/dnd"
+	"github.com/go-widgets/window/internal/gpupath"
 	"github.com/go-widgets/window/internal/wayland"
 )
 
@@ -71,8 +72,14 @@ type wlWindow struct {
 	buf   []byte // RGBA framebuffer, 4*w*h bytes
 	theme *toolkit.Theme
 	root  toolkit.Widget
-	dmg   DamageRenderer // non-nil when root opts into incremental present
-	dnd   *dnd.Controller
+
+	// gpu is the Config.GPU path: it draws the frame on a Vulkan device and
+	// copies it into buf, which is packed into the wl_shm buffer as ever. Inert
+	// without the option.
+	gpu gpupath.Path
+
+	dmg DamageRenderer // non-nil when root opts into incremental present
+	dnd *dnd.Controller
 
 	// title names the application object on the accessibility bus (the toplevel
 	// title is what the user already knows the window by). See refreshA11y.
@@ -154,6 +161,8 @@ func newWaylandWindow(conn *wayland.Conn, cfg Config) (*wlWindow, error) {
 		// is what the user already knows it by.
 		title: cfg.Title,
 	}
+
+	w.gpu.Ask(cfg.GPU)
 
 	reg, err := conn.Display().GetRegistry()
 	if err != nil {
@@ -462,6 +471,9 @@ func (w *wlWindow) translateAxis(axis uint32, value wayland.Fixed, m wlmods) []t
 // draw repaints the whole framebuffer: background fill then the root widget
 // laid out to fill the client area.
 func (w *wlWindow) draw() {
+	if w.gpu.Render(w.buf, w.w, w.h, w.root, w.theme) {
+		return
+	}
 	p := painter.NewPixelPainter(w.buf, w.w, w.h)
 	full := toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h}
 	p.FillRect(full, w.theme.Background)
@@ -652,6 +664,9 @@ func (w *wlWindow) Run(root toolkit.Widget) error {
 		w.dnd = dnd.New()
 	}
 	w.dnd.Bind(root)
+	// A window that asked for the GPU takes it over once its root is known; it
+	// then redraws whole frames (see paintFrame).
+	w.gpu.Start(w.w, w.h)
 	if err := w.paintInitial(); err != nil {
 		return err
 	}
@@ -722,7 +737,10 @@ func (w *wlWindow) paintFrame() error {
 	// refreshA11y. Done before the configure gate below so the tree is published
 	// and activations are applied even on frames that cannot yet present.
 	refreshA11y(w.root, w.title, 0, 0)
-	if w.dmg == nil {
+	// A whole frame when the GPU draws, and for the first one after it stopped:
+	// the framebuffer was not kept up to date meanwhile, so no damage list can
+	// be trusted to cover it.
+	if w.dmg == nil || w.gpu.Active() || w.gpu.TakeDropped() {
 		w.remap = false // a plain root presents the whole surface anyway
 		w.draw()
 		return w.present()
@@ -749,6 +767,13 @@ func (w *wlWindow) paintFrame() error {
 // Size returns the current client size in pixels.
 func (w *wlWindow) Size() (int, int) { return w.w, w.h }
 
+// GPU reports whether frames are being drawn on the GPU ([Config.GPU]).
+func (w *wlWindow) GPU() bool { return w.gpu.Active() }
+
+// GPUError is why a window that asked for the GPU is not using it: nil when it
+// is, or when it never asked. The GPU path starts when Run does.
+func (w *wlWindow) GPUError() error { return w.gpu.Err() }
+
 // Close destroys the pool and closes the connection (idempotent).
 // Close destroys the pool and closes the connection (idempotent).
 //
@@ -756,6 +781,7 @@ func (w *wlWindow) Size() (int, int) { return w.w, w.h }
 // painting into it finishes its frame first and finds the window closed on the
 // next one.
 func (w *wlWindow) Close() error {
+	w.gpu.Close() // waits for a frame the run loop is drawing
 	w.fbmu.Lock()
 	if w.closed {
 		w.fbmu.Unlock()
