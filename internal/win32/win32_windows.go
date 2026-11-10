@@ -184,6 +184,13 @@ type Window struct {
 	// gone is closed as seen from other goroutines, which Show, Hide and Raise
 	// are called from; closed is the UI thread's own.
 	gone atomic.Bool
+
+	// The GPU path (gpu_windows.go, Config.GPU): wantGPU is the request, gpu the
+	// live path once it started (nil on the CPU path), gpuErr why it did not or
+	// stopped. All three belong to the UI thread.
+	wantGPU bool
+	gpu     *gpuPath
+	gpuErr  error
 }
 
 // Repaint asks the message loop for a frame. Implements the window.Repainter
@@ -233,6 +240,14 @@ func New(title string, width, height int, theme *toolkit.Theme) (*Window, error)
 // up-sampled -- and hands the caller the job of laying out for it, which is
 // what a root that asks RenderScale does.
 func NewScaled(title string, width, height int, theme *toolkit.Theme, native bool) (*Window, error) {
+	return NewScaledGPU(title, width, height, theme, native, false)
+}
+
+// NewScaledGPU is NewScaled that also says whether the window asks for the GPU
+// path (Config.GPU): frames drawn by gpu2d's Direct3D 11 renderer and presented
+// through a flip-model swap chain on the window. It starts when Run does, falls
+// back to the CPU path on any failure, and GPU and GPUError say which happened.
+func NewScaledGPU(title string, width, height int, theme *toolkit.Theme, native, gpu bool) (*Window, error) {
 	// Per-Monitor-V2 DPI awareness: the window is notified of per-monitor DPI and
 	// its non-client frame scales, so GetDpiForWindow reports the true monitor
 	// DPI and the content stays readable. Best-effort: it also returns false
@@ -282,6 +297,7 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, native boo
 		className: className,
 		scale:     1,
 		native:    native,
+		wantGPU:   gpu,
 	}
 	active = w
 
@@ -416,9 +432,18 @@ func (w *Window) Run(root toolkit.Widget) error {
 	// Seed the first frame: paint the whole framebuffer (through the incremental
 	// renderer when the root opts in, so its whole-surface seed damage is
 	// consumed here) and force an immediate full present.
-	if w.dmg != nil {
+	//
+	// A window that asked for the GPU takes it over here, once the root is known;
+	// it then redraws whole frames (the damage that saves work is the CPU's, and
+	// the CPU is not drawing).
+	w.startGPU()
+	switch {
+	case w.gpu != nil:
+		w.drawGPU()
+		w.presentGPU()
+	case w.dmg != nil:
 		w.drawIncremental()
-	} else {
+	default:
 		w.draw()
 	}
 	w.invalidateAll()
@@ -541,6 +566,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// thread allowed to do it, and is why Close only posts.
 		w.closed = true
 		w.gone.Store(true)
+		w.stopGPU() // the swap chain goes before its window
 		w.hwnd = 0
 		if active == w {
 			active = nil
@@ -609,6 +635,12 @@ func (w *Window) onPaint() {
 	if hdc == 0 {
 		return
 	}
+	if w.gpu != nil {
+		// The swap chain shows the window; GDI content would be ignored. The
+		// BeginPaint/EndPaint pair is what validates the update region.
+		procEndPaint.Call(w.hwnd, uintptr(unsafe.Pointer(&ps)))
+		return
+	}
 	w.mu.Lock()
 	bw, bh := w.w, w.h
 	physW, physH := w.physW, w.physH
@@ -642,6 +674,7 @@ func (w *Window) onSize(physW, physH int) {
 		return
 	}
 	w.applySize(lw, lh, w.scale)
+	w.resizeGPU()
 	w.paintFrame(true)
 }
 
@@ -660,6 +693,7 @@ func (w *Window) onDpiChanged(newDPI uint32) {
 	w.mu.Unlock()
 	w.applySize(lw, lh, scale) // recomputes physW/physH at the new scale
 	w.sizeAndCenter()          // resize the physical window/frame to match
+	w.resizeGPU()
 	w.paintFrame(true)
 }
 
@@ -731,6 +765,11 @@ func (w *Window) paintFrame(resize bool) {
 	// published from the same place, so the description can never lag the
 	// pixels a sighted user already sees.
 	w.refreshA11y()
+	if w.gpu != nil {
+		w.drawGPU()
+		w.presentGPU()
+		return
+	}
 	if w.dmg == nil {
 		w.draw()
 		w.invalidateAll()

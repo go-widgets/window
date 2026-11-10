@@ -166,6 +166,16 @@ jobs:
       - run: go test -count=1 ./...
         env:
           CGO_ENABLED: "0"
+      # Config.GPU on Win32: a real window on this runner, drawn by gpu2d's Direct3D 11
+      # renderer on WARP (no GPU here) and presented through a flip-model swap
+      # chain; the back buffer, read just before the swap chain presents it, must be
+      # the CPU path's frame, through a resize, and a refused frame must drop the
+      # window to GDI. What a screen shows is not observed.
+      - name: Live GPU window (WARP, flip swap chain)
+        env:
+          CGO_ENABLED: "0"
+          WINDOW_WIN32_GPU: "1"
+        run: go test -count=1 -v -run TestLiveGPUWindow ./internal/win32/
       - name: Live display enumeration (no window, no interactive session)
         env:
           CGO_ENABLED: "0"

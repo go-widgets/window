@@ -32,7 +32,11 @@ func Open(cfg Config) (Backend, error) {
 	// NativeScale asks for the panel's own pixels rather than a logical
 	// framebuffer the OS up-samples. Opt-in, as on every other back-end: it
 	// changes what Size reports and what a point is worth to the widget tree.
-	w, err := win32.NewScaled(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale == NativeScale)
+	//
+	// Config.GPU is opt-in, as on macOS: gpu2d's Direct3D 11 renderer draws the
+	// frame and a flip-model swap chain on the window presents it, falling back
+	// to this CPU path on any failure (GPU and GPUError say which happened).
+	w, err := win32.NewScaledGPU(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale == NativeScale, cfg.GPU)
 	if err != nil {
 		return nil, err
 	}
