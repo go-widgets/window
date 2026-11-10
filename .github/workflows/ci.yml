@@ -349,9 +349,15 @@ jobs:
   # devices makes the device-less headless seat advertise keyboard+pointer,
   # which the window picks up via dynamic hot-plug. xkbcli (libxkbcommon)
   # compiles the us keymap the virtual keyboard uploads.
+  #
+  # PINNED to ubuntu-24.04 (sway 1.9, wlroots 0.17.1): on ubuntu-26.04 (sway
+  # 1.11, wlroots 0.19.2), which ubuntu-latest became, TestLiveWayland never
+  # sees the injected key ("no EventChar 'a'"; the click arrives) while the
+  # 24.04 run of 2026-11-07 (run 42418087525) was green. The pin restores the
+  # lane; it does NOT claim the client works under sway 1.11 -- that is open.
   live-wayland:
     name: live Wayland (input)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
