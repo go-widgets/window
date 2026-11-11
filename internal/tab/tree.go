@@ -16,9 +16,11 @@ import (
 	"sync/atomic"
 
 	"github.com/go-widgets/painter"
+	"github.com/go-widgets/textinput"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/webcanvas"
 	"github.com/go-widgets/window/internal/dnd"
+	"github.com/go-widgets/window/webmirror"
 )
 
 // damageRenderer is the opt-in incremental repaint, as the other back-ends
@@ -47,7 +49,23 @@ var (
 	_ webcanvas.Scroller      = (*Tree)(nil)
 	_ webcanvas.ModifierAware = (*Tree)(nil)
 	_ webcanvas.RepaintAware  = (*Tree)(nil)
+	_ webcanvas.A11yAware     = (*Tree)(nil)
+	_ webcanvas.TextInputHost = (*Tree)(nil)
 )
+
+// host is the tree as webmirror sees it: the one conversion from the toolkit's
+// accessibility tree to webcanvas's mirror and text layer, shared with the
+// gallery.
+func (t *Tree) host() webmirror.Host {
+	return webmirror.Host{Sources: func() []webmirror.Source { return webmirror.Single(t.root) }}
+}
+
+// A11yNodes is the tree as the accessibility mirror shows it, read after each
+// frame is drawn.
+func (t *Tree) A11yNodes() []webcanvas.A11yNode { return t.host().A11yNodes() }
+
+// TextInputFor gives a TextView (and a CodeEditor) its text layer.
+func (t *Tree) TextInputFor(key string) textinput.Client { return t.host().TextInputFor(key) }
 
 // NewTree adapts root, laid out on a w×h surface painted with theme.
 func NewTree(root toolkit.Widget, w, h int, theme *toolkit.Theme) *Tree {

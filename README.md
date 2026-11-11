@@ -278,6 +278,17 @@ only its damage. It is a `Repainter` like the native backends: `Repaint`, from
 any goroutine, draws the next animation frame, so a result that arrives with
 nobody touching the page still reaches it.
 
+The tab is readable by a screen reader. The tree's accessibility nodes (role,
+name, value, focus, disabled, read-only, multiline, range, a stable key) become
+webcanvas's accessibility mirror, a hidden DOM subtree beside the canvas, and
+every `TextView` or `CodeEditor` gets webcanvas's text layer, so a text field is
+one `textbox` that the browser's find, selection and assistive technology see.
+Names come from widgets and reach the DOM only as text. A field with no name is
+still published, as on the native bridges. The conversion is one exported
+package, `github.com/go-widgets/window/webmirror`, which any scene drawn on a
+webcanvas can reuse (`webmirror.Host` implements `webcanvas.A11yAware` and
+`webcanvas.TextInputHost` over one or several widget trees).
+
 ```html
 <canvas id="screen" style="width:100vw;height:100vh"></canvas>
 <script src="wasm_exec.js"></script>
