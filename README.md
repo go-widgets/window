@@ -446,8 +446,13 @@ func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
   maximum request length. A root that implements `DamageRenderer`
   (`toolkit/scene.HostRoot` is the reference) reports the rectangles it
   repainted, and X11 (MIT-SHM `ShmPutImage`), Wayland (`wl_shm` damage),
-  Cocoa, Win32 and wasmbox present only those. The first frame, a resize and
-  an X11 `Expose` still present the whole surface.
+  Cocoa, Win32, wasmbox and GTK4 present only those. The first frame, a resize
+  and an X11 `Expose` still present the whole surface. On GTK4 the damage goes
+  to `GdkMemoryTextureBuilder`'s update-texture and update-region (libgtk-4
+  4.16 or newer, chosen at run time by `gtk4.TextureUpdateSupported`; older
+  runtimes keep the whole upload). The builder still takes the whole frame's
+  bytes: the region tells GTK what it need not re-render, it does not shrink
+  the copy.
 
 ## Verification
 

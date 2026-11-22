@@ -38,6 +38,7 @@ type Window struct {
 	w, h  int
 	scale float64
 	buf   []byte
+	fr    framer // whole versus damaged present
 
 	native  map[string]*liveControl
 	dirty   atomic.Bool
@@ -86,6 +87,7 @@ func Open(title string, width, height int, theme *toolkit.Theme, scale float64) 
 // presents a frame only when one was asked for — see [Window.Repaint].
 func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
+	w.fr.bind(root)
 	w.loop = gtk4.MainLoopNew()
 	w.win.Connect("close-request", func() { w.loop.Quit() })
 	w.installInput() // drawn regions become clickable/scrollable/typeable
@@ -137,6 +139,11 @@ func (w *Window) frame() {
 	if w.root == nil {
 		return
 	}
+	if w.fr.incremental() {
+		w.fr.present(w.root, w.theme, w.buf, w.w, w.h, pictureTarget{w.pic})
+		w.syncNative(w.root)
+		return
+	}
 	p := painter.NewPixelPainter(w.buf, w.w, w.h)
 	full := toolkit.Rect{X: 0, Y: 0, W: w.w, H: w.h}
 	p.FillRect(full, w.theme.Background)
@@ -144,4 +151,19 @@ func (w *Window) frame() {
 	w.root.Draw(p, w.theme)
 	w.pic.SetRGBA(w.buf, w.w, w.h)
 	w.syncNative(w.root)
+}
+
+// pictureTarget presents on the GtkPicture. The partial path needs GTK 4.16
+// (GdkMemoryTextureBuilder update-texture/update-region), checked at run time by
+// gtk4.TextureUpdateSupported; older libgtk-4 keeps the whole upload.
+type pictureTarget struct{ pic gtk4.Picture }
+
+func (t pictureTarget) Full(buf []byte, w, h int) { t.pic.SetRGBA(buf, w, h) }
+
+func (t pictureTarget) Update(buf []byte, w, h int, rects []toolkit.Rect) bool {
+	rs := make([]gtk4.Rect, len(rects))
+	for i, r := range rects {
+		rs[i] = gtk4.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H}
+	}
+	return t.pic.UpdateRGBA(buf, w, h, rs)
 }

@@ -569,3 +569,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth
       - name: internal/gtk on real GTK4
         run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 go test -count=1 -v ./internal/gtk/
+
+  # ubuntu-latest ships libgtk-4 4.14; the damaged present needs 4.16+
+  # (GdkMemoryTextureBuilder update-texture/update-region). Debian trixie ships
+  # 4.18: this lane requires the update path and proves it pixel for pixel.
+  live-gtk-damage:
+    name: live GTK4 4.16+ (damaged present required)
+    runs-on: ubuntu-latest
+    container: golang:1.27-trixie
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install GTK4 runtime + a headless X server
+        run: apt-get update && apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth
+      - name: internal/gtk damaged present on real GTK 4.16+
+        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GTK_REQUIRE_UPDATE=1 go test -count=1 -v -run 'TestGTKDamagedFramesReadBackAsAFullRepaint' ./internal/gtk/
