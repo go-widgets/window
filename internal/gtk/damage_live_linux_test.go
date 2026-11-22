@@ -1,0 +1,58 @@
+// Copyright (c) the go-widgets/window authors. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+//go:build linux && !android
+
+package gtk
+
+import (
+	"bytes"
+	"os"
+	"testing"
+
+	"github.com/go-gtk/gtk4"
+	"github.com/go-widgets/toolkit/scene"
+)
+
+// TestGTKDamagedFramesReadBackAsAFullRepaint drives the real window: after every
+// frame the GtkPicture, read back, equals a damage-unaware full repaint. On a
+// libgtk-4 older than 4.16 the whole upload carries every frame; on 4.16+ the
+// damaged frames go through the texture update (GTK_REQUIRE_UPDATE=1 makes a
+// runtime without it a failure, for the lane that must prove that path).
+func TestGTKDamagedFramesReadBackAsAFullRepaint(t *testing.T) {
+	win, err := Open("gtk damage test", gw, gh, nil, 1)
+	if err != nil {
+		t.Skipf("no GTK display: %v", err)
+	}
+	defer win.Close()
+	t.Logf("libgtk-4 minor %d, texture update: %v", gtk4.MinorVersion(), gtk4.TextureUpdateSupported())
+	if os.Getenv("GTK_REQUIRE_UPDATE") != "" && !gtk4.TextureUpdateSupported() {
+		t.Fatalf("GTK_REQUIRE_UPDATE is set but libgtk-4 4.%d lacks the update API", gtk4.MinorVersion())
+	}
+
+	app, cells := grid()
+	hr := scene.NewHostRoot(app)
+	win.root = hr
+	win.fr.bind(hr)
+
+	got := make([]byte, gw*gh*4)
+	check := func(label string) {
+		t.Helper()
+		if !win.pic.ReadRGBA(got, gw, gh) {
+			t.Fatalf("%s: the picture shows no texture of %dx%d", label, gw, gh)
+		}
+		if !bytes.Equal(got, reference(app, win.theme)) {
+			t.Fatalf("%s: the picture differs from a full repaint", label)
+		}
+	}
+
+	win.frame()
+	check("first frame")
+	for step, idx := range []int{0, 37, 5, 79, 44, 12, 63, 20, 0, 51} {
+		cells[idx].on = !cells[idx].on
+		hr.Invalidate(cells[idx])
+		win.frame()
+		check("step " + string(rune('0'+step)))
+	}
+}
