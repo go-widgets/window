@@ -30,8 +30,11 @@ import (
 type Window struct {
 	win   gtk4.Widget
 	fixed gtk4.Widget
-	pic   gtk4.Picture
-	loop  gtk4.MainLoop
+	// overlay is the window's child: the picture, with fixed above it. Its
+	// allocation is the drawable area, in points.
+	overlay gtk4.Widget
+	pic     gtk4.Picture
+	loop    gtk4.MainLoop
 
 	root  toolkit.Widget
 	theme *toolkit.Theme
@@ -67,17 +70,18 @@ func Open(title string, width, height int, theme *toolkit.Theme, scale float64) 
 	win.SetDefaultSize(width, height)
 	fixed := gtk4.FixedNew()
 	pic := gtk4.PictureNew()
-	// A GtkFixed gives each child its requested size, and a GtkPicture with no
-	// content requests nothing — so without this the framebuffer would be laid out
-	// at 0×0 and never seen. Size it to the logical window; the picture scales its
-	// (hi-dpi) texture down to fit.
-	pic.Widget().SetSizeRequest(width, height)
-	fixed.Put(pic.Widget(), 0, 0)
-	win.SetChild(fixed)
+	// The picture is the overlay's main child, so it takes the whole window and
+	// follows its resizes; the GtkFixed of native controls rides above it. (A
+	// GtkFixed child gets only its requested size, which for a picture with no
+	// content is 0×0, and a fixed request would pin the window to its first size.)
+	overlay := gtk4.OverlayNew()
+	overlay.SetOverlayChild(pic.Widget())
+	overlay.AddOverlay(fixed)
+	win.SetChild(overlay)
 
 	pxW, pxH := int(float64(width)*scale), int(float64(height)*scale)
 	w := &Window{
-		win: win, fixed: fixed, pic: pic,
+		win: win, fixed: fixed, overlay: overlay, pic: pic,
 		theme: theme, w: pxW, h: pxH, scale: scale,
 		native: map[string]*liveControl{},
 	}
@@ -116,6 +120,9 @@ func (w *Window) Run(root toolkit.Widget) error {
 	// the handler's NeedsPresent, so nothing is drawn while nothing changes. A
 	// single persistent callback avoids exhausting purego's callback table.
 	w.win.AddTickCallback(func() bool {
+		if w.fit() {
+			w.dirty.Store(true)
+		}
 		if w.dirty.Swap(false) {
 			w.frame()
 		}
@@ -139,6 +146,28 @@ func (w *Window) Close() error {
 		w.loop.Quit()
 	}
 	return nil
+}
+
+// fit reallocates the framebuffer when the window was resized, and reports
+// whether it did. The next present is then whole (the picture shows nothing of the
+// new frame yet), after which damage resumes. Before the window has an allocation
+// (not yet mapped) it keeps the size Open chose.
+func (w *Window) fit() bool {
+	aw, ah := w.overlay.AllocatedSize()
+	nw, nh, ok := fbSize(aw, ah, w.scale)
+	if !ok || (nw == w.w && nh == w.h) {
+		return false
+	}
+	w.realloc(nw, nh)
+	return true
+}
+
+// realloc replaces the framebuffer with an nw×nh one and arms a whole present.
+func (w *Window) realloc(nw, nh int) {
+	buf, sf := newFrameBuffer(nw, nh)
+	w.sf.Release()
+	w.buf, w.sf, w.w, w.h = buf, sf, nw, nh
+	w.fr.resize()
 }
 
 // Size returns the current framebuffer size in pixels.

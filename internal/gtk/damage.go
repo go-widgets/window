@@ -51,6 +51,19 @@ func (f *framer) bind(root toolkit.Widget) {
 	f.seeded = false
 }
 
+// resize forgets what the target shows: the framebuffer was reallocated, so the
+// next frame is presented whole and damage resumes after it.
+func (f *framer) resize() { f.seeded = false }
+
+// fbSize is the framebuffer, in pixels, for a window allocated allocW×allocH
+// points at scale pixels per point. ok is false while there is no allocation yet.
+func fbSize(allocW, allocH int, scale float64) (w, h int, ok bool) {
+	if allocW <= 0 || allocH <= 0 || scale <= 0 {
+		return 0, 0, false
+	}
+	return max(1, int(float64(allocW)*scale)), max(1, int(float64(allocH)*scale)), true
+}
+
 // incremental reports whether the bound root reports its own damage.
 func (f *framer) incremental() bool { return f.dmg != nil }
 

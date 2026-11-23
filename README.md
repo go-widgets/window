@@ -454,7 +454,10 @@ func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
   whole frame (the region only tells GTK what it need not re-render), so the
   copy cannot be narrowed to the damage; instead the framebuffer lives in GLib
   memory that the texture shares, and a present copies no byte (it was the whole
-  frame, 128000 bytes for 200x160, every time).
+  frame, 128000 bytes for 200x160, every time). The GTK4 window follows
+  resizes: the picture fills the window, a new allocation reallocates the
+  framebuffer, one whole frame is presented at the new size, and damage
+  resumes after it.
 
 ## Verification
 
