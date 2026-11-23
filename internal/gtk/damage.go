@@ -20,13 +20,14 @@ type damageRenderer interface {
 // target is where a frame is presented: the GtkPicture in production, a
 // recording mirror in the tests. buf is always the WHOLE framebuffer.
 type target interface {
-	// Full presents the whole frame.
-	Full(buf []byte, w, h int)
+	// Full presents the whole frame and returns the bytes of buf it COPIED (0 when
+	// the target shows buf's own memory).
+	Full(buf []byte, w, h int) (copied int)
 	// Update presents buf telling the target that only rects differ from what it
-	// shows now. It returns false, having presented nothing, when it cannot (the
-	// runtime lacks the GTK 4.16 texture-update API, or nothing is shown yet);
-	// the caller then presents the whole frame.
-	Update(buf []byte, w, h int, rects []toolkit.Rect) bool
+	// shows now, and returns the bytes it copied. ok is false, having presented
+	// nothing, when it cannot (the runtime lacks the GTK 4.16 texture-update API,
+	// or nothing is shown yet); the caller then presents the whole frame.
+	Update(buf []byte, w, h int, rects []toolkit.Rect) (copied int, ok bool)
 }
 
 // framer decides, frame by frame, whether to present the whole framebuffer or
@@ -41,6 +42,7 @@ type frameResult struct {
 	Whole  bool           // the whole frame was presented
 	Rects  []toolkit.Rect // the damage handed to the target (clamped), when !Whole
 	Pixels int            // pixels the presented region covers (4 bytes each)
+	Copied int            // bytes the target copied to present it (0: none)
 }
 
 // bind records the root's capability. A new root is presented whole first.
@@ -64,7 +66,7 @@ func (f *framer) present(root toolkit.Widget, th *toolkit.Theme, buf []byte, w, 
 	whole := frameResult{Whole: true, Pixels: frame.Area()}
 	if !f.seeded {
 		f.seeded = true
-		t.Full(buf, w, h)
+		whole.Copied = t.Full(buf, w, h)
 		return whole
 	}
 	var clamped []toolkit.Rect
@@ -78,9 +80,10 @@ func (f *framer) present(root toolkit.Widget, th *toolkit.Theme, buf []byte, w, 
 	if len(clamped) == 0 {
 		return frameResult{}
 	}
-	if !t.Update(buf, w, h, clamped) {
-		t.Full(buf, w, h)
+	copied, ok := t.Update(buf, w, h, clamped)
+	if !ok {
+		whole.Copied = t.Full(buf, w, h)
 		return whole
 	}
-	return frameResult{Rects: clamped, Pixels: pixels}
+	return frameResult{Rects: clamped, Pixels: pixels, Copied: copied}
 }

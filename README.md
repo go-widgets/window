@@ -450,9 +450,11 @@ func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
   and an X11 `Expose` still present the whole surface. On GTK4 the damage goes
   to `GdkMemoryTextureBuilder`'s update-texture and update-region (libgtk-4
   4.16 or newer, chosen at run time by `gtk4.TextureUpdateSupported`; older
-  runtimes keep the whole upload). The builder still takes the whole frame's
-  bytes: the region tells GTK what it need not re-render, it does not shrink
-  the copy.
+  runtimes keep the whole upload). The builder needs a GBytes spanning the
+  whole frame (the region only tells GTK what it need not re-render), so the
+  copy cannot be narrowed to the damage; instead the framebuffer lives in GLib
+  memory that the texture shares, and a present copies no byte (it was the whole
+  frame, 128000 bytes for 200x160, every time).
 
 ## Verification
 
