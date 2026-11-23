@@ -154,8 +154,8 @@ func (w *Window) Close() error {
 // (not yet mapped) it keeps the size Open chose.
 func (w *Window) fit() bool {
 	aw, ah := w.overlay.AllocatedSize()
-	nw, nh, ok := fbSize(aw, ah, w.scale)
-	if !ok || (nw == w.w && nh == w.h) {
+	nw, nh, changed := fitSize(aw, ah, w.scale, w.w, w.h)
+	if !changed {
 		return false
 	}
 	w.realloc(nw, nh)

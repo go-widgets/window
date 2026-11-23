@@ -64,6 +64,18 @@ func fbSize(allocW, allocH int, scale float64) (w, h int, ok bool) {
 	return max(1, int(float64(allocW)*scale)), max(1, int(float64(allocH)*scale)), true
 }
 
+// fitSize decides what Window.fit does: given the window's allocation and the
+// current framebuffer size curW×curH, it returns the size to reallocate to and
+// whether to reallocate at all. No allocation yet, or an unchanged size, changes
+// nothing.
+func fitSize(allocW, allocH int, scale float64, curW, curH int) (w, h int, changed bool) {
+	w, h, ok := fbSize(allocW, allocH, scale)
+	if !ok || (w == curW && h == curH) {
+		return curW, curH, false
+	}
+	return w, h, true
+}
+
 // incremental reports whether the bound root reports its own damage.
 func (f *framer) incremental() bool { return f.dmg != nil }
 
