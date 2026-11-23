@@ -72,3 +72,49 @@ func TestGTKDamagedFramesReadBackAsAFullRepaint(t *testing.T) {
 	}
 	check("shared partial present")
 }
+
+// TestGTKResizeReallocatesAndResumesDamage: after the framebuffer is reallocated
+// (what the frame clock does when the window's allocation changed) the next frame
+// presents whole at the new size and reads back as a full repaint there, the old
+// frame is released, and partial presents resume.
+func TestGTKResizeReallocatesAndResumesDamage(t *testing.T) {
+	win, err := Open("gtk resize test", gw, gh, nil, 1)
+	if err != nil {
+		t.Skipf("no GTK display: %v", err)
+	}
+	defer win.Close()
+	app, cells := grid()
+	hr := scene.NewHostRoot(app)
+	win.root = hr
+	win.fr.bind(hr)
+	win.frame()
+	first := win.sf
+
+	win.realloc(gh, gw) // transposed: the same byte count, a different frame
+	if win.sf == nil || win.sf == first || win.w != gh || win.h != gw || len(win.buf) != gh*gw*4 {
+		t.Fatalf("after realloc: sf=%v (was %v) size %dx%d len %d", win.sf, first, win.w, win.h, len(win.buf))
+	}
+	check := func(label string) {
+		t.Helper()
+		got := make([]byte, gh*gw*4)
+		if !win.pic.ReadRGBA(got, gh, gw) {
+			t.Fatalf("%s: the picture shows no texture of %dx%d", label, gh, gw)
+		}
+		if !bytes.Equal(got, refAt(app, win.theme, gh, gw)) {
+			t.Fatalf("%s: the picture differs from a full repaint at the new size", label)
+		}
+	}
+	res := win.fr.present(win.root, win.theme, win.buf, win.w, win.h, pictureTarget{win.pic, win.sf})
+	if !res.Whole || res.Copied != 0 {
+		t.Fatalf("first frame after the resize: %+v, want whole and 0 bytes copied", res)
+	}
+	check("whole present after the resize")
+
+	cells[9].on = !cells[9].on
+	hr.Invalidate(cells[9])
+	res = win.fr.present(win.root, win.theme, win.buf, win.w, win.h, pictureTarget{win.pic, win.sf})
+	if gtk4.TextureUpdateSupported() && res.Whole {
+		t.Fatal("damage did not resume after the resize")
+	}
+	check("partial present after the resize")
+}

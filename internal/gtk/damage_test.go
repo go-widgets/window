@@ -327,3 +327,80 @@ func TestRefusedUpdateCopiesNothingWhenShared(t *testing.T) {
 		t.Fatalf("shared fallback: %+v copied=%d, want a whole present copying nothing", res, m.copied)
 	}
 }
+
+// refAt renders the damage-unaware full repaint of app at w×h pixels.
+func refAt(app toolkit.Widget, th *toolkit.Theme, w, h int) []byte {
+	buf := make([]byte, w*h*4)
+	p := painter.NewPixelPainter(buf, w, h)
+	full := toolkit.Rect{W: w, H: h}
+	p.FillRect(full, th.Background)
+	app.SetBounds(full)
+	app.Draw(p, th)
+	return buf
+}
+
+// TestResizePresentsWholeThenResumesDamage: after the framebuffer is reallocated
+// the next frame is presented whole and equals a full repaint at the NEW size,
+// then damage resumes. The new size is the old one transposed (160x200 from
+// 200x160), so the frame holds the same number of bytes and the mirror cannot
+// refuse the partial update on a length mismatch: only the framer's own reset
+// makes the whole present happen.
+func TestResizePresentsWholeThenResumesDamage(t *testing.T) {
+	th := toolkit.DefaultDark()
+	app, cells := grid()
+	hr := scene.NewHostRoot(app)
+	var f framer
+	f.bind(hr)
+	m := &mirror{}
+	buf := make([]byte, gw*gh*4)
+	f.present(hr, th, buf, gw, gh, m)
+	cells[3].on = true
+	hr.Invalidate(cells[3])
+	if res := f.present(hr, th, buf, gw, gh, m); res.Whole {
+		t.Fatalf("before the resize: %+v, want a partial present", res)
+	}
+
+	f.resize()
+	buf = make([]byte, gh*gw*4)
+	res := f.present(hr, th, buf, gh, gw, m)
+	if !res.Whole || m.full != 2 {
+		t.Fatalf("after the resize: %+v full=%d, want one more whole present", res, m.full)
+	}
+	if !bytes.Equal(m.shown, refAt(app, th, gh, gw)) {
+		t.Fatal("whole present after the resize differs from a full repaint at the new size")
+	}
+
+	cells[40].on = true
+	hr.Invalidate(cells[40])
+	res = f.present(hr, th, buf, gh, gw, m)
+	if res.Whole || m.upd != 2 {
+		t.Fatalf("next frame: %+v upd=%d, want damage to have resumed", res, m.upd)
+	}
+	if !bytes.Equal(m.shown, refAt(app, th, gh, gw)) {
+		t.Fatal("partial present after the resize differs from a full repaint")
+	}
+}
+
+func TestFbSize(t *testing.T) {
+	for _, tc := range []struct {
+		aw, ah int
+		scale  float64
+		w, h   int
+		ok     bool
+	}{
+		{0, 0, 1, 0, 0, false},    // not allocated yet
+		{300, 0, 1, 0, 0, false},  // half-allocated
+		{0, 200, 1, 0, 0, false},  // half-allocated the other way
+		{-1, 200, 1, 0, 0, false}, // nonsense
+		{300, 200, 0, 0, 0, false},
+		{300, 200, 1, 300, 200, true},
+		{300, 200, 2, 600, 400, true},
+		{301, 199, 1.5, 451, 298, true}, // truncated like Open's size
+		{1, 1, 0.1, 1, 1, true},         // never an empty framebuffer
+	} {
+		w, h, ok := fbSize(tc.aw, tc.ah, tc.scale)
+		if w != tc.w || h != tc.h || ok != tc.ok {
+			t.Errorf("fbSize(%d,%d,%v) = %d,%d,%v, want %d,%d,%v", tc.aw, tc.ah, tc.scale, w, h, ok, tc.w, tc.h, tc.ok)
+		}
+	}
+}
