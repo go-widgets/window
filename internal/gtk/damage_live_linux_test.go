@@ -55,4 +55,20 @@ func TestGTKDamagedFramesReadBackAsAFullRepaint(t *testing.T) {
 		win.frame()
 		check("step " + string(rune('0'+step)))
 	}
+
+	// The window shares its framebuffer with GTK, so a partial present copies no
+	// byte (the copying path moved all 128000 of them per frame).
+	if win.sf == nil {
+		t.Fatal("the window has no shared frame although the GTK libraries loaded")
+	}
+	cells[7].on = !cells[7].on
+	hr.Invalidate(cells[7])
+	res := win.fr.present(win.root, win.theme, win.buf, win.w, win.h, pictureTarget{win.pic, win.sf})
+	if res.Copied != 0 {
+		t.Fatalf("a present copied %d bytes, want 0", res.Copied)
+	}
+	if gtk4.TextureUpdateSupported() && res.Whole {
+		t.Fatal("a one-cell change was presented whole although the update API is present")
+	}
+	check("shared partial present")
 }

@@ -17,20 +17,35 @@ import (
 // Update it shows the PREVIOUS image with ONLY the reported rectangles taken from
 // the new frame (GTK may skip re-rendering everything outside update-region), so
 // a damage report that misses a changed pixel leaves a stale pixel here.
+//
+// shared models the zero-copy target (a GBytes that IS the framebuffer): it
+// reports 0 bytes copied. Unshared it models the copying target that preceded it
+// (g_bytes_new over the whole frame, w*h*4 bytes on every present).
 type mirror struct {
 	shown     []byte
 	full, upd int
 	refuse    bool // Update reports it cannot (GTK older than 4.16)
+	shared    bool
+	copied    int // total bytes copied over every present
 }
 
-func (m *mirror) Full(buf []byte, w, h int) {
+func (m *mirror) cost(buf []byte) int {
+	if m.shared {
+		return 0
+	}
+	m.copied += len(buf)
+	return len(buf)
+}
+
+func (m *mirror) Full(buf []byte, w, h int) int {
 	m.shown = append(m.shown[:0], buf...)
 	m.full++
+	return m.cost(buf)
 }
 
-func (m *mirror) Update(buf []byte, w, h int, rects []toolkit.Rect) bool {
+func (m *mirror) Update(buf []byte, w, h int, rects []toolkit.Rect) (int, bool) {
 	if m.refuse || len(m.shown) != len(buf) {
-		return false
+		return 0, false
 	}
 	for _, r := range rects {
 		for y := r.Y; y < r.Y+r.H; y++ {
@@ -38,7 +53,7 @@ func (m *mirror) Update(buf []byte, w, h int, rects []toolkit.Rect) bool {
 		}
 	}
 	m.upd++
-	return true
+	return m.cost(buf), true
 }
 
 type cell struct {
@@ -244,5 +259,71 @@ func TestRebindPresentsWholeAgain(t *testing.T) {
 	f.bind(hr)
 	if res := f.present(hr, th, buf, gw, gh, m); !res.Whole {
 		t.Fatalf("after bind: %+v, want whole", res)
+	}
+}
+
+// TestBytesCopiedPerFrame is the exact count behind the zero-copy present: on the
+// 200x160 scene (128000 bytes) over the scripted 12-step change log, the copying
+// target moved the whole frame on EVERY present (the first plus the 12 partial
+// ones: 13 * 128000 = 1664000 bytes), the shared one moves none, and both show
+// the pixels of a full repaint after every step. The copy cannot be narrowed to
+// the damaged rectangles instead: GdkMemoryTextureBuilder needs a GBytes that
+// spans the whole frame (gdk/gdkmemorytexturebuilder.c:726), which is why the
+// target shares the buffer.
+func TestBytesCopiedPerFrame(t *testing.T) {
+	const frameBytes = gw * gh * 4
+	for _, tc := range []struct {
+		name      string
+		shared    bool
+		perUpdate int
+		total     int
+	}{
+		{"copying", false, frameBytes, 13 * frameBytes},
+		{"shared", true, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			th := toolkit.DefaultDark()
+			app, cells := grid()
+			hr := scene.NewHostRoot(app)
+			var f framer
+			f.bind(hr)
+			buf := make([]byte, frameBytes)
+			m := &mirror{shared: tc.shared}
+			if res := f.present(hr, th, buf, gw, gh, m); res.Copied != tc.perUpdate {
+				t.Fatalf("first frame copied %d bytes, want %d", res.Copied, tc.perUpdate)
+			}
+			for step, idx := range []int{0, 37, 5, 79, 44, 12, 63, 20, 0, 51, 8, 37} {
+				cells[idx].on = !cells[idx].on
+				hr.Invalidate(cells[idx])
+				res := f.present(hr, th, buf, gw, gh, m)
+				if res.Whole || res.Copied != tc.perUpdate {
+					t.Fatalf("step %d: whole=%v copied=%d, want a partial present copying %d", step, res.Whole, res.Copied, tc.perUpdate)
+				}
+				if !bytes.Equal(m.shown, reference(app, th)) {
+					t.Fatalf("step %d: shown image differs from a full repaint", step)
+				}
+			}
+			if m.copied != tc.total {
+				t.Fatalf("copied %d bytes in total, want %d", m.copied, tc.total)
+			}
+		})
+	}
+}
+
+// TestRefusedUpdateCopiesNothingWhenShared: the whole-frame fallback of a shared
+// target is still a zero-copy SetFrame.
+func TestRefusedUpdateCopiesNothingWhenShared(t *testing.T) {
+	th := toolkit.DefaultDark()
+	app, cells := grid()
+	hr := scene.NewHostRoot(app)
+	var f framer
+	f.bind(hr)
+	buf := make([]byte, gw*gh*4)
+	m := &mirror{refuse: true, shared: true}
+	f.present(hr, th, buf, gw, gh, m)
+	cells[3].on = true
+	hr.Invalidate(cells[3])
+	if res := f.present(hr, th, buf, gw, gh, m); !res.Whole || res.Copied != 0 || m.copied != 0 {
+		t.Fatalf("shared fallback: %+v copied=%d, want a whole present copying nothing", res, m.copied)
 	}
 }

@@ -38,7 +38,8 @@ type Window struct {
 	w, h  int
 	scale float64
 	buf   []byte
-	fr    framer // whole versus damaged present
+	sf    *gtk4.SharedFrame // buf's memory, handed to GTK without a copy; nil: buf is Go memory
+	fr    framer            // whole versus damaged present
 
 	native  map[string]*liveControl
 	dirty   atomic.Bool
@@ -75,12 +76,25 @@ func Open(title string, width, height int, theme *toolkit.Theme, scale float64) 
 	win.SetChild(fixed)
 
 	pxW, pxH := int(float64(width)*scale), int(float64(height)*scale)
-	return &Window{
+	w := &Window{
 		win: win, fixed: fixed, pic: pic,
 		theme: theme, w: pxW, h: pxH, scale: scale,
-		buf:    make([]byte, pxW*pxH*4),
 		native: map[string]*liveControl{},
-	}, nil
+	}
+	w.buf, w.sf = newFrameBuffer(pxW, pxH)
+	return w, nil
+}
+
+// newFrameBuffer returns the pixels of a w×h framebuffer: GLib memory GTK can
+// show without a copy when it can be had (sf non-nil, buf its view), else Go
+// memory that every present copies. A partial present needs the texture's bytes
+// to span the whole frame (gdk_memory_texture_builder_build refuses less), so the
+// copy cannot be narrowed to the damage; sharing the buffer is what removes it.
+func newFrameBuffer(w, h int) ([]byte, *gtk4.SharedFrame) {
+	if sf := gtk4.NewSharedFrame(w, h); sf != nil {
+		return sf.Pix(), sf
+	}
+	return make([]byte, w*h*4), nil
 }
 
 // Run binds root and drives the GLib main loop until the window is closed. It
@@ -140,7 +154,7 @@ func (w *Window) frame() {
 		return
 	}
 	if w.fr.incremental() {
-		w.fr.present(w.root, w.theme, w.buf, w.w, w.h, pictureTarget{w.pic})
+		w.fr.present(w.root, w.theme, w.buf, w.w, w.h, pictureTarget{w.pic, w.sf})
 		w.syncNative(w.root)
 		return
 	}
@@ -156,14 +170,31 @@ func (w *Window) frame() {
 // pictureTarget presents on the GtkPicture. The partial path needs GTK 4.16
 // (GdkMemoryTextureBuilder update-texture/update-region), checked at run time by
 // gtk4.TextureUpdateSupported; older libgtk-4 keeps the whole upload.
-type pictureTarget struct{ pic gtk4.Picture }
+//
+// With a shared frame (sf non-nil, buf its pixels) a present copies nothing: the
+// texture is built over the frame's own memory. Without one every present copies
+// the whole frame (w*h*4 bytes).
+type pictureTarget struct {
+	pic gtk4.Picture
+	sf  *gtk4.SharedFrame
+}
 
-func (t pictureTarget) Full(buf []byte, w, h int) { t.pic.SetRGBA(buf, w, h) }
+func (t pictureTarget) Full(buf []byte, w, h int) int {
+	if t.sf != nil {
+		t.pic.SetFrame(t.sf)
+		return 0
+	}
+	t.pic.SetRGBA(buf, w, h)
+	return w * h * 4
+}
 
-func (t pictureTarget) Update(buf []byte, w, h int, rects []toolkit.Rect) bool {
+func (t pictureTarget) Update(buf []byte, w, h int, rects []toolkit.Rect) (int, bool) {
 	rs := make([]gtk4.Rect, len(rects))
 	for i, r := range rects {
 		rs[i] = gtk4.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H}
 	}
-	return t.pic.UpdateRGBA(buf, w, h, rs)
+	if t.sf != nil {
+		return 0, t.pic.UpdateFrame(t.sf, rs)
+	}
+	return w * h * 4, t.pic.UpdateRGBA(buf, w, h, rs)
 }
