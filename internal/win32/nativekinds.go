@@ -49,7 +49,7 @@ func parseHexColor(s string) (ref uint32, ok bool) {
 		return 0, false
 	}
 	var r, g, b uint8
-	if n, err := fmt.Sscanf(hex,"%02x%02x%02x", &r, &g, &b); err != nil || n != 3 {
+	if n, err := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b); err != nil || n != 3 {
 		return 0, false
 	}
 	return uint32(r) | uint32(g)<<8 | uint32(b)<<16, true
