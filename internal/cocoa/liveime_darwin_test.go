@@ -90,7 +90,7 @@ func activeLayoutID() string {
 	if src == 0 {
 		return ""
 	}
-	return objc.GoString(objc.ID(prop(src, *(*uintptr)(unsafe.Pointer(key)))))
+	return objc.GoString(objc.ID(prop(src, *(*uintptr)(*(*unsafe.Pointer)(unsafe.Pointer(&key))))))
 }
 
 // liveIMEWindow opens a window holding one focused Entry and makes it the key
