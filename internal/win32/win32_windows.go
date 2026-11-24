@@ -561,6 +561,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
+	case wmNotify:
+		// A SysLink, date picker or tab control (NativeLink / NativeDate /
+		// NativeSegmented) reporting through WM_NOTIFY.
+		if w.onNotify(lParam) {
+			return 0
+		}
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmClose:
 		// The user's close (title bar, Alt+F4, the system menu) carries wParam 0;
 		// Close carries closeExplicit. With HideOnClose only the first is turned

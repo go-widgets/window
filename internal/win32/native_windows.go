@@ -208,6 +208,13 @@ type liveControl struct {
 	// checked state are two independent things, and lastText is the value for
 	// the kinds whose value IS their text.
 	lastTitle string
+
+	// items are a segmented control's segment titles, kept to turn a selected
+	// tab index back into the title the app speaks.
+	items []string
+	// link is true when a NativeLink is hosted as a real SysLink (comctl32 v6),
+	// false when it fell back to a flat push button.
+	link bool
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -321,6 +328,35 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			sendMessage(lc.hwnd, pbmSetMarquee, on, 30)
 			lc.lastBool = spec.On
 		}
+	case toolkit.NativeList:
+		// The chosen row rides Number, as a slider's value does. The rows
+		// themselves are fixed at creation: changing them takes a new Key.
+		if spec.Number != lc.lastNum {
+			listSelect(lc.hwnd, rowIndex(spec.Number, len(lc.items)))
+			lc.lastNum = spec.Number
+		}
+	case toolkit.NativeLink:
+		if spec.Text != lc.lastText {
+			setWindowText(lc.hwnd, linkCaption(lc.link, spec.Text))
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeDate:
+		if spec.Text != lc.lastText {
+			dateSet(lc.hwnd, spec.Text)
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeColor:
+		if spec.Text != lc.lastText {
+			if ref, ok := parseHexColor(spec.Text); ok {
+				wellSet(lc.hwnd, ref)
+			}
+			lc.lastText = spec.Text
+		}
+	case toolkit.NativeSegmented:
+		if spec.Text != lc.lastText {
+			tabSelect(lc.hwnd, itemIndex(lc.items, spec.Text))
+			lc.lastText = spec.Text
+		}
 	}
 	// A caption is pushed here and not in the switch above: the checkbox-like
 	// kinds already took their STATE there, and their caption is a second,
@@ -399,6 +435,7 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		class   *uint16
 		style   = uint32(wsChild | wsVisible)
 		caption *uint16
+		isLink  bool
 	)
 	switch spec.Kind {
 	case toolkit.NativeButton:
@@ -460,6 +497,34 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ensureCommonControls()
 		class = classUpDown
 		style |= wsTabStop | udsAlignRight | udsArrowKeys
+	case toolkit.NativeList:
+		class = classListBox
+		style |= wsBorder | wsTabStop | wsVScroll | lbsNotify | lbsNoIntegral
+	case toolkit.NativeLink:
+		if release := enterLinkV6(); release != nil {
+			defer release()
+			isLink = true
+			class = classSysLink
+			style |= wsTabStop
+			caption = mustUTF16(linkMarkup(spec.Text))
+		} else {
+			// No comctl32 v6 (no SysLink): a push button still activates.
+			class = classBUTTON
+			style |= wsTabStop | bsPushButton
+			caption = mustUTF16(spec.Text)
+		}
+	case toolkit.NativeDate:
+		ensureCommonControls()
+		class = classDatePick
+		style |= wsTabStop | dtsShortDateCentury
+	case toolkit.NativeColor:
+		registerColorWell(w.hInstance)
+		class = classColorWell
+		style |= wsTabStop | wsBorder
+	case toolkit.NativeSegmented:
+		ensureCommonControls()
+		class = classTab
+		style |= wsTabStop | tcsButtons
 	default:
 		return nil
 	}
@@ -483,6 +548,8 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		shown:     true, // created WS_VISIBLE
 		sliderMin: spec.Min,
 		sliderMax: spec.Max,
+		link:      isLink,
+		items:     spec.Items,
 	}
 	setControlFont(lc.hwnd)
 
@@ -516,6 +583,20 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 	case toolkit.NativeStepper:
 		sendMessage(lc.hwnd, udmSetRange32, uintptr(int32(spec.Min)), uintptr(int32(spec.Max)))
 		sendMessage(lc.hwnd, udmSetPos32, 0, uintptr(int32(spec.Number)))
+	case toolkit.NativeList:
+		for _, item := range spec.Items {
+			listAdd(lc.hwnd, item)
+		}
+		listSelect(lc.hwnd, rowIndex(spec.Number, len(spec.Items)))
+	case toolkit.NativeDate:
+		dateSet(lc.hwnd, spec.Text)
+		lc.lastText, _ = dateGet(lc.hwnd)
+	case toolkit.NativeColor:
+		if ref, ok := parseHexColor(spec.Text); ok {
+			wellSet(lc.hwnd, ref)
+		}
+	case toolkit.NativeSegmented:
+		tabFill(lc.hwnd, spec.Items, spec.Text)
 	}
 
 	w.nativeByHWND[lc.hwnd] = lc
@@ -596,6 +677,27 @@ func (w *Window) onCommand(wParam, lParam uintptr) bool {
 		if code == cbnSelChange {
 			lc.reportText()
 			lc.activate()
+		}
+	case toolkit.NativeList:
+		if code == lbnSelChange {
+			if i := listSelected(lc.hwnd); i >= 0 {
+				lc.lastNum = float64(i)
+				if lc.onNumber != nil {
+					lc.onNumber(lc.lastNum)
+				}
+			}
+		}
+	case toolkit.NativeLink:
+		// Only the push-button fallback arrives here; a SysLink notifies through
+		// WM_NOTIFY.
+		if !lc.link && code == bnClicked {
+			lc.activate()
+		}
+	case toolkit.NativeColor:
+		// The well sends this after the person confirmed ChooseColor.
+		lc.lastText = colorHex(wellColor(lc.hwnd))
+		if lc.onText != nil {
+			lc.onText(lc.lastText)
 		}
 	default:
 		return true
@@ -796,7 +898,7 @@ func ensureCommonControls() {
 	commonControlsOnce.Do(func() {
 		icc := initCommonControlsExStruct{
 			dwSize: uint32(unsafe.Sizeof(initCommonControlsExStruct{})),
-			dwICC:  iccBarClasses | iccProgressClass | iccUpDownClass,
+			dwICC:  iccBarClasses | iccProgressClass | iccUpDownClass | iccTabClasses | iccDateClasses,
 		}
 		procInitCommonControlsEx.Call(uintptr(unsafe.Pointer(&icc)))
 	})
