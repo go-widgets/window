@@ -188,7 +188,7 @@ jobs:
           CGO_ENABLED: "0"
           WINDOW_WIN32_INTEGRATION: "1"
         run: |
-          go test -count=1 -v -tags=integration -run TestLiveWin32NativeKinds ./internal/win32/ *> native-kinds.txt
+          go test -count=1 -v -timeout 120s -tags=integration -run TestLiveWin32NativeKinds ./internal/win32/ *> native-kinds.txt
           $rc = $LASTEXITCODE
           Get-Content native-kinds.txt
           if ($rc -ne 0) { exit $rc }

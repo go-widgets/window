@@ -77,7 +77,15 @@ func TestLiveWin32NativeKinds(t *testing.T) {
 	}
 	root := &specRoot{specs: specs}
 	win.root = root
-	win.syncNative(root)
+	// One control at a time, logging first: a control that cannot be created
+	// must name itself rather than hang the whole lane.
+	all := specs
+	for i := range all {
+		t.Logf("creating %s", all[i].Key)
+		root.specs = all[:i+1]
+		win.syncNative(root)
+	}
+	root.specs = all
 
 	// 1. Every class is a child window of ours.
 	want := map[string]string{
