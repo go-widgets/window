@@ -28,6 +28,9 @@ import (
 // welcome callbacks fire. cfg.Width/Height default to 640×480 and cfg.Theme to
 // toolkit.DefaultDark, matching the native backends.
 func Open(cfg Config) (Backend, error) {
+	if err := refuseHideOnClose(cfg, "wasm"); err != nil {
+		return nil, err
+	}
 	theme := cfg.Theme
 	if theme == nil {
 		theme = toolkit.DefaultDark()

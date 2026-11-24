@@ -161,6 +161,18 @@ type Config struct {
 	// Honoured today by the macOS (Cocoa) back-end; elsewhere it is accepted and
 	// ignored.
 	Passive bool
+	// HideOnClose makes the window's own close control -- the title bar's close
+	// button, WM_DELETE_WINDOW, the compositor's close request -- take the window
+	// off the screen instead of ending [Backend.Run]. The window and its widget
+	// tree stay alive: [Show] or [Raise] bring it back exactly as it was, and
+	// only [Backend.Close] ends Run. It is what a tray application needs, whose
+	// way out is an explicit Quit rather than the last window.
+	//
+	// It needs the [Visibility] capability to be useful, so Open answers
+	// [ErrNotSupported] where the back-end has none (GTK, Android, wasm) rather
+	// than accept the flag and quit anyway. Honoured by the macOS (Cocoa),
+	// Windows (Win32), X11 and Wayland back-ends.
+	HideOnClose bool
 
 	// Immersive puts the window above the platform's own furniture -- on macOS
 	// the menu bar and the Dock -- instead of underneath it.
@@ -335,6 +347,8 @@ type Window struct {
 
 	wmProtocols    uint32
 	wmDeleteWindow uint32
+	// hideOnClose: WM_DELETE_WINDOW withdraws the window instead of ending Run.
+	hideOnClose bool
 
 	// The Repainter capability: the atom our own wakeup ClientMessage carries,
 	// and the flag that keeps at most one of them in flight. See repaint_x11.go.

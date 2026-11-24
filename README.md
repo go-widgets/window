@@ -406,6 +406,13 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   manager, or Windows' foreground lock, may mark the window as wanting
   attention instead, and Raise cannot tell. Under an X11 window manager a
   window shown again is placed by the manager, as a new one would be.
+- `Config.HideOnClose` — the window's own close control (title-bar button,
+  `WM_DELETE_WINDOW`, `WM_CLOSE`, the compositor's close request) hides the
+  window instead of ending `Run`; only `Backend.Close` ends it. This is the
+  other half of a tray application: the window goes away, the process stays.
+  Honoured by X11, Wayland, macOS and Windows; `Open` answers
+  `window.ErrNotSupported` on GTK, Android and wasm rather than quit on close
+  after being asked not to.
 
 ### Results from other goroutines
 

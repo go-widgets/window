@@ -83,6 +83,10 @@ func (w *Window) mapEvent(xe x11.Event) outcome {
 		return outcome{repaint: true, expose: true}
 	case xcodeClientMessage:
 		if xe.Format == 32 && xe.Atom == w.wmProtocols && xe.Data32 == w.wmDeleteWindow {
+			if w.hideOnClose {
+				_ = w.Hide() // the window manager asked; Close is what ends Run
+				return outcome{}
+			}
 			return outcome{quit: true}
 		}
 		// Our own wakeup, sent by Repaint from another goroutine. It carries no

@@ -77,6 +77,16 @@ func Raise(b Backend) error {
 	return noVisibility(b, "raise")
 }
 
+// refuseHideOnClose is what Open of a back-end without a hideable window answers
+// when [Config.HideOnClose] was asked for: [ErrNotSupported], naming the
+// back-end, never a window that quits on close after being promised it would not.
+func refuseHideOnClose(cfg Config, backend string) error {
+	if !cfg.HideOnClose {
+		return nil
+	}
+	return fmt.Errorf("%w: the %s back-end cannot hide its window on close (Config.HideOnClose)", ErrNotSupported, backend)
+}
+
 func noVisibility(b Backend, what string) error {
 	return fmt.Errorf("%w: %v cannot %s its window", ErrNotSupported, b, what)
 }

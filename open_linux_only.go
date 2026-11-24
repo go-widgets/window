@@ -34,6 +34,9 @@ var (
 // at all.
 func Open(cfg Config) (Backend, error) {
 	if os.Getenv("GO_WIDGETS_GTK") != "" {
+		if err := refuseHideOnClose(cfg, "GTK"); err != nil {
+			return nil, err
+		}
 		return gtk.Open(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale)
 	}
 	return openDisplayServer(cfg)
