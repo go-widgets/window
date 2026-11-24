@@ -291,9 +291,13 @@ func registerClasses() (objc.Class, objc.Class, error) {
 		if classesErr != nil {
 			return
 		}
-		viewClass, classesErr = objc.RegisterClass(
-			"GoWidgetsWindowView", objc.GetClass("NSView"),
-			append([]objc.MethodDef{
+		var protos []*objc.Protocol
+		if p := objc.GetProtocol("NSTextInputClient"); p != nil {
+			protos = append(protos, p)
+		}
+		viewClass, classesErr = objc.RegisterClassWithProtocols(
+			"GoWidgetsWindowView", objc.GetClass("NSView"), protos,
+			append(imeMethods(), append([]objc.MethodDef{
 				{Cmd: objc.RegisterName("isFlipped"), Fn: viewIsFlipped},
 				{Cmd: objc.RegisterName("acceptsFirstResponder"), Fn: viewAcceptsFirstResponder},
 				{Cmd: objc.RegisterName("drawRect:"), Fn: viewDrawRect},
@@ -308,7 +312,7 @@ func registerClasses() (objc.Class, objc.Class, error) {
 				{Cmd: objc.RegisterName("viewDidChangeBackingProperties"), Fn: viewDidChangeBackingProperties},
 				{Cmd: selRepaintNow, Fn: viewRepaintNow},
 				{Cmd: selCloseNow, Fn: viewCloseNow},
-			}, append(visibilityMethods(), a11yMethods()...)...))
+			}, append(visibilityMethods(), a11yMethods()...)...)...))
 		if classesErr != nil {
 			return
 		}
@@ -487,8 +491,7 @@ func viewScrollWheel(self objc.ID, _ objc.SEL, event objc.ID) {
 	w.dispatch(MapScroll(x, y, dy, eventMods(event)))
 }
 
-func viewKeyDown(_ objc.ID, _ objc.SEL, event objc.ID) { keyEvent(event, true) }
-func viewKeyUp(_ objc.ID, _ objc.SEL, event objc.ID)   { keyEvent(event, false) }
+func viewKeyUp(_ objc.ID, _ objc.SEL, event objc.ID) { keyEvent(event, false) }
 
 func keyEvent(event objc.ID, press bool) {
 	w := active
