@@ -47,11 +47,7 @@ func setPreedit(root toolkit.Widget, p toolkit.Preedit) bool {
 	if !ok {
 		return false
 	}
-	if p.Text == "" {
-		c.CancelPreedit()
-		return true
-	}
-	c.SetPreedit(p)
+	c.SetPreedit(p) // an empty preedit ends the composition (toolkit.Composer)
 	return true
 }
 
