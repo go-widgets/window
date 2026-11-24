@@ -261,7 +261,7 @@ func withInputSource(id string, f func()) bool {
 	if err != nil {
 		return false
 	}
-	key := objc.ID(*(*uintptr)(unsafe.Pointer(keyPtr)))
+	key := objc.ID(*(*uintptr)(*(*unsafe.Pointer)(unsafe.Pointer(&keyPtr))))
 	props := objc.ID(objc.GetClass("NSDictionary")).Send(objc.RegisterName("dictionaryWithObject:forKey:"), objc.NSString(id), key)
 	arr := objc.ID(list(uintptr(props), true))
 	if arr == 0 || objc.Send[uint64](arr, objc.RegisterName("count")) == 0 {
