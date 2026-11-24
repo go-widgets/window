@@ -420,6 +420,8 @@ type Options struct {
 	// item, a socket. Its own event loop still runs -- it repaints, resizes and
 	// closes -- so nothing about drawing changes.
 	Passive bool
+	// HideOnClose makes the close button hide the window instead of ending Run.
+	HideOnClose bool
 }
 
 // resolveScreen turns the requested placement into a live screen, or nil when

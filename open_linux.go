@@ -57,6 +57,7 @@ func openWayland(cfg Config, name string) (Backend, error) {
 		conn.Close()
 		return nil, err
 	}
+	w.hideOnClose = cfg.HideOnClose
 	return w, nil
 }
 
@@ -87,6 +88,7 @@ func openX11(cfg Config) (Backend, error) {
 		conn.Close()
 		return nil, err
 	}
+	win.hideOnClose = cfg.HideOnClose
 	return win, nil
 }
 

@@ -36,6 +36,7 @@ func Open(cfg Config) (Backend, error) {
 		Immersive:   cfg.Immersive,
 		FixedSize:   cfg.FixedSize,
 		Passive:     cfg.Passive,
+		HideOnClose: cfg.HideOnClose,
 		GPU:         cfg.GPU,
 	}
 	if cfg.Screen != nil {

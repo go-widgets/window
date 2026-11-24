@@ -146,6 +146,9 @@ type Window struct {
 	title string
 	theme *toolkit.Theme
 
+	// hideOnClose: the user's WM_CLOSE hides the window; see SetHideOnClose.
+	hideOnClose bool
+
 	hwnd      uintptr
 	hInstance uintptr
 	className *uint16
@@ -559,6 +562,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmClose:
+		// The user's close (title bar, Alt+F4, the system menu) carries wParam 0;
+		// Close carries closeExplicit. With HideOnClose only the first is turned
+		// into a hide, so Close still ends the window.
+		if w.hideOnClose && wParam != closeExplicit {
+			w.onVisibility(OpHide)
+			return 0
+		}
 		win32.DestroyWindow(win32.HWND(hwnd))
 		return 0
 	case wmDestroy:
@@ -817,10 +827,18 @@ func (w *Window) Size() (int, int) { return w.w, w.h }
 // path the title bar's close button takes.
 func (w *Window) Close() error {
 	if hwnd := w.hwnd; hwnd != 0 {
-		win32.PostMessage(win32.HWND(hwnd), wmClose, 0, 0)
+		win32.PostMessage(win32.HWND(hwnd), wmClose, closeExplicit, 0)
 	}
 	return nil
 }
+
+// closeExplicit is the WM_CLOSE wParam that marks a close requested by [Window.Close]
+// rather than by the user. The system sends 0; the field is otherwise unused.
+const closeExplicit = 0x47574331 // "GWC1"
+
+// SetHideOnClose makes the user's close request hide the window instead of
+// destroying it; [Window.Close] still destroys it. Call before Run.
+func (w *Window) SetHideOnClose(v bool) { w.hideOnClose = v }
 
 // String identifies the window for debugging.
 func (w *Window) String() string {

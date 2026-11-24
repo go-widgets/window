@@ -32,6 +32,9 @@ func Open(cfg Config) (Backend, error) {
 	if os.Getenv(android.EnvSocket) == "" {
 		return openDisplayServer(cfg)
 	}
+	if err := refuseHideOnClose(cfg, "Android"); err != nil {
+		return nil, err
+	}
 	theme := cfg.Theme
 	if theme == nil {
 		theme = toolkit.DefaultDark()

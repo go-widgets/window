@@ -182,6 +182,8 @@ type Window struct {
 	// passive records that this window must never take the keyboard or the mouse.
 	// See Options.Passive.
 	passive bool
+	// hideOnClose: the close button orders the window out instead of ending Run.
+	hideOnClose bool
 
 	root toolkit.Widget
 	dmg  damageRenderer
@@ -501,7 +503,14 @@ func keyEvent(event objc.ID, press bool) {
 }
 
 // windowShouldClose ends the run loop when the user closes the window.
+//
+// With Options.HideOnClose it orders the window out and answers NO instead: the
+// window is still there for Show or Raise, and Run keeps running until Close.
 func windowShouldClose(_ objc.ID, _ objc.SEL, _ objc.ID) bool {
+	if active != nil && active.hideOnClose && !active.closed {
+		active.win.Send(selOrderOut, objc.ID(0))
+		return false
+	}
 	if active != nil {
 		active.closed = true
 		active.gone.Store(true)
@@ -912,7 +921,9 @@ func NewWithOptions(o Options) (*Window, error) {
 		scale:   scale,
 		backing: backing,
 		passive: o.Passive,
-		wantGPU: o.GPU,
+
+		hideOnClose: o.HideOnClose,
+		wantGPU:     o.GPU,
 	}
 	w.buf = make([]byte, 4*w.w*w.h)
 	active = w

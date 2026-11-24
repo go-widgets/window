@@ -100,7 +100,9 @@ type wlWindow struct {
 	pending []toolkit.Event
 	repaint bool
 	quit    bool
-	closed  bool
+	// hideOnClose: the compositor's close request unmaps instead of quitting.
+	hideOnClose bool
+	closed      bool
 
 	// Show and Hide; see visibility_wayland.go. hidden is the surface unmapped
 	// on purpose; remap is a Show whose first frame must be presented WHOLE,
@@ -314,7 +316,14 @@ func (w *wlWindow) wireShell(_ Config) {
 			w.needResize = true
 		}
 	}
-	w.toplevel.OnClose = func() { w.quit = true }
+	w.toplevel.OnClose = func() {
+		if w.hideOnClose {
+			// The compositor asked; unmap, and let Close be what ends Run.
+			w.vis.want.Store(visHide)
+			return
+		}
+		w.quit = true
+	}
 }
 
 // wirePointer installs the pointer event callbacks that translate motion,
