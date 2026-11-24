@@ -176,6 +176,26 @@ jobs:
           CGO_ENABLED: "0"
           WINDOW_WIN32_GPU: "1"
         run: go test -count=1 -v -run TestLiveGPUWindow ./internal/win32/
+      # Native controls on a real Windows host: an app describing an Entry plus
+      # List, Link, Date, Color and Segmented must end up as child windows whose
+      # CLASS NAMES (EnumChildWindows + GetClassNameW) are Edit, ListBox, SysLink,
+      # SysDateTimePick32, GoWidgetsColorWell and SysTabControl32. A missing class
+      # fails the test, and the step fails if the test did not run at all (a
+      # mistyped -run exits 0 having run nothing, and a skip is not a pass).
+      - name: Live native controls (child HWND classes)
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+          WINDOW_WIN32_INTEGRATION: "1"
+        run: |
+          go test -count=1 -v -timeout 120s -tags=integration -run TestLiveWin32NativeKinds ./internal/win32/ *> native-kinds.txt
+          $rc = $LASTEXITCODE
+          Get-Content native-kinds.txt
+          if ($rc -ne 0) { exit $rc }
+          if (-not (Select-String -Path native-kinds.txt -Pattern '^--- PASS: TestLiveWin32NativeKinds ')) {
+            Write-Error 'TestLiveWin32NativeKinds did not run to a PASS'
+            exit 1
+          }
       - name: Live display enumeration (no window, no interactive session)
         env:
           CGO_ENABLED: "0"
