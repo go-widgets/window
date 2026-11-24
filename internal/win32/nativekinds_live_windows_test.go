@@ -7,6 +7,7 @@
 package win32
 
 import (
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -47,6 +48,12 @@ func childClasses(hwnd uintptr) []string {
 // caught as well.
 func TestLiveWin32NativeKinds(t *testing.T) {
 	skipUnlessLive(t)
+	// A window belongs to the thread that created it, and creating a child from
+	// another thread sends the parent's thread a message it is not pumping: the
+	// lane hung that way, intermittently, whenever the scheduler moved this
+	// goroutine. Open pins its loop goroutine for the same reason.
+	runtime.LockOSThread()
+	t.Cleanup(runtime.UnlockOSThread)
 
 	win, err := New("go-widgets/window win32 native kinds", 480, 400, toolkit.DefaultDark())
 	if err != nil {
