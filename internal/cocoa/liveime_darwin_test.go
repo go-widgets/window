@@ -240,6 +240,27 @@ func TestLiveMarkedTextThroughTheRuntime(t *testing.T) {
 
 const cgFlagShift = 1 << 17
 
+// TestLiveImeStringAfterANilString reads a nil string, then an attributed one:
+// the nil must be answered without a message, or the attributed string that
+// follows is read as a plain one.
+func TestLiveImeStringAfterANilString(t *testing.T) {
+	skipUnlessIntegration(t)
+	var nilText, attrText string
+	var nilClauses []imeClause
+	callOnMain(func() {
+		nilText, nilClauses = imeString(0)
+		attr := objc.ID(objc.GetClass("NSMutableAttributedString")).Send(objc.RegisterName("alloc")).
+			Send(objc.RegisterName("initWithString:"), objc.NSString("かな"))
+		attrText, _ = imeString(attr)
+	})
+	if nilText != "" || nilClauses != nil {
+		t.Errorf("imeString(nil) = %q, %v", nilText, nilClauses)
+	}
+	if attrText != "かな" {
+		t.Errorf("imeString(attributed) = %q, want かな", attrText)
+	}
+}
+
 // TestLiveEscapeCancelsAComposition marks text, then types Escape through the
 // window server: the composition goes, and nothing is typed.
 func TestLiveEscapeCancelsAComposition(t *testing.T) {

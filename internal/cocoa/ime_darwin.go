@@ -76,8 +76,12 @@ func imeRepaint() {
 // imeString reads the NSString or NSAttributedString AppKit passes, and the
 // attribute clauses of the latter.
 func imeString(obj objc.ID) (string, []imeClause) {
-	// A nil string is a nil message: isKindOfClass: answers NO and GoString of 0 is
-	// empty, so nothing here needs a nil check.
+	// A nil string must not reach Send: a message to nil made first poisons the
+	// cached call for isKindOfClass:, and the next real attributed string is then
+	// taken for a plain one (measured: it aborts in lengthOfBytesUsingEncoding:).
+	if obj == 0 {
+		return "", nil
+	}
 	if !objc.Send[bool](obj, selIsKindOfClass, objc.ID(objc.GetClass("NSAttributedString"))) {
 		return objc.GoString(obj), nil
 	}
