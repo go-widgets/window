@@ -586,9 +586,13 @@ jobs:
         with:
           go-version: 1.27.3
       - name: Install GTK4 runtime + a headless X server
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth xdotool
+      # xdotool injects real key events through XTEST for the input-method proof
+      # (a dead key, then a vowel, composed by GtkIMContext into a painted field).
+      # GTK_IM_MODULE=gtk-im-context-simple pins GTK's built-in compose handling, so
+      # the result does not depend on an input-method daemon being installed.
       - name: internal/gtk on real GTK4
-        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 go test -count=1 -v ./internal/gtk/
+        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GTK_IM_MODULE=gtk-im-context-simple go test -count=1 -v ./internal/gtk/
 
   # ubuntu-latest ships libgtk-4 4.14; the damaged present needs 4.16+
   # (GdkMemoryTextureBuilder update-texture/update-region). Debian trixie ships
