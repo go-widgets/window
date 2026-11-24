@@ -45,7 +45,7 @@ func TestHexColor(t *testing.T) {
 	if got := colorHex(ref); got != "#3366cc" {
 		t.Errorf("colorHex = %q", got)
 	}
-	for _, bad := range []string{"", "3366cc", "#3366c", "#33ZZcc", "#3366ccd"} {
+	for _, bad := range []string{"#3366ccd", "3366cc", "#3366c", "#33ZZcc", "x3366cc", ""} {
 		if _, ok := parseHexColor(bad); ok {
 			t.Errorf("parseHexColor(%q) accepted", bad)
 		}
