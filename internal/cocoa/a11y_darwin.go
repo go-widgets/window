@@ -59,6 +59,9 @@ var (
 	selConvertRectToView        = objc.RegisterName("convertRect:toView:")
 	selConvertRectToScreen      = objc.RegisterName("convertRectToScreen:")
 	selWindowOfView             = objc.RegisterName("window")
+	selSubviews                 = objc.RegisterName("subviews")
+	selAddObjectsFromArray      = objc.RegisterName("addObjectsFromArray:")
+	selCount                    = objc.RegisterName("count")
 )
 
 // a11yMethods are the accessibility overrides added to the view class, kept
@@ -225,6 +228,18 @@ func (w *Window) buildA11yChildren() objc.ID {
 		}
 		arr.Send(selAddObject, el)
 		count++
+	}
+	// Pushing -setAccessibilityChildren: REPLACES what AppKit derives from the
+	// view's subviews, and the native controls the host embeds (text fields,
+	// pop-ups, ...) are subviews of this very view. Without them here every
+	// native control would vanish from the tree the moment a painted element is
+	// published, leaving the real controls unreachable. They are already
+	// accessible NSViews, so they join the array as they are.
+	if subs := w.view.Send(selSubviews); subs != 0 {
+		if n := objc.Send[uint64](subs, selCount); n > 0 {
+			arr.Send(selAddObjectsFromArray, subs)
+			count += int(n)
+		}
 	}
 	if count == 0 {
 		return 0
