@@ -584,10 +584,9 @@ func (w *Window) present() error {
 }
 
 // presentRect blits only the given rectangle of the framebuffer — the
-// damage-region path used for Expose events. (The toolkit exposes no scene
-// damage list today, so full-surface present is used after input; when a
-// scene damage region becomes available it can feed straight into this
-// method.)
+// damage-region path: Expose events, and the rectangles a root reports through
+// window.DamageRenderer (RenderDamaged), which drawIncremental feeds into it.
+// A root that does not implement DamageRenderer is presented whole-surface.
 func (w *Window) presentRect(x, y, rw, rh int) error {
 	if x < 0 {
 		rw += x
