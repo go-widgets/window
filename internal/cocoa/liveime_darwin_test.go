@@ -238,6 +238,76 @@ func TestLiveMarkedTextThroughTheRuntime(t *testing.T) {
 	}
 }
 
+const cgFlagShift = 1 << 17
+
+// TestLiveEscapeCancelsAComposition marks text, then types Escape through the
+// window server: the composition goes, and nothing is typed.
+func TestLiveEscapeCancelsAComposition(t *testing.T) {
+	skipUnlessIntegration(t)
+	if err := loadCGKeys(); err != nil {
+		t.Skipf("CoreGraphics key synthesis unavailable: %v", err)
+	}
+	win, entry := liveIMEWindow(t)
+	if win == nil {
+		return
+	}
+	var during, after toolkit.Preedit
+	var value string
+	callOnMain(func() {
+		none := nsRange{nsNotFound, 0}
+		win.view.Send(objc.RegisterName("setMarkedText:selectedRange:replacementRange:"),
+			objc.NSString("かな"), nsRange{2, 0}, none)
+		during = entry.Preedit()
+		hidKey(53, 0) // Escape
+		after = entry.Preedit()
+		value = entry.Text().Get()
+		_ = win.Close()
+	})
+	if during.Text != "かな" {
+		t.Fatalf("setMarkedText left preedit %q", during.Text)
+	}
+	if after.Text != "" || value != "" {
+		t.Errorf("after Escape preedit=%q value=%q, want both empty", after.Text, value)
+	}
+}
+
+// TestLiveAShiftedKeyKeepsItsModifiersWithoutAComposingField types shift-x into a
+// window with no field that composes. The key must reach the tree as the key
+// mapping always sent it: a Char event that still carries the shift, which a
+// commit of the text "X" would drop.
+func TestLiveAShiftedKeyKeepsItsModifiersWithoutAComposingField(t *testing.T) {
+	skipUnlessIntegration(t)
+	if err := loadCGKeys(); err != nil {
+		t.Skipf("CoreGraphics key synthesis unavailable: %v", err)
+	}
+	var win *Window
+	root := &recordingRoot{inner: toolkit.NewVBox()}
+	callOnMain(func() {
+		var err error
+		if win, err = New("ime keys", 320, 160, toolkit.DefaultDark()); err != nil {
+			t.Errorf("open: %v", err)
+			return
+		}
+		win.bindAndSeed(root)
+		spin(0.4)
+		objc.App().Send(objc.RegisterName("activateIgnoringOtherApps:"), true)
+		win.win.Send(objc.RegisterName("makeKeyAndOrderFront:"), objc.ID(0))
+		win.win.Send(objc.RegisterName("makeFirstResponder:"), win.view)
+		spin(0.4)
+		hidKey(7, cgFlagShift) // shift-x
+		_ = win.Close()
+	})
+	if win == nil {
+		return
+	}
+	for _, e := range root.events {
+		if e.Kind == toolkit.EventChar && e.Shift {
+			return
+		}
+	}
+	t.Errorf("no Char event carrying the shift reached the tree: %+v", root.events)
+}
+
 // withInputSource selects the input source with the given id for the duration
 // of f, restoring the previous one afterwards. It reports false when the source
 // cannot be found, enabled or selected without user interaction.

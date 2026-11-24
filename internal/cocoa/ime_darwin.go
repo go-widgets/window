@@ -76,9 +76,8 @@ func imeRepaint() {
 // imeString reads the NSString or NSAttributedString AppKit passes, and the
 // attribute clauses of the latter.
 func imeString(obj objc.ID) (string, []imeClause) {
-	if obj == 0 {
-		return "", nil
-	}
+	// A nil string is a nil message: isKindOfClass: answers NO and GoString of 0 is
+	// empty, so nothing here needs a nil check.
 	if !objc.Send[bool](obj, selIsKindOfClass, objc.ID(objc.GetClass("NSAttributedString"))) {
 		return objc.GoString(obj), nil
 	}
@@ -253,13 +252,11 @@ func viewKeyDown(self objc.ID, _ objc.SEL, event objc.ID) {
 	}
 	comp, _, _ := imeComposer()
 	composing := comp != nil && comp.Preedit().Text != ""
-	m := eventMods(event)
 	code := uint16(objc.Send[uint64](event, selKeyCode))
 	name, _ := DecodeKey(code, objc.GoString(event.Send(selCharsIgnoringMods)))
-	if !composing && (m.Ctrl || m.Meta || name != "") {
-		keyEvent(event, true) // a shortcut or a named key: never a composition
-		return
-	}
+	// Every key goes through the input context first: it takes the ones that are
+	// part of a composition (and a dead key), and leaves a shortcut or a named key
+	// to the fallthrough below, which sends it as the key mapping always did.
 	imeStep.event, imeStep.touched = event, false
 	arr := objc.ID(objc.GetClass("NSArray")).Send(selArrayWithObject, event)
 	self.Send(selInterpretKeyEvents, arr)
