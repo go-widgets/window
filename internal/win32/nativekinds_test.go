@@ -6,18 +6,28 @@ package win32
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
 func TestLinkMarkup(t *testing.T) {
 	for in, want := range map[string]string{
 		"open":     "<a>open</a>",
-		"a & b":    "<a>a &amp; b</a>",
-		"<b>x</b>": "<a>&lt;b&gt;x&lt;/b&gt;</a>",
+		"a & b":    "<a>a & b</a>",
+		"<b>x</b>": "<a>‹b›x‹/b›</a>",
 		"":         "<a></a>",
 	} {
 		if got := linkMarkup(in); got != want {
 			t.Errorf("linkMarkup(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// Whatever the text, the markup holds exactly one anchor: no '<' or '>'
+	// survives between the tags, so a title cannot open a second one.
+	for _, in := range []string{`</a><a href="x">y`, "<a>", "a>b<c", `"><a>`} {
+		got := linkMarkup(in)
+		inner := got[len("<a>") : len(got)-len("</a>")]
+		if strings.ContainsAny(inner, "<>") {
+			t.Errorf("linkMarkup(%q) = %q: markup characters survive", in, got)
 		}
 	}
 }
