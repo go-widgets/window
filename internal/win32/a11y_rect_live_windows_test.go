@@ -16,6 +16,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
+
+	"github.com/go-mswin/win32"
 )
 
 // uiaRects walks the children of the demo window as a UI Automation CLIENT and
@@ -91,6 +94,18 @@ func TestLiveUIAChildRectanglesReachTheClient(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = demo.Process.Kill(); _ = demo.Wait() })
 	time.Sleep(2 * time.Second)
+
+	// A frame publishes the tree; on a slow hosted runner none may have been
+	// drawn yet, so ask for one the way a pointer would.
+	title, _ := win32.UTF16PtrFromString("go-widgets/window demo")
+	if hwnd, _, _ := user32.NewProc("FindWindowW").Call(0, uintptr(unsafe.Pointer(title))); hwnd != 0 {
+		for i := 0; i < 3; i++ {
+			win32.PostMessage(win32.HWND(hwnd), wmMouseMove, 0, 0x00200020)
+			time.Sleep(time.Second)
+		}
+	} else {
+		t.Logf("FindWindowW: no demo window")
+	}
 
 	out := powershell(t, uiaRects)
 	if strings.Contains(out, "NOWINDOW") {
