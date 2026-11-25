@@ -373,6 +373,31 @@ jobs:
             shm-measure.txt
           if-no-files-found: warn
 
+  # Live AT-SPI proof (Linux screen-reader bridge): a real session bus, the real
+  # at-spi-bus-launcher (activated through org.a11y.Bus, the path Orca takes, no
+  # AT_SPI_BUS_ADDRESS override) and a second client connection that reads the
+  # published tree through the Cache, asserts a push button with its label and
+  # the enabled/disabled state bits, and fires Action "click". The test only
+  # skips when WINDOW_ATSPI_LIVE is unset, and this step sets it, so a green step
+  # means the test ran; -v keeps the tree dump in the log.
+  live-atspi:
+    name: live AT-SPI (Xvfb + at-spi2-core + dbus)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.4
+      - name: Install the accessibility stack
+        run: sudo apt-get update && sudo apt-get install -y xvfb dbus dbus-x11 at-spi2-core
+      - name: Dump the tree, assert the button, fire the action
+        env:
+          WINDOW_ATSPI_LIVE: "1"
+        run: >
+          xvfb-run -s "-screen 0 1024x768x24"
+          dbus-run-session --
+          go test -count=1 -v -run '^TestLiveATSPI$' ./internal/atspi/
+
   # Live Wayland proof (present + input): open a real xdg-shell toplevel on a
   # headless wlroots compositor (sway), present a known test pattern through a
   # wl_shm buffer, capture the output with grim and assert sampled pixels; then
