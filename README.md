@@ -496,6 +496,14 @@ func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
   against a fake compositor that enforces xdg-shell's map/unmap rules; the
   Win32 decision table is unit-tested, and its UI-thread calls are
   compile-verified only.
+- A **live AT-SPI proof** (`live-atspi` CI job, `WINDOW_ATSPI_LIVE=1`) runs
+  under Xvfb with a session D-Bus and `at-spi2-core`: it publishes a tree with
+  an enabled and a disabled button, dumps the registry's view of it, asserts
+  `push button` roles with their labels and the `ENABLED`/`SENSITIVE` states,
+  fires the `click` action and sees one click reach the handler. A disabled
+  node is `AXEnabled` false on macOS, `IsEnabled` false in UI Automation and
+  drops `ENABLED`/`SENSITIVE` in AT-SPI (a `StateChanged` signal announces the
+  change). The UI Automation fragment answers no `BoundingRectangle` yet.
 
 ## License
 
