@@ -48,3 +48,11 @@ func TestDialogOnAClosedOrNilWindowIsRefused(t *testing.T) {
 		t.Errorf("a refused request was queued (%d)", n)
 	}
 }
+
+func TestAlertButtonMapping(t *testing.T) {
+	for _, c := range []struct{ r, want int }{{1, 0}, {0, 0}, {-1, 0}, {alertFirstButton, 0}, {alertFirstButton + 2, 2}} {
+		if got := alertButton(c.r); got != c.want {
+			t.Errorf("alertButton(%d) = %d, want %d", c.r, got, c.want)
+		}
+	}
+}

@@ -195,8 +195,14 @@ func runAlert(req DialogRequest) DialogResult {
 	}
 	r := objc.Send[int](a, selRunModal)
 	a.Send(objc.RegisterName("release"))
+	return DialogResult{Button: alertButton(r)}
+}
+
+// alertButton maps runModal's answer to a button index. The implicit OK button
+// (an alert with no buttons) answers 1, which is below the first added button.
+func alertButton(r int) int {
 	if r < alertFirstButton {
-		return DialogResult{} // the implicit OK button answers 0 -- also 1 with no buttons
+		return 0
 	}
-	return DialogResult{Button: r - alertFirstButton}
+	return r - alertFirstButton
 }
