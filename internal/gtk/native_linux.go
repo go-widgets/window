@@ -31,6 +31,7 @@ type liveControl struct {
 	lastNum  float64
 	items    []string      // a pop-up's/segmented's item strings
 	segments []gtk4.Widget // a segmented control's toggle buttons, in item order
+	coll     *collection   // a table's, tree's or tab strip's GTK side
 
 	// box is the GtkFixed this control lives in, for its whole life. The
 	// control is NEVER re-parented: in GTK4 gtk_widget_unparent drops the last
@@ -89,6 +90,9 @@ func (w *Window) syncNative(root toolkit.Widget) {
 			// control must not be unparented separately, which would destroy it
 			// first and leave the box holding a freed pointer.
 			lc.box.Unparent()
+			if lc.coll != nil {
+				lc.coll.release()
+			}
 			delete(w.native, key)
 		}
 	}
@@ -182,6 +186,12 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 		if spec.Number != lc.lastNum {
 			lc.widget.SelectRow(int(spec.Number))
 			lc.lastNum = spec.Number
+		}
+	case toolkit.NativeTable, toolkit.NativeTree, toolkit.NativeTabs:
+		// Data is re-read only when the descriptor's Revision moved; selection is
+		// pushed only when the app moved it.
+		if lc.coll != nil {
+			lc.coll.apply(lc, spec)
 		}
 	}
 
@@ -420,6 +430,13 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 			lc.segments = append(lc.segments, tb)
 		}
 		lc.widget = box
+	case toolkit.NativeTable, toolkit.NativeTree, toolkit.NativeTabs:
+		// A GtkColumnView, a GtkListView over a GtkTreeListModel, or a GtkNotebook
+		// strip: see native_collections_linux.go.
+		if lc.coll = newCollection(lc, spec); lc.coll == nil {
+			return nil
+		}
+		lc.widget = lc.coll.widget()
 	default:
 		return nil
 	}
