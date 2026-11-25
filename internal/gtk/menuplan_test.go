@@ -33,9 +33,17 @@ func TestAccel(t *testing.T) {
 }
 
 func TestPlanBar(t *testing.T) {
-	if PlanBar(nil, nil) != nil {
-		t.Fatal("nil menu must plan an empty bar")
-	}
+	func() {
+		// A panic here is an assertion, not a crash: a nil menu is a normal input.
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("a nil menu panicked: %v", r)
+			}
+		}()
+		if got := PlanBar(nil, nil); got != nil {
+			t.Errorf("nil menu planned %v, want an empty bar", got)
+		}
+	}()
 	var log []string
 	copyItem := tray.Item("Copy", func() { log = append(log, "copy") })
 	copyItem.Key, copyItem.Mods, copyItem.Role = "c", tray.ModCommand, tray.RoleCopy
