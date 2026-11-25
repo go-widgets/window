@@ -18,11 +18,16 @@ import (
 )
 
 // linkMarkup wraps a link's visible text as the one-anchor markup a SysLink
-// control displays: "<a>text</a>". SysLink parses its caption as markup, so the
-// text's own '&', '<' and '>' are escaped -- otherwise a title such as
-// "Terms <b>" would be read as a tag and vanish.
+// control displays: "<a>text</a>". SysLink parses its caption as markup, and
+// Microsoft documents only the anchor tag with its HREF and ID attributes
+// (learn.microsoft.com/en-us/windows/win32/controls/syslink-overview, "SysLink
+// Markup"): no entity is documented, so "&amp;" would not be known to decode
+// and could show literally. '&' is therefore left as it is, and the only
+// character that can open a tag, '<', is swapped for the single left-pointing
+// angle quotation mark (and '>' for its right-pointing twin), so a title can
+// neither vanish as a tag nor inject a second "<a>".
 func linkMarkup(text string) string {
-	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	r := strings.NewReplacer("<", "‹", ">", "›")
 	return "<a>" + r.Replace(text) + "</a>"
 }
 
