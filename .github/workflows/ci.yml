@@ -659,6 +659,11 @@ jobs:
         # GDK_DEBUG=gl-disable + GSK_RENDERER=cairo: a popover is a surface of its
         # own, and Xvfb has no GL, so its first frame would abort the process.
         run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GDK_DEBUG=gl-disable GSK_RENDERER=cairo GTK_IM_MODULE=gtk-im-context-simple go test -count=1 -v ./internal/gtk/
+      # The public window.Alert/OpenFile/SaveFile over the GTK backend on a real
+      # GTK >= 4.10: an alert button pressed, file and save dialogs dismissed, the
+      # default alert. GTK_REQUIRE_DIALOGS turns the test's skips into failures.
+      - name: window dialogs on real GTK4 (GtkFileDialog, GtkAlertDialog)
+        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GSK_RENDERER=cairo GTK_IM_MODULE=gtk-im-context-simple GTK_REQUIRE_DIALOGS=1 go test -count=1 -v -run 'TestGTKBackendDialogs' .
 
   # ubuntu-latest ships libgtk-4 4.14; the damaged present needs 4.16+
   # (GdkMemoryTextureBuilder update-texture/update-region). Debian trixie ships
