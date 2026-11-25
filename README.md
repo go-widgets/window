@@ -86,6 +86,18 @@ backend-agnostic. The environment selects the implementation:
 | `js/wasm`, an ordinary page | **browser tab** (`internal/tab`) | a `<canvas>` through [go-widgets/webcanvas](https://github.com/go-widgets/webcanvas): no compositor, no `SharedArrayBuffer`, no cross-origin isolation |
 | other (BSD, …) | stub → `ErrUnsupported` | — |
 
+### Input methods in painted fields
+
+A focused `Entry` or `TextView` that implements `toolkit.Composer` is driven by
+the platform's input method on the Cocoa (`NSTextInputClient`), GTK4
+(`GtkIMContext`) and Win32 (IMM32) backends: preedit shown at the caret, commit,
+cancel, and the candidate window anchored at `CompositionRect`. The preedit is
+bounded (`toolkit.MaxPreeditRunes`, `MaxPreeditSegments`) and fuzzed
+(`FuzzBuildPreedit`). Proven: macOS live (a dead key on the French layout gives
+ê), GTK under Xvfb with `GtkIMContextSimple` driven by xdotool, and the Win32
+mapping. Not proven: a live Windows IME, its candidate window or TSF, ibus and
+fcitx, and Kana on macOS (the input source cannot be enabled non-interactively).
+
 ### macOS Cocoa/AppKit backend (`darwin`)
 
 On macOS `Open` creates a real **NSWindow** with a flipped content **NSView**,
