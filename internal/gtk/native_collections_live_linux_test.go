@@ -7,6 +7,7 @@
 package gtk
 
 import (
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -55,13 +56,13 @@ func TestGTKBackendTable(t *testing.T) {
 		t.Fatal("no table control created")
 	}
 	c := lc.coll
-	if got := c.viewClass(); got != "GtkColumnView" {
+	if got := c.table.Class(); got != "GtkColumnView" {
 		t.Errorf("view class = %q, want GtkColumnView", got)
 	}
-	if got := gListModelNItems(c.list); got != 10000 {
+	if got := c.table.Len(); got != 10000 {
 		t.Errorf("model holds %d rows, want 10000", got)
 	}
-	if got := gtkSelGetSelected(c.sel); got != 5 {
+	if got := c.table.Selected(); got != 5 {
 		t.Errorf("selected = %d, want 5", got)
 	}
 	if len(reported) != 0 {
@@ -69,14 +70,14 @@ func TestGTKBackendTable(t *testing.T) {
 	}
 
 	// The person picks row 7: reported through OnNumber.
-	gtkSelSetSelected(c.sel, 7)
+	c.table.Select(7)
 	if len(reported) != 1 || reported[0] != 7 {
 		t.Errorf("after the person selected 7, reported = %v", reported)
 	}
 	// The app moves the selection: pushed into the widget, not echoed.
 	num = 9
 	win.frame()
-	if got := gtkSelGetSelected(c.sel); got != 9 {
+	if got := c.table.Selected(); got != 9 {
 		t.Errorf("after the app chose 9, selected = %d", got)
 	}
 	if len(reported) != 1 {
@@ -84,7 +85,7 @@ func TestGTKBackendTable(t *testing.T) {
 	}
 	num = -1
 	win.frame()
-	if got := gtkSelGetSelected(c.sel); got != invalidPos {
+	if got := c.table.Selected(); got != -1 {
 		t.Errorf("after the app cleared it, selected = %d", got)
 	}
 
@@ -108,7 +109,7 @@ func TestGTKBackendTable(t *testing.T) {
 	if c.rebuilds != before+1 {
 		t.Errorf("a moved Revision rebuilt %d times, want 1", c.rebuilds-before)
 	}
-	if got := gListModelNItems(c.list); got != 9000 {
+	if got := c.table.Len(); got != 9000 {
 		t.Errorf("after the change the model holds %d rows, want 9000", got)
 	}
 	t.Logf("10k-row table: unchanged Revision reconcile = %v/op; 9000-row replace = %v", same, change)
@@ -147,40 +148,35 @@ func TestGTKBackendTree(t *testing.T) {
 		t.Fatal("no tree control created")
 	}
 	c := lc.coll
-	if got := c.viewClass(); got != "GtkListView" {
+	if got := c.tree.Class(); got != "GtkListView" {
 		t.Errorf("view class = %q, want GtkListView", got)
 	}
-	// A is expanded, A1 is not: A, A0, A1, B.
-	if got := gListModelNItems(c.tlm); got != 4 {
-		t.Errorf("visible rows = %d, want 4 (A, A0, A1, B)", got)
-	}
-	if got := c.findPath("0.1"); got != 2 || gtkSelGetSelected(c.sel) != 2 {
-		t.Errorf("0.1 is at %d, selected %d; want 2 and 2", got, gtkSelGetSelected(c.sel))
+	// A is expanded, A1 is not; A1 is the selected node.
+	if got := c.tree.SelectedPath(); !reflect.DeepEqual(got, []int{0, 1}) {
+		t.Errorf("selected path = %v, want [0 1]", got)
 	}
 	if len(reported) != 0 {
 		t.Errorf("the app's own selection was reported back: %v", reported)
 	}
 
 	// The person picks B (position 3): its path is reported.
-	gtkSelSetSelected(c.sel, 3)
+	c.tree.SelectPath([]int{1})
 	if len(reported) != 1 || reported[0] != "1" {
 		t.Errorf("after the person selected B, reported = %v", reported)
 	}
-	// The app selects a node under a collapsed parent: it opens to show it.
+	// The app selects a node under a collapsed parent: it opens to show it, and
+	// the app's own move is not reported back.
 	sel = "0.1.0"
 	win.frame()
-	if got := gListModelNItems(c.tlm); got != 5 {
-		t.Errorf("after selecting 0.1.0 the visible rows = %d, want 5", got)
-	}
-	if got := c.findPath("0.1.0"); got < 0 || int(gtkSelGetSelected(c.sel)) != got {
-		t.Errorf("0.1.0 at %d, selected %d", got, gtkSelGetSelected(c.sel))
+	if got := c.tree.SelectedPath(); !reflect.DeepEqual(got, []int{0, 1, 0}) || len(reported) != 1 {
+		t.Errorf("after the app chose 0.1.0: selected %v, reported %v", got, reported)
 	}
 	// New data under a new Revision is re-read.
 	before := c.rebuilds
 	tree, rev, sel = []toolkit.NativeTreeNode{{Title: "only"}}, rev+1, ""
 	win.frame()
-	if c.rebuilds != before+1 || gListModelNItems(c.tlm) != 1 {
-		t.Errorf("rebuilds +%d, rows %d; want +1 and 1", c.rebuilds-before, gListModelNItems(c.tlm))
+	if c.rebuilds != before+1 || c.tree.SelectedPath() != nil {
+		t.Errorf("rebuilds +%d, selected %v; want +1 and none", c.rebuilds-before, c.tree.SelectedPath())
 	}
 }
 
@@ -210,30 +206,30 @@ func TestGTKBackendTabs(t *testing.T) {
 		t.Fatal("no tabs control created")
 	}
 	c := lc.coll
-	if got := c.viewClass(); got != "GtkNotebook" {
+	if got := c.tabs.Class(); got != "GtkNotebook" {
 		t.Errorf("view class = %q, want GtkNotebook", got)
 	}
-	if got := gtkNotebookNPages(c.view); got != 3 {
+	if got := c.tabs.Len(); got != 3 {
 		t.Errorf("pages = %d, want 3", got)
 	}
-	if got := gtkNotebookCurrent(c.view); got != 1 {
+	if got := c.tabs.Current(); got != 1 {
 		t.Errorf("current = %d, want 1", got)
 	}
 	if len(reported) != 0 {
 		t.Errorf("the app's own selection was reported back: %v", reported)
 	}
-	gtkNotebookSetCur(c.view, 2) // the person clicks the third tab
+	c.tabs.Switch(2) // the person clicks the third tab
 	if len(reported) != 1 || reported[0] != 2 {
 		t.Errorf("after the person picked tab 2, reported = %v", reported)
 	}
 	num = 0
 	win.frame()
-	if got := gtkNotebookCurrent(c.view); got != 0 || len(reported) != 1 {
+	if got := c.tabs.Current(); got != 0 || len(reported) != 1 {
 		t.Errorf("after the app chose 0: current %d, reported %v", got, reported)
 	}
 	items, rev = []string{"A", "B"}, rev+1
 	win.frame()
-	if got := gtkNotebookNPages(c.view); got != 2 {
+	if got := c.tabs.Len(); got != 2 {
 		t.Errorf("after the titles changed, pages = %d, want 2", got)
 	}
 }
