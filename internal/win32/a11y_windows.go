@@ -74,7 +74,9 @@ const (
 	vtBool    = 11
 	variantTr = 0xFFFF // VARIANT_TRUE is -1 as an int16
 
-	providerOptionsServerSide = 1
+	// ProviderOptions_ServerSideProvider. 1 is ClientSideProvider, which this
+	// provider is not.
+	providerOptionsServerSide = 2
 
 	// Property ids. These are the DOCUMENTED values, checked against what a
 	// live client actually requests: an earlier table had IsControlElement at

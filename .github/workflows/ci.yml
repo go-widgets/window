@@ -259,6 +259,50 @@ jobs:
           WINDOW_LIVE_SCREENS: "1"
         run: go test -count=1 -run TestLiveScreens -v .
 
+  # The same two things on Windows ARM64, where go-widgets/window#188 lived: the
+  # runtime's callback entry does not preserve D8-D15, the registers UI
+  # Automation's core holds a bounding rectangle in, so every rectangle a client
+  # read from a drawn element was (0,0 0x0). amd64 never showed it, which is why
+  # this lane exists. wincb's tests prove the thunk keeps the registers; the live
+  # test proves a real UI Automation client gets non-empty rectangles inside the
+  # window. A run that did not PASS fails the step.
+  windows-arm64:
+    name: windows arm64 (callback registers, UI Automation rectangles)
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.4
+      - name: Callback thunk keeps D8-D15
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go vet ./internal/wincb/
+          go test -count=1 -v ./internal/wincb/ *> wincb.txt
+          $rc = $LASTEXITCODE
+          Get-Content wincb.txt
+          if ($rc -ne 0) { exit $rc }
+          if (-not (Select-String -Path wincb.txt -Pattern '^--- PASS: TestThunkPreservesCallerDoubles ')) {
+            Write-Error 'TestThunkPreservesCallerDoubles did not run to a PASS'
+            exit 1
+          }
+      - name: Live UI Automation rectangles (real client)
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+          WINDOW_WIN32_INTEGRATION: "1"
+        run: |
+          go test -count=1 -v -timeout 180s -tags=integration -run TestLiveUIAChildRectanglesReachTheClient ./internal/win32/ *> uia-rect.txt
+          $rc = $LASTEXITCODE
+          Get-Content uia-rect.txt
+          if ($rc -ne 0) { exit $rc }
+          if (-not (Select-String -Path uia-rect.txt -Pattern '^--- PASS: TestLiveUIAChildRectanglesReachTheClient ')) {
+            Write-Error 'TestLiveUIAChildRectanglesReachTheClient did not run to a PASS'
+            exit 1
+          }
+
   # Cross-build regression guard: the whole module MUST compile CGO-free for
   # every non-native target. windows/{amd64,arm64} now compile the REAL native
   # Win32/GDI backend (internal/win32, pure-Go via syscall.NewLazyDLL + a
