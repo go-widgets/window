@@ -69,6 +69,9 @@ func TestAlertIDsAndOutcome(t *testing.T) {
 		t.Errorf("AlertLabels(nil) = %v", got)
 	}
 	labels := []string{"Save", "Don't save", "Cancel"}
+	if got := AlertLabels(labels); !reflect.DeepEqual(got, labels) {
+		t.Errorf("AlertLabels(own) = %v", got)
+	}
 	ids := AlertButtonIDs(labels)
 	if want := []int32{100, 101, idCancel}; !reflect.DeepEqual(ids, want) {
 		t.Fatalf("ids = %v, want %v", ids, want)
