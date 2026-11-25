@@ -7,7 +7,7 @@ require (
 	github.com/go-appdirs/outdir v0.3.0
 	github.com/go-freedesktop/x11 v0.3.0
 	github.com/go-gfx/gpu2d v0.11.0
-	github.com/go-gtk/gtk4 v0.14.0
+	github.com/go-gtk/gtk4 v0.15.0
 	github.com/go-macos/appkit v0.10.0
 	github.com/go-macos/metal v0.6.0
 	github.com/go-macos/objc v0.13.0
