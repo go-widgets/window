@@ -16,7 +16,7 @@ require (
 	github.com/go-opentype/opentype v0.20.0
 	github.com/go-widgets/android v0.16.0
 	github.com/go-widgets/gpupainter v0.4.0
-	github.com/go-widgets/painter v0.20.0
+	github.com/go-widgets/painter v0.20.1
 	github.com/go-widgets/textinput v0.1.1
 	github.com/go-widgets/toolkit v0.400.0
 	github.com/go-widgets/tray v0.17.0
