@@ -11,27 +11,30 @@
 // Hit-testing on coordinates it cannot see would point a screen reader at the
 // wrong element, so it declines.
 //
-// IRawElementProviderFragment::get_BoundingRectangle declines too, and that one
-// is the outcome of a long measurement rather than a limitation of Go. UI
-// Automation never calls it: per-slot counters show Navigate, GetRuntimeId and
-// get_FragmentRoot all being exercised while this one is never entered, so the
-// provider is never given the chance to answer. Answering ANYWAY publishes
-// zeros — the values written never reach the client — and those zeros then
-// OVERRIDE the HWND host provider's correct window rectangle, costing the
-// window its bounds as well. Declining keeps the window correctly placed and
-// reports the children's position as unknown, which is true. Eliminated on the
-// way there, each by measurement: four calling conventions for the returned
-// UiaRect, the property route, IsOffscreen, ProviderOptions with
-// UseComThreading, a real RuntimeId on the root, NativeWindowHandle answered
-// versus silent, and UiaRaiseStructureChangedEvent.
+// # IRawElementProviderFragment::get_BoundingRectangle, and D8-D15
+//
+// UI Automation DOES call get_BoundingRectangle, three times per element. For a
+// long time it looked as if it did not, and as if answering published zeros
+// whatever was written: the values were right in memory and the client read
+// (0,0 0x0). The cause is not in this file's vtables, whose order and
+// signatures match IRawElementProviderFragment (Navigate, GetRuntimeId,
+// get_BoundingRectangle, GetEmbeddedFragmentRoots, SetFocus, get_FragmentRoot):
+// on windows/arm64 the runtime's callback entry does not preserve D8-D15, the
+// registers the Windows convention makes callee-saved and UI Automation's core
+// keeps the rectangle's doubles in across the call. Every callback here is made
+// with wincb.New, which does preserve them; see its package comment.
+//
+// The root declines: the HWND host provider (get_HostRawElementProvider) owns
+// the window's own rectangle, and an answer here would override it.
 //
 //go:build windows
 
 package win32
 
 import (
-	"syscall"
 	"unsafe"
+
+	"github.com/go-widgets/window/internal/wincb"
 )
 
 // guid is the COM interface identity a client asks for by value.
@@ -109,15 +112,15 @@ func (p *provider) invokable() bool {
 // Each interface needs its own set, because `this` arrives pointing at that
 // interface's slot and only a matching offset recovers the provider.
 func unknownMethods(off uintptr) (qi, addref, release uintptr) {
-	qi = syscall.NewCallback(func(this, riid, ppv uintptr) uintptr {
+	qi = wincb.New(func(this, riid, ppv uintptr) uintptr {
 		return (*provider)(ptr(this-off)).queryInterface(riid, ppv)
 	})
-	addref = syscall.NewCallback(func(this uintptr) uintptr {
+	addref = wincb.New(func(this uintptr) uintptr {
 		p := (*provider)(ptr(this - off))
 		p.refs++
 		return uintptr(p.refs)
 	})
-	release = syscall.NewCallback(func(this uintptr) uintptr {
+	release = wincb.New(func(this uintptr) uintptr {
 		p := (*provider)(ptr(this - off))
 		if p.refs > 0 {
 			p.refs--
@@ -130,14 +133,14 @@ func unknownMethods(off uintptr) (qi, addref, release uintptr) {
 func buildVtables() {
 	simple := new([16]uintptr)
 	simple[0], simple[1], simple[2] = unknownMethods(offSimple)
-	simple[3] = syscall.NewCallback(func(this, pRetVal uintptr) uintptr {
+	simple[3] = wincb.New(func(this, pRetVal uintptr) uintptr {
 		if pRetVal == 0 {
 			return ePointer
 		}
 		*(*int32)(ptr(pRetVal)) = providerOptionsServerSide
 		return sOK
 	})
-	simple[4] = syscall.NewCallback(func(this, patternID, ppRetVal uintptr) uintptr {
+	simple[4] = wincb.New(func(this, patternID, ppRetVal uintptr) uintptr {
 		if ppRetVal == 0 {
 			return ePointer
 		}
@@ -150,13 +153,13 @@ func buildVtables() {
 		}
 		return sOK
 	})
-	simple[5] = syscall.NewCallback(func(this, propertyID, pRetVal uintptr) uintptr {
+	simple[5] = wincb.New(func(this, propertyID, pRetVal uintptr) uintptr {
 		if pRetVal == 0 {
 			return ePointer
 		}
 		return fromSimple(this).propertyValue(int32(propertyID), (*variant)(ptr(pRetVal)))
 	})
-	simple[6] = syscall.NewCallback(func(this, ppRetVal uintptr) uintptr {
+	simple[6] = wincb.New(func(this, ppRetVal uintptr) uintptr {
 		if ppRetVal == 0 {
 			return ePointer
 		}
@@ -176,27 +179,37 @@ func buildVtables() {
 
 	frag := new([16]uintptr)
 	frag[0], frag[1], frag[2] = unknownMethods(offFragment)
-	frag[3] = syscall.NewCallback(func(this, direction, ppRetVal uintptr) uintptr {
+	frag[3] = wincb.New(func(this, direction, ppRetVal uintptr) uintptr {
 		if ppRetVal == 0 {
 			return ePointer
 		}
 		return fromFragment(this).navigate(int32(direction), (*uintptr)(ptr(ppRetVal)))
 	})
-	frag[4] = syscall.NewCallback(func(this, ppRetVal uintptr) uintptr {
+	frag[4] = wincb.New(func(this, ppRetVal uintptr) uintptr {
 		if ppRetVal == 0 {
 			return ePointer
 		}
 		return fromFragment(this).runtimeID((*uintptr)(ptr(ppRetVal)))
 	})
-	frag[5] = syscall.NewCallback(func(this, pRetVal uintptr) uintptr { return eNotImpl })
-	frag[6] = syscall.NewCallback(func(this, ppRetVal uintptr) uintptr {
+	frag[5] = wincb.New(func(this, pRetVal uintptr) uintptr {
+		if pRetVal == 0 {
+			return ePointer
+		}
+		r, ok := fromFragment(this).boundingRect()
+		if !ok {
+			return eNotImpl
+		}
+		*(*uiaRect)(ptr(pRetVal)) = r
+		return sOK
+	})
+	frag[6] = wincb.New(func(this, ppRetVal uintptr) uintptr {
 		if ppRetVal != 0 {
 			*(*uintptr)(ptr(ppRetVal)) = 0
 		}
 		return sOK
 	})
-	frag[7] = syscall.NewCallback(func(this uintptr) uintptr { return sOK })
-	frag[8] = syscall.NewCallback(func(this, ppRetVal uintptr) uintptr {
+	frag[7] = wincb.New(func(this uintptr) uintptr { return sOK })
+	frag[8] = wincb.New(func(this, ppRetVal uintptr) uintptr {
 		if ppRetVal == 0 {
 			return ePointer
 		}
@@ -208,13 +221,13 @@ func buildVtables() {
 
 	root := new([16]uintptr)
 	root[0], root[1], root[2] = unknownMethods(offRoot)
-	root[3] = syscall.NewCallback(func(this, x, y, ppRetVal uintptr) uintptr {
+	root[3] = wincb.New(func(this, x, y, ppRetVal uintptr) uintptr {
 		if ppRetVal != 0 {
 			*(*uintptr)(ptr(ppRetVal)) = 0
 		}
 		return sOK
 	})
-	root[4] = syscall.NewCallback(func(this, ppRetVal uintptr) uintptr {
+	root[4] = wincb.New(func(this, ppRetVal uintptr) uintptr {
 		if ppRetVal != 0 {
 			*(*uintptr)(ptr(ppRetVal)) = 0
 		}
@@ -223,7 +236,7 @@ func buildVtables() {
 
 	inv := new([16]uintptr)
 	inv[0], inv[1], inv[2] = unknownMethods(offInvoke)
-	inv[3] = syscall.NewCallback(func(this uintptr) uintptr {
+	inv[3] = wincb.New(func(this uintptr) uintptr {
 		return fromInvoke(this).invoke()
 	})
 
@@ -278,6 +291,23 @@ func (p *provider) propertyValue(id int32, v *variant) uintptr {
 		v.setI4(0)
 	}
 	return sOK
+}
+
+// boundingRect is the element's rectangle in physical screen pixels. The root
+// has none to give: the HWND host provider answers for the window.
+func (p *provider) boundingRect() (uiaRect, bool) {
+	if p.idx == rootIdx {
+		return uiaRect{}, false
+	}
+	n, ok := p.node()
+	if !ok {
+		return uiaRect{}, false
+	}
+	axmu.Lock()
+	ox, oy, sc := axOrigin[0], axOrigin[1], axScale
+	axmu.Unlock()
+	x, y, w, h := ScreenRect(n, sc, ox, oy)
+	return uiaRect{x, y, w, h}, true
 }
 
 // navigate walks the flat tree: the root holds every element as a direct child,
