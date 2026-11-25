@@ -30,11 +30,19 @@ func (w *Window) installInput() {
 	w.win.OnScroll(func(dx, dy float64, state uint) {
 		w.deliver(applyMods(toolkit.Event{Kind: toolkit.EventScroll, Delta: rows(dy), DeltaX: rows(dx)}, state))
 	})
-	w.win.OnKey(func(keyval, keycode, state uint, press bool) {
+	key := func(keyval, keycode, state uint, press bool) {
 		for _, ev := range mapKey(keyval, state, press) {
 			w.deliver(ev)
 		}
-	})
+		w.placeIME()
+	}
+	if w.installIME() {
+		// Keys go through the input method first: a dead key or a compose
+		// sequence becomes text through its commit, never through this callback.
+		w.win.OnKeyIM(w.im, key)
+		return
+	}
+	w.win.OnKey(key)
 }
 
 // px scales a GTK logical point (the coordinate space of the window and its

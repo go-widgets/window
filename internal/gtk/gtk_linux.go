@@ -46,7 +46,8 @@ type Window struct {
 
 	native  map[string]*liveControl
 	dirty   atomic.Bool
-	btnDown bool // a mouse button is held: OnMotion is a drag, not a move
+	btnDown bool           // a mouse button is held: OnMotion is a drag, not a move
+	im      gtk4.IMContext // the input method in front of the key controller; 0: none
 }
 
 // Open creates the GTK window (but does not enter the loop; Run does). width and
@@ -110,6 +111,7 @@ func (w *Window) Run(root toolkit.Widget) error {
 	w.win.Connect("close-request", func() { w.loop.Quit() })
 	w.installInput() // drawn regions become clickable/scrollable/typeable
 	w.win.Present()
+	w.im.FocusIn()      // the window has the keyboard; a no-op without an input method
 	w.dirty.Store(true) // draw the first frame once the clock starts (post-map)
 	// The frame clock is the main-thread pump that turns a Repaint request into a
 	// present. It ticks while the window is mapped (and only then), and each tick

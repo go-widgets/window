@@ -541,6 +541,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmChar:
 		w.dispatchAll(MapCharDown(rune(uint16(wParam)), keyMods()))
 		return 0
+	case wmImeSetContext, wmImeStartComposition, wmImeComposition, wmImeEndComposition:
+		// Input-method composition into a painted field (ime_windows.go); with no
+		// composing field focused it falls to the default handling.
+		if ret, ok := w.onImeMessage(message, wParam, lParam); ok {
+			return ret
+		}
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmCommand:
 		// A child native control (button/edit/checkbox/combo) notifying its
 		// parent. onCommand returns false for a menu/accelerator command, which
