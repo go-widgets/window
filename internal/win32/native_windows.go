@@ -212,6 +212,8 @@ type liveControl struct {
 	// items are a segmented control's segment titles, kept to turn a selected
 	// tab index back into the title the app speaks.
 	items []string
+	// coll is the state of a table, tree or tab strip (native_collections_windows.go).
+	coll collectionState
 	// link is true when a NativeLink is hosted as a real SysLink (comctl32 v6),
 	// false when it fell back to a flat push button.
 	link bool
@@ -357,6 +359,8 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			tabSelect(lc.hwnd, itemIndex(lc.items, spec.Text))
 			lc.lastText = spec.Text
 		}
+	case toolkit.NativeTable, toolkit.NativeTree, toolkit.NativeTabs:
+		w.collectionSync(lc, spec, false)
 	}
 	// A caption is pushed here and not in the switch above: the checkbox-like
 	// kinds already took their STATE there, and their caption is a second,
@@ -525,6 +529,18 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ensureCommonControls()
 		class = classTab
 		style |= wsTabStop | tcsButtons
+	case toolkit.NativeTable:
+		ensureCommonControls()
+		class = classListView
+		style |= wsBorder | wsTabStop | lvsReport | lvsOwnerData | lvsSingleSel | lvsShowSelAlways
+	case toolkit.NativeTree:
+		ensureCommonControls()
+		class = classTreeView
+		style |= wsBorder | wsTabStop | tvsHasButtons | tvsHasLines | tvsLinesAtRoot | tvsShowSelAlways
+	case toolkit.NativeTabs:
+		ensureCommonControls()
+		class = classTab
+		style |= wsTabStop
 	default:
 		return nil
 	}
@@ -597,6 +613,11 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		}
 	case toolkit.NativeSegmented:
 		tabFill(lc.hwnd, spec.Items, spec.Text)
+	case toolkit.NativeTable, toolkit.NativeTree, toolkit.NativeTabs:
+		if spec.Kind == toolkit.NativeTable {
+			sendMessage(lc.hwnd, lvmSetExtStyle, lvsExFullRowSelect|lvsExDoubleBuffer, lvsExFullRowSelect|lvsExDoubleBuffer)
+		}
+		w.collectionSync(lc, spec, true)
 	}
 
 	w.nativeByHWND[lc.hwnd] = lc
@@ -898,7 +919,7 @@ func ensureCommonControls() {
 	commonControlsOnce.Do(func() {
 		icc := initCommonControlsExStruct{
 			dwSize: uint32(unsafe.Sizeof(initCommonControlsExStruct{})),
-			dwICC:  iccBarClasses | iccProgressClass | iccUpDownClass | iccTabClasses | iccDateClasses,
+			dwICC:  iccBarClasses | iccProgressClass | iccUpDownClass | iccTabClasses | iccDateClasses | iccListViewClass | iccTreeViewClass,
 		}
 		procInitCommonControlsEx.Call(uintptr(unsafe.Pointer(&icc)))
 	})

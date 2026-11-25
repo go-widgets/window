@@ -7,6 +7,7 @@
 package win32
 
 import (
+	"fmt"
 	"runtime"
 	"sort"
 	"strings"
@@ -67,6 +68,10 @@ func TestLiveWin32NativeKinds(t *testing.T) {
 		gotColor string
 		gotSeg   string
 		links    int
+
+		gotTable float64 = -9
+		gotTree  string
+		gotTab   float64 = -9
 	)
 	r := toolkit.Rect{X: 0, Y: 0, W: 200, H: 60}
 	specs := []toolkit.NativeControl{
@@ -81,6 +86,15 @@ func TestLiveWin32NativeKinds(t *testing.T) {
 			OnText: func(s string) { gotColor = s }},
 		{Kind: toolkit.NativeSegmented, Key: "seg", Rect: r, Visible: true, Items: []string{"one", "two", "three"}, Text: "two",
 			OnText: func(s string) { gotSeg = s }},
+		{Kind: toolkit.NativeTable, Key: "table", Rect: toolkit.Rect{W: 300, H: 120}, Visible: true,
+			Columns: []string{"id", "name"}, Rows: tableRows(10000), Revision: 1, Number: 2,
+			OnNumber: func(v float64) { gotTable = v }},
+		{Kind: toolkit.NativeTree, Key: "tree", Rect: toolkit.Rect{W: 200, H: 120}, Visible: true,
+			Tree: sampleTree(), Revision: 1, Text: "0.1",
+			OnText: func(s string) { gotTree = s }},
+		{Kind: toolkit.NativeTabs, Key: "tabs", Rect: toolkit.Rect{W: 300, H: 30}, Visible: true,
+			Items: []string{"one", "two", "three"}, Revision: 1, Number: 1,
+			OnNumber: func(v float64) { gotTab = v }},
 	}
 	root := &specRoot{specs: specs}
 	win.root = root
@@ -98,6 +112,7 @@ func TestLiveWin32NativeKinds(t *testing.T) {
 	want := map[string]string{
 		"entry": "Edit", "list": "ListBox", "link": "SysLink",
 		"date": "SysDateTimePick32", "color": "GoWidgetsColorWell", "seg": "SysTabControl32",
+		"table": "SysListView32", "tree": "SysTreeView32", "tabs": "SysTabControl32",
 	}
 	classes := childClasses(win.hwnd)
 	t.Logf("child window classes: %v", classes)
@@ -190,6 +205,179 @@ func TestLiveWin32NativeKinds(t *testing.T) {
 	}
 	if !lk.link {
 		t.Errorf("link was hosted as the push-button fallback, not a SysLink")
+	}
+
+	// 5. The collections. Both SysTabControl32 children must exist (the
+	// segmented control and the tab strip), told apart by TCS_BUTTONS.
+	if n := countClass(classes, "SysTabControl32"); n != 2 {
+		t.Errorf("SysTabControl32 children = %d, want 2 (segmented + tabs)", n)
+	}
+	tbl := win.nativeControls["table"]
+	if style := getWindowStyle(tbl.hwnd); style&lvsOwnerData == 0 || style&lvsReport == 0 {
+		t.Errorf("table style %#x lacks LVS_OWNERDATA|LVS_REPORT", style)
+	}
+	if got := sendMessage(tbl.hwnd, lvmGetItemCount, 0, 0); got != 10000 {
+		t.Errorf("table item count = %d, want 10000 (virtual, one SETITEMCOUNT)", got)
+	}
+	if got := tableSelected(tbl.hwnd); got != 2 {
+		t.Errorf("table selection = %d, want 2", got)
+	}
+	// The control asks for cells; answer through the real notification path.
+	if got := dispInfo(t, win, tbl, 7, 1); got != "name7" {
+		t.Errorf("cell(7,1) = %q, want name7", got)
+	}
+	if got := dispInfo(t, win, tbl, 99999, 5); got != "" {
+		t.Errorf("cell past the data = %q, want empty", got)
+	}
+	// An unchanged Revision costs nothing: no SETITEMCOUNT, so a count the test
+	// plants by hand survives the reconcile; a moved Revision re-reads.
+	sendMessage(tbl.hwnd, lvmSetItemCount, 5, lvsicfNoInvalidateAll)
+	win.syncNative(root)
+	if got := sendMessage(tbl.hwnd, lvmGetItemCount, 0, 0); got != 5 {
+		t.Errorf("unchanged revision re-read the table (count %d)", got)
+	}
+	specs[6].Revision = 2
+	specs[6].Number = 4
+	win.syncNative(root)
+	if got := sendMessage(tbl.hwnd, lvmGetItemCount, 0, 0); got != 10000 {
+		t.Errorf("moved revision did not re-read (count %d)", got)
+	}
+	if got := tableSelected(tbl.hwnd); got != 4 {
+		t.Errorf("after push, table selection = %d, want 4", got)
+	}
+	// native -> app: the person picks row 9.
+	tableSelect(tbl.hwnd, 9)
+	notifyItemChanged(t, win, tbl, 9)
+	if gotTable != 9 {
+		t.Errorf("table report = %v, want 9", gotTable)
+	}
+
+	tree := win.nativeControls["tree"]
+	if sendMessage(tree.hwnd, tvmGetCount, 0, 0) != 5 {
+		t.Errorf("tree node count = %d, want 5", sendMessage(tree.hwnd, tvmGetCount, 0, 0))
+	}
+	if got := treeSelectedPath(tree); got != "0.1" {
+		t.Errorf("tree selection = %q, want 0.1", got)
+	}
+	specs[7].Text = "1"
+	win.syncNative(root)
+	if got := treeSelectedPath(tree); got != "1" {
+		t.Errorf("after push, tree selection = %q, want 1", got)
+	}
+	treeSelect(tree, treeSelection(tree.coll.treeIdx, "0.0"))
+	notifyTreeSel(t, win, tree, "0.0")
+	if gotTree != "0.0" {
+		t.Errorf("tree report = %q, want 0.0", gotTree)
+	}
+
+	tabs := win.nativeControls["tabs"]
+	if style := getWindowStyle(tabs.hwnd); style&tcsButtons != 0 {
+		t.Errorf("tab strip was made with TCS_BUTTONS (%#x)", style)
+	}
+	if got := tabSelected(tabs.hwnd); got != 1 {
+		t.Errorf("tab = %d, want 1", got)
+	}
+	specs[8].Number = 2
+	win.syncNative(root)
+	if got := tabSelected(tabs.hwnd); got != 2 {
+		t.Errorf("after push, tab = %d, want 2", got)
+	}
+	tabSelect(tabs.hwnd, 0)
+	notify(t, win, tabs.hwnd, tcnSelChange)
+	if gotTab != 0 {
+		t.Errorf("tab report = %v, want 0", gotTab)
+	}
+}
+
+const (
+	lvmGetItemCount = 0x1004 // LVM_GETITEMCOUNT
+	lvmGetNextItem  = 0x100C // LVM_GETNEXTITEM
+	lvniSelected    = 0x0002 // LVNI_SELECTED
+	tvmGetCount     = 0x1105 // TVM_GETCOUNT
+	tvmGetNextItem  = 0x110A // TVM_GETNEXTITEM
+	tvmGetItemW     = 0x113E // TVM_GETITEMW
+	gwlStyle        = -16
+)
+
+var procGetWindowLongPtrW = user32.NewProc("GetWindowLongPtrW")
+
+func getWindowStyle(hwnd uintptr) uint32 {
+	r, _, _ := procGetWindowLongPtrW.Call(hwnd, ^uintptr(15)) // GWL_STYLE (-16)
+	return uint32(r)
+}
+
+func countClass(classes []string, class string) int {
+	n := 0
+	for _, c := range classes {
+		if strings.EqualFold(c, class) {
+			n++
+		}
+	}
+	return n
+}
+
+func tableRows(n int) [][]string {
+	rows := make([][]string, n)
+	for i := range rows {
+		rows[i] = []string{fmt.Sprint(i), fmt.Sprintf("name%d", i)}
+	}
+	return rows
+}
+
+func tableSelected(hwnd uintptr) int {
+	return int(int32(sendMessage(hwnd, lvmGetNextItem, ^uintptr(0), lvniSelected)))
+}
+
+// dispInfo delivers an LVN_GETDISPINFOW the way the list view does and returns
+// the text the host put in the buffer the control supplied.
+func dispInfo(t *testing.T, w *Window, lc *liveControl, row, col int) string {
+	t.Helper()
+	buf := make([]uint16, 64)
+	di := nmLvDispInfoW{
+		hdr:  nmHdr{hwndFrom: lc.hwnd, code: uint32(lvnGetDispInfoW & 0xFFFFFFFF)},
+		item: lvItemW{mask: lvifText, iItem: int32(row), iSubItem: int32(col), pszText: &buf[0], cchTextMax: int32(len(buf))},
+	}
+	if !w.onNotify(uintptr(unsafe.Pointer(&di))) {
+		t.Errorf("LVN_GETDISPINFO was not handled")
+	}
+	return syscall.UTF16ToString(buf)
+}
+
+func notifyItemChanged(t *testing.T, w *Window, lc *liveControl, row int) {
+	t.Helper()
+	nm := nmListView{
+		hdr:       nmHdr{hwndFrom: lc.hwnd, code: uint32(lvnItemChanged & 0xFFFFFFFF)},
+		iItem:     int32(row),
+		uChanged:  lvifState,
+		uNewState: lvisSelected,
+	}
+	if !w.onNotify(uintptr(unsafe.Pointer(&nm))) {
+		t.Errorf("LVN_ITEMCHANGED was not handled")
+	}
+}
+
+// treeSelectedPath asks the control which node is selected (TVM_GETNEXTITEM,
+// TVGN_CARET) and returns that node's path from its lParam.
+func treeSelectedPath(lc *liveControl) string {
+	h := sendMessage(lc.hwnd, tvmGetNextItem, tvgnCaret, 0)
+	if h == 0 {
+		return ""
+	}
+	it := tvItemW{mask: tvifParam, hItem: h}
+	sendMessage(lc.hwnd, tvmGetItemW, 0, uintptr(unsafe.Pointer(&it)))
+	if i := int(it.lParam); i >= 0 && i < len(lc.coll.tree) {
+		return lc.coll.tree[i].Path
+	}
+	return ""
+}
+
+func notifyTreeSel(t *testing.T, w *Window, lc *liveControl, path string) {
+	t.Helper()
+	nm := nmTreeViewW{hdr: nmHdr{hwndFrom: lc.hwnd, code: uint32(tvnSelChangedW & 0xFFFFFFFF)}}
+	nm.itemNew.hItem = 1
+	nm.itemNew.lParam = uintptr(lc.coll.treeIdx[path])
+	if !w.onNotify(uintptr(unsafe.Pointer(&nm))) {
+		t.Errorf("TVN_SELCHANGED was not handled")
 	}
 }
 

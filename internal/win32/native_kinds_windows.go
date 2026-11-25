@@ -426,6 +426,12 @@ func (w *Window) onNotify(lParam uintptr) bool {
 				}
 			}
 		}
+	case toolkit.NativeTable, toolkit.NativeTree, toolkit.NativeTabs:
+		handled, repaint := w.collectionNotify(lc, h, lParam)
+		if repaint {
+			w.paintFrame(false)
+		}
+		return handled
 	default:
 		return false
 	}
