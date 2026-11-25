@@ -79,26 +79,28 @@ func (b darwinBackend) OpenFile(o OpenOptions, done func(OpenResult)) error {
 	return cocoaErr(b.Window.Dialog(cocoa.DialogRequest{
 		Kind: cocoa.DialogOpen, Title: o.Title, Exts: flattenExts(o.Filters),
 		Multiple: o.Multiple, Directories: o.Directories,
-		Done: func(r cocoa.DialogResult) {
-			if r.Cancelled {
-				done(OpenResult{Err: ErrCancelled})
-				return
-			}
-			done(OpenResult{Paths: r.Paths})
-		},
+		Done: func(r cocoa.DialogResult) { done(openResult(r)) },
 	}))
+}
+
+func openResult(r cocoa.DialogResult) OpenResult {
+	if r.Cancelled {
+		return OpenResult{Err: ErrCancelled}
+	}
+	return OpenResult{Paths: r.Paths}
+}
+
+func saveResult(r cocoa.DialogResult) SaveResult {
+	if r.Cancelled || len(r.Paths) == 0 {
+		return SaveResult{Err: ErrCancelled}
+	}
+	return SaveResult{Path: r.Paths[0]}
 }
 
 func (b darwinBackend) SaveFile(o SaveOptions, done func(SaveResult)) error {
 	return cocoaErr(b.Window.Dialog(cocoa.DialogRequest{
 		Kind: cocoa.DialogSave, Title: o.Title, Name: o.Name, Exts: flattenExts(o.Filters),
-		Done: func(r cocoa.DialogResult) {
-			if r.Cancelled || len(r.Paths) == 0 {
-				done(SaveResult{Err: ErrCancelled})
-				return
-			}
-			done(SaveResult{Path: r.Paths[0]})
-		},
+		Done: func(r cocoa.DialogResult) { done(saveResult(r)) },
 	}))
 }
 

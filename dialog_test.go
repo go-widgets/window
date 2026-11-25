@@ -104,6 +104,15 @@ func TestDialogDispatch(t *testing.T) {
 	if err := OpenFile(f, OpenOptions{Title: "\x00"}, noop); !errors.Is(err, ErrInvalidDialog) || f.open != 1 {
 		t.Errorf("invalid reached the back-end: %v", err)
 	}
+	if err := SaveFile(f, SaveOptions{Title: "\x00"}, func(SaveResult) {}); !errors.Is(err, ErrInvalidDialog) || f.save != 1 {
+		t.Errorf("invalid save reached the back-end: %v", err)
+	}
+	if err := Alert(f, AlertOptions{}, func(AlertResult) {}); !errors.Is(err, ErrInvalidDialog) || f.alert != 2 {
+		t.Errorf("invalid alert reached the back-end: %v", err)
+	}
+	if err := (SaveOptions{Title: "\x00"}).Validate(); !errors.Is(err, ErrInvalidDialog) {
+		t.Errorf("save title NUL: %v", err)
+	}
 	// Nil callbacks are refused.
 	if err := OpenFile(f, OpenOptions{}, nil); !errors.Is(err, ErrInvalidDialog) {
 		t.Error("nil open callback accepted")
