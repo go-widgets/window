@@ -68,6 +68,21 @@ func (b windowsBackend) Show() error  { return win32Err(b.Window.Show()) }
 func (b windowsBackend) Hide() error  { return win32Err(b.Window.Hide()) }
 func (b windowsBackend) Raise() error { return win32Err(b.Window.Raise()) }
 
+// OpenFile, SaveFile and Alert implement Dialogs over the back-end's own queue
+// (internal/win32/dialog_windows.go); dialog_win32.go maps the options and the
+// results.
+func (b windowsBackend) OpenFile(o OpenOptions, done func(OpenResult)) error {
+	return win32Err(b.Window.Dialog(win32OpenRequest(o, done)))
+}
+
+func (b windowsBackend) SaveFile(o SaveOptions, done func(SaveResult)) error {
+	return win32Err(b.Window.Dialog(win32SaveRequest(o, done)))
+}
+
+func (b windowsBackend) Alert(o AlertOptions, done func(AlertResult)) error {
+	return win32Err(b.Window.Dialog(win32AlertRequest(o, done)))
+}
+
 func win32Err(err error) error {
 	if errors.Is(err, win32.ErrClosed) {
 		return ErrClosed
@@ -77,6 +92,7 @@ func win32Err(err error) error {
 
 var (
 	_ Visibility       = windowsBackend{}
+	_ Dialogs          = windowsBackend{}
 	_ Backend          = windowsBackend{}
 	_ AppearanceReader = windowsBackend{}
 	_ Clipboard        = (*win32.Window)(nil)

@@ -215,6 +215,26 @@ jobs:
             Write-Error 'TestLiveWin32ContextMenuAndImage did not run to a PASS'
             exit 1
           }
+      # Native dialogs on a real Windows host: each kind (open, open-multiple,
+      # open-directory, save, and alerts with a chosen button, the close box and
+      # the default OK) is requested through Window.Dialog, found as a real
+      # top-level window of this process, and dismissed from outside (WM_CLOSE,
+      # TDM_CLICK_BUTTON); the callback result is asserted. Picking a file in a
+      # file dialog is not driven. As above, a run that did not PASS fails.
+      - name: Live native dialogs (open, save, alert)
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+          WINDOW_WIN32_INTEGRATION: "1"
+        run: |
+          go test -count=1 -v -timeout 180s -tags=integration -run TestLiveWin32Dialogs ./internal/win32/ *> dialogs.txt
+          $rc = $LASTEXITCODE
+          Get-Content dialogs.txt
+          if ($rc -ne 0) { exit $rc }
+          if (-not (Select-String -Path dialogs.txt -Pattern '^--- PASS: TestLiveWin32Dialogs ')) {
+            Write-Error 'TestLiveWin32Dialogs did not run to a PASS'
+            exit 1
+          }
       - name: Live display enumeration (no window, no interactive session)
         env:
           CGO_ENABLED: "0"
