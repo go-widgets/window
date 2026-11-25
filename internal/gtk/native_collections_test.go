@@ -21,6 +21,15 @@ func TestEncodeRowAndCellAt(t *testing.T) {
 			t.Errorf("cellAt(%d) = %q, want %q", i, got, want)
 		}
 	}
+	for _, c := range []struct {
+		row  string
+		idx  int
+		want string
+	}{{"a", 0, "a"}, {"a", 1, ""}, {"a\x1fb", 1, "b"}, {"a\x1fb", 2, ""}, {"a\x1fb", 5, ""}, {"", 0, ""}, {"", 3, ""}} {
+		if got := cellAt(c.row, c.idx); got != c.want {
+			t.Errorf("cellAt(%q,%d) = %q, want %q", c.row, c.idx, got, c.want)
+		}
+	}
 	if got := encodeRow([]string{"x", "y", "z"}, 2); got != "x\x1fy" {
 		t.Errorf("extra cells must be cut to the columns: %q", got)
 	}

@@ -27,9 +27,6 @@ const cellSep = "\x1f"
 
 // cleanCell removes the two bytes an item string cannot carry.
 func cleanCell(s string) string {
-	if !strings.ContainsAny(s, "\x00\x1f") {
-		return s
-	}
 	return strings.Map(func(r rune) rune {
 		if r == 0 || r == 0x1f {
 			return -1
