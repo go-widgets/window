@@ -217,6 +217,8 @@ type liveControl struct {
 	// link is true when a NativeLink is hosted as a real SysLink (comctl32 v6),
 	// false when it fell back to a flat push button.
 	link bool
+
+	nativeExtras // the context menu and the button picture
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -372,9 +374,11 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 		lc.lastTitle = spec.Text
 	}
 
+	lc.applyMenu(spec.Menu)
 	x, y, cw, ch := w.controlRect(spec.Rect)
 	_ = win32.SetWindowPos(win32.HWND(lc.hwnd), 0, x, y, cw, ch, swpNoZOrder|swpNoActivate)
 	w.clipTo(lc, spec)
+	w.applyImage(lc, spec)
 
 	if spec.Visible != lc.shown {
 		cmd := int32(swHide)
@@ -628,6 +632,8 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 // map entry is deleted by the caller.
 func (w *Window) closeControl(lc *liveControl) {
 	win32.DestroyWindow(win32.HWND(lc.hwnd))
+	lc.imageMode = imageNone
+	lc.freeImage() // after the window: the control used them until it was destroyed
 	delete(w.nativeByHWND, lc.hwnd)
 }
 

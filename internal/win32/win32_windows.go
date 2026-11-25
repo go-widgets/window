@@ -556,6 +556,14 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
+	case wmContextMenu:
+		// A right-click (or the menu key) on a child control reaches its parent
+		// through the child's own default handling; wParam is the child. An edit
+		// keeps its own Cut/Copy/Paste menu: a Menu on one is not shown.
+		if w.onContextMenu(w.nativeByHWND[wParam], lParam) {
+			return 0
+		}
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmHScroll:
 		// A trackbar (NativeSlider) notifying its parent of a new thumb position.
 		if w.onHScroll(lParam) {

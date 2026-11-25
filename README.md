@@ -412,7 +412,8 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   | Wayland | the initial commit again, then the next configure maps it | null buffer + commit (unmap) | `ErrNotSupported`: xdg-shell has no such request, and xdg-activation needs a token from the user's input to this window |
   | macOS (Cocoa) | `orderFront:` | `orderOut:` | out of the Dock, activate the app, `makeKeyAndOrderFront:` (a passive window is only ordered front) |
   | Windows (Win32) | `SW_SHOWNA` | `SW_HIDE` | `SW_RESTORE`/`SW_SHOW` + `SetForegroundWindow` |
-  | GTK, Android, wasmbox | `ErrNotSupported` | `ErrNotSupported` | `ErrNotSupported` |
+  | GTK4 | `gtk_widget_set_visible(true)` | `gtk_widget_set_visible(false)` | `gtk_window_present` (a Wayland compositor may only mark the window as wanting attention) |
+  | Android, wasmbox | `ErrNotSupported` | `ErrNotSupported` | `ErrNotSupported` |
 
   Focus is the platform's to grant: under focus-stealing prevention a window
   manager, or Windows' foreground lock, may mark the window as wanting
@@ -422,9 +423,17 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   `WM_DELETE_WINDOW`, `WM_CLOSE`, the compositor's close request) hides the
   window instead of ending `Run`; only `Backend.Close` ends it. This is the
   other half of a tray application: the window goes away, the process stays.
-  Honoured by X11, Wayland, macOS and Windows; `Open` answers
-  `window.ErrNotSupported` on GTK, Android and wasm rather than quit on close
+  Honoured by X11, Wayland, GTK4, macOS and Windows; `Open` answers
+  `window.ErrNotSupported` on Android and wasm rather than quit on close
   after being asked not to.
+- Native control extras. A `toolkit.NativeControl`'s `Menu` (context menu) and
+  `Image`/`ImageOnly` (a PNG on a button) are applied on every native host:
+  Cocoa as before; GTK4 as a popover menu on right-click and a picture in the
+  button; Win32 as a `TrackPopupMenu` on `WM_CONTEXTMENU` and a bitmap on the
+  button (beside the caption with comctl32 v6, alone otherwise). They are
+  reapplied only when they change, a pick runs the newest closure, and the PNG
+  is bounded to 1 MiB and 1024x1024 before any pixel is allocated. A Win32
+  edit field keeps its own Cut/Copy/Paste menu.
 
 ### Results from other goroutines
 

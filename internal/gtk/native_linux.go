@@ -40,6 +40,8 @@ type liveControl struct {
 	// resizing this box and moving the control INSIDE it, which is two calls of
 	// the same kind the reconcile already makes every frame.
 	box gtk4.Widget
+
+	nativeExtras // the context menu and the button picture
 }
 
 // nativeControlSource is the optional capability a root exposes to supply native
@@ -88,6 +90,7 @@ func (w *Window) syncNative(root toolkit.Widget) {
 			// Unparenting the box destroys it and the control it holds; the
 			// control must not be unparented separately, which would destroy it
 			// first and leave the box holding a freed pointer.
+			lc.destroyExtras() // the popover is parented to the control: it goes first
 			lc.box.Unparent()
 			delete(w.native, key)
 		}
@@ -185,6 +188,8 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 		}
 	}
 
+	w.applyImage(lc, spec)
+	lc.applyMenu(spec.Menu)
 	w.place(lc, spec)
 	lc.widget.SetVisible(spec.Visible)
 }

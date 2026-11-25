@@ -169,9 +169,9 @@ type Config struct {
 	// way out is an explicit Quit rather than the last window.
 	//
 	// It needs the [Visibility] capability to be useful, so Open answers
-	// [ErrNotSupported] where the back-end has none (GTK, Android, wasm) rather
+	// [ErrNotSupported] where the back-end has none (Android, wasm) rather
 	// than accept the flag and quit anyway. Honoured by the macOS (Cocoa),
-	// Windows (Win32), X11 and Wayland back-ends.
+	// Windows (Win32), GTK4, X11 and Wayland back-ends.
 	HideOnClose bool
 
 	// Immersive puts the window above the platform's own furniture -- on macOS
