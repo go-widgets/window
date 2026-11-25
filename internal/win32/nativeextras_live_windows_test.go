@@ -123,8 +123,10 @@ func TestLiveWin32ContextMenuAndImage(t *testing.T) {
 	if gotLabels[0] != "Open && run" && gotLabels[0] != "Open & run" {
 		t.Errorf("label %q", gotLabels[0])
 	}
-	if want := []bool{false, false, true}; !reflect.DeepEqual(gotGrayed, want) {
-		t.Errorf("grayed = %v, want %v", gotGrayed, want)
+	// Windows itself reports a separator as grayed, so only the rows that are
+	// not separators say anything about whether a verb is enabled.
+	if len(gotGrayed) != 3 || gotGrayed[0] || !gotGrayed[2] {
+		t.Errorf("grayed = %v, want the first row enabled and the last greyed", gotGrayed)
 	}
 	if want := []bool{false, true, false}; !reflect.DeepEqual(gotSep, want) {
 		t.Errorf("separator = %v, want %v", gotSep, want)
