@@ -522,7 +522,10 @@ func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
   fires the `click` action and sees one click reach the handler. A disabled
   node is `AXEnabled` false on macOS, `IsEnabled` false in UI Automation and
   drops `ENABLED`/`SENSITIVE` in AT-SPI (a `StateChanged` signal announces the
-  change). The UI Automation fragment answers no `BoundingRectangle` yet.
+  change). The UI Automation fragment answers `BoundingRectangle` with each
+  element's screen rectangle, on Windows ARM64 too: the Go runtime's callback
+  entry does not preserve D8-D15 there, which UI Automation's core relies on,
+  so the provider's callbacks go through `internal/wincb` (go-widgets/window#188).
 
 ## License
 
