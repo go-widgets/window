@@ -263,7 +263,8 @@ jobs:
   # runtime's callback entry does not preserve D8-D15, the registers UI
   # Automation's core holds a bounding rectangle in, so every rectangle a client
   # read from a drawn element was (0,0 0x0). amd64 never showed it, which is why
-  # this lane exists. wincb's tests prove the thunk keeps the registers; the live
+  # this lane exists. go-mswin/win32/wincb (the one implementation, also behind
+  # win32.NewCallback) tests prove the thunk keeps the registers; the live
   # test proves a real UI Automation client gets non-empty rectangles inside the
   # window. A run that did not PASS fails the step.
   windows-arm64:
@@ -279,8 +280,7 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: |
-          go vet ./internal/wincb/
-          go test -count=1 -v ./internal/wincb/ *> wincb.txt
+          go test -count=1 -v github.com/go-mswin/win32/wincb *> wincb.txt
           $rc = $LASTEXITCODE
           Get-Content wincb.txt
           if ($rc -ne 0) { exit $rc }

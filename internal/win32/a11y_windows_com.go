@@ -22,7 +22,8 @@
 // on windows/arm64 the runtime's callback entry does not preserve D8-D15, the
 // registers the Windows convention makes callee-saved and UI Automation's core
 // keeps the rectangle's doubles in across the call. Every callback here is made
-// with wincb.New, which does preserve them; see its package comment.
+// with wincb.New (github.com/go-mswin/win32/wincb, the same one behind
+// win32.NewCallback), which does preserve them; see its package comment.
 //
 // The root declines: the HWND host provider (get_HostRawElementProvider) owns
 // the window's own rectangle, and an answer here would override it.
@@ -34,7 +35,7 @@ package win32
 import (
 	"unsafe"
 
-	"github.com/go-widgets/window/internal/wincb"
+	"github.com/go-mswin/win32/wincb"
 )
 
 // guid is the COM interface identity a client asks for by value.

@@ -12,7 +12,7 @@ require (
 	github.com/go-macos/metal v0.6.0
 	github.com/go-macos/objc v0.13.0
 	github.com/go-macos/virtualdisplay v0.5.0
-	github.com/go-mswin/win32 v0.7.0
+	github.com/go-mswin/win32 v0.8.0
 	github.com/go-opentype/opentype v0.20.0
 	github.com/go-widgets/android v0.16.0
 	github.com/go-widgets/gpupainter v0.4.0

@@ -541,7 +541,12 @@ func (r *root) SetBounds(b toolkit.Rect) { r.q.Drain(); r.VBox.SetBounds(b) }
   change). The UI Automation fragment answers `BoundingRectangle` with each
   element's screen rectangle, on Windows ARM64 too: the Go runtime's callback
   entry does not preserve D8-D15 there, which UI Automation's core relies on,
-  so the provider's callbacks go through `internal/wincb` (go-widgets/window#188).
+  so every Windows callback (the window procedure, the native-control
+  procedures and the provider's COM vtables) goes through
+  [`github.com/go-mswin/win32/wincb`](https://github.com/go-mswin/win32)
+  (`win32.NewCallback`), which saves and restores them
+  (go-widgets/window#188, golang/go#82503). Callbacks are made once and
+  never freed; the process-wide budget is documented in that package.
 
 ## License
 
