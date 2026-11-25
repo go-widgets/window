@@ -90,6 +90,16 @@ func TestCommitFromReplacesALoneSurrogate(t *testing.T) {
 	}
 }
 
+func TestCommitFromIsBounded(t *testing.T) {
+	units := make([]uint16, maxImeUnits*8+500)
+	for i := range units {
+		units[i] = 'x'
+	}
+	if got := commitFrom(units); len(got) != maxImeUnits*8 {
+		t.Errorf("kept %d units, bound is %d", len(got), maxImeUnits*8)
+	}
+}
+
 func FuzzBuildPreedit(f *testing.F) {
 	f.Add([]byte("a\x00b\x00"), 1, []byte{1, 2})
 	f.Add([]byte{0x00, 0xD8, 0x00, 0xDC}, 2, []byte{3, 3})
