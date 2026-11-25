@@ -19,6 +19,6 @@ import (
 type collection struct{}
 
 func newCollection(*liveControl, toolkit.NativeControl) *collection { return nil }
-func (c *collection) widget() gtk4.Widget                          { return 0 }
-func (c *collection) release()                                     {}
-func (c *collection) apply(*liveControl, toolkit.NativeControl)    {}
+func (c *collection) widget() gtk4.Widget                           { return 0 }
+func (c *collection) release()                                      {}
+func (c *collection) apply(*liveControl, toolkit.NativeControl)     {}
