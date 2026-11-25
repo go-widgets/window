@@ -166,6 +166,11 @@ func ScreenRect(n toolkit.A11yNode, scale float64, originX, originY int) (x, y, 
 		float64(n.Rect.H) * scale
 }
 
+// IsEnabled is the answer to UIA_IsEnabledPropertyId for a published element:
+// false for one the toolkit marks disabled, which a screen reader then announces
+// as unavailable instead of offering to invoke it.
+func IsEnabled(n toolkit.A11yNode) bool { return !n.Disabled }
+
 // PressPoint encodes an element's centre in the LOGICAL points the input path
 // speaks, as the string carried on its AutomationId.
 //

@@ -164,3 +164,33 @@ func TestParsePressPointRefusesGarbage(t *testing.T) {
 		}
 	}
 }
+
+func TestStateSetEnabledAndDisabled(t *testing.T) {
+	const shown = 1<<StateShowing | 1<<StateVisible
+	const operable = 1<<StateEnabled | 1<<StateSensitive
+
+	on := StateSet(node(toolkit.RoleButton, "OK", toolkit.Rect{}))
+	if len(on) != 2 || on[0] != shown|operable || on[1] != 0 {
+		t.Fatalf("enabled node state = %#v", on)
+	}
+	d := node(toolkit.RoleButton, "OK", toolkit.Rect{})
+	d.Disabled = true
+	off := StateSet(d)
+	if len(off) != 2 || off[0] != shown || off[1] != 0 {
+		t.Fatalf("disabled node state = %#v, want showing+visible only", off)
+	}
+}
+
+func TestEnabledChanges(t *testing.T) {
+	a := node(toolkit.RoleButton, "A", toolkit.Rect{})
+	b := node(toolkit.RoleButton, "B", toolkit.Rect{})
+	bd := b
+	bd.Disabled = true
+	got := enabledChanges([]toolkit.A11yNode{a, b}, []toolkit.A11yNode{a, bd, a})
+	if len(got) != 1 || got[0] != 1 {
+		t.Fatalf("enabledChanges = %v, want [1]", got)
+	}
+	if got := enabledChanges([]toolkit.A11yNode{a}, []toolkit.A11yNode{a}); len(got) != 0 {
+		t.Fatalf("unchanged tree reported %v", got)
+	}
+}

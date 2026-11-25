@@ -71,6 +71,11 @@ func a11yTreeSig(nodes []toolkit.A11yNode) uint64 {
 		_, _ = h.Write([]byte{0})
 		_, _ = h.Write([]byte(n.Value))
 		_, _ = h.Write([]byte{0})
+		if n.Disabled {
+			_, _ = h.Write([]byte{1})
+		} else {
+			_, _ = h.Write([]byte{0})
+		}
 		putInt(n.Rect.X)
 		putInt(n.Rect.Y)
 		putInt(n.Rect.W)

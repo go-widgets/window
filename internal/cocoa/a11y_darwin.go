@@ -57,6 +57,7 @@ var (
 	selArray                    = objc.RegisterName("array")
 	selAddObject                = objc.RegisterName("addObject:")
 	selConvertRectToView        = objc.RegisterName("convertRect:toView:")
+	selSetAccessibilityEnabled  = objc.RegisterName("setAccessibilityEnabled:")
 	selConvertRectToScreen      = objc.RegisterName("convertRectToScreen:")
 	selWindowOfView             = objc.RegisterName("window")
 	selSubviews                 = objc.RegisterName("subviews")
@@ -98,15 +99,10 @@ func registerA11yElementClass() error {
 			"GoWidgetsA11yElement", objc.GetClass("NSAccessibilityElement"),
 			[]objc.MethodDef{
 				{Cmd: objc.RegisterName("accessibilityPerformPress"), Fn: elementPerformPress},
-				{Cmd: objc.RegisterName("isAccessibilityEnabled"), Fn: elementIsEnabled},
 			})
 	})
 	return a11yElementErr
 }
-
-// elementIsEnabled reports the element as enabled; a disabled one is announced
-// as unavailable and cannot be pressed.
-func elementIsEnabled(_ objc.ID, _ objc.SEL) bool { return true }
 
 // elementPerformPress activates the element by replaying an ordinary click at
 // its centre, through the SAME path a real click takes.
@@ -220,6 +216,9 @@ func (w *Window) buildA11yChildren() objc.ID {
 			// and value.
 			el.Send(selSetAccessibilityLabel, objc.NSString(n.Name))
 		}
+		// AXEnabled: NSAccessibilityElement stores the flag itself (default YES), so
+		// only the disabled case needs saying; VoiceOver then reads "dimmed".
+		el.Send(selSetAccessibilityEnabled, !n.Disabled)
 		el.Send(selSetAccessibilityFrame, onScreen)
 		el.Send(selSetAccessibilityParent, w.view)
 		el.Send(selSetAccessibilityIdent, objc.NSString(PressPoint(n)))

@@ -186,6 +186,39 @@ const (
 	StateVisible   uint32 = 30
 )
 
+// StateSet is the AT-SPI state bitset for a node, as the two-word array
+// GetState returns (bit n of word n/32; org.a11y.atspi.Accessible.GetState).
+//
+// An element every client may operate reports ENABLED and SENSITIVE; so does
+// showing/visible, without which a reader treats it as hidden. A disabled one
+// (toolkit A11yInfo.Disabled) drops ENABLED and SENSITIVE and keeps showing and
+// visible: it is still on screen and still announced, which is the shape an
+// insensitive widget takes (state numbers read out of pyatspi, see above).
+func StateSet(n toolkit.A11yNode) []uint32 {
+	var lo uint32
+	for _, s := range []uint32{StateShowing, StateVisible} {
+		lo |= 1 << s
+	}
+	if !n.Disabled {
+		lo |= 1<<StateEnabled | 1<<StateSensitive
+	}
+	return []uint32{lo, 0}
+}
+
+// enabledChanges lists the indices, within both trees, whose Disabled flag
+// differs between two publications of the tree. Elements are matched by index
+// because that is how AT-SPI paths name them; an index that only exists in one
+// tree is new or gone, which the child-added signal already covers.
+func enabledChanges(old, cur []toolkit.A11yNode) []int {
+	var out []int
+	for i := 0; i < len(old) && i < len(cur); i++ {
+		if old[i].Disabled != cur[i].Disabled {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
 // Skip reports whether a node should be left out of the published tree. A
 // static element with no name says nothing a reader could announce and one with
 // no area cannot be pointed at; either is a stop the user has to skip past. A

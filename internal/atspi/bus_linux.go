@@ -151,10 +151,17 @@ func Publish(root toolkit.Widget, title string, originX, originY int) {
 	}
 
 	b.mu.Lock()
+	flipped := enabledChanges(b.nodes, nodes)
 	b.nodes, b.title = nodes, title
 	b.originX, b.originY = originX, originY
 	need, have := len(nodes), b.exported
 	b.mu.Unlock()
+
+	// A client that already read the cache keeps its copy of the state word until
+	// told otherwise, so a button that greys out would stay clickable on its screen.
+	for _, i := range flipped {
+		b.announceEnabled(i, !nodes[i].Disabled)
+	}
 
 	for i := have; i < need; i++ {
 		if !b.exportChild(i) {
@@ -268,6 +275,18 @@ func (b *Bridge) announceNew(from, to int) {
 			"add", int32(i), int32(0),
 			dbus.MakeVariant(b.ref(childPath(i))), root)
 	}
+}
+
+// announceEnabled emits org.a11y.atspi.Event.Object.StateChanged for the
+// "enabled" state of element i: detail1 is 1 when the state is now set, 0 when
+// cleared, per the AT-SPI2 event contract (signature "siiv(so)").
+func (b *Bridge) announceEnabled(i int, enabled bool) {
+	on := int32(0)
+	if enabled {
+		on = 1
+	}
+	_ = b.conn.Emit(childPath(i), ifaceEventObject+".StateChanged",
+		"enabled", on, int32(0), dbus.MakeVariant(int32(0)), b.ref(rootPath))
 }
 
 // start brings the bridge up: find the accessibility bus, export the
