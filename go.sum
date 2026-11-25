@@ -29,14 +29,14 @@ github.com/go-macos/appkit v0.9.0 h1:xjtzOB/8FO2aYRmdOx0ok58E+8X4LeUp0s+eVdafdl4
 github.com/go-macos/appkit v0.9.0/go.mod h1:uznlBQaTKIgIf+wQfuIXMT+zkeQxZP/4F5vE/ydkVC4=
 github.com/go-macos/metal v0.6.0 h1:17qzYBLWo9D6zfiHC3YqKs6LJivke2MJ0Y1U51311FE=
 github.com/go-macos/metal v0.6.0/go.mod h1:BiclSGJgONDekug12CQtlINic9zMmXF7m/iA7bQn4hM=
-github.com/go-macos/objc v0.12.0 h1:/WmB4C1CQd5RkqBRvnHNljEFtOTvytPA9fkD87xuJVQ=
-github.com/go-macos/objc v0.12.0/go.mod h1:ao+SmTFBrkZdP+488hFTrSFvCtJ36McKKhNNOlcFXrQ=
+github.com/go-macos/objc v0.13.0 h1:c7dvIpoHa94F8LSol0fXuf58nv++vwen9Z89jEfxAWw=
+github.com/go-macos/objc v0.13.0/go.mod h1:ao+SmTFBrkZdP+488hFTrSFvCtJ36McKKhNNOlcFXrQ=
 github.com/go-macos/virtualdisplay v0.5.0 h1:V2TMkAXLUCYqZSfkfIz7YQkoh2+4/bz+ja4hvYoJut8=
 github.com/go-macos/virtualdisplay v0.5.0/go.mod h1:3hgrYzzH17hfjFnsZKq/kg0bIuB3mu2FK60BudhBqRc=
 github.com/go-mswin/d3d11 v0.3.0 h1:97vwif+uFbTBvOicU1acAb+CqfN1yKIeZBGAlTm77fY=
 github.com/go-mswin/d3d11 v0.3.0/go.mod h1:uYoPcvGm3f/S0WDrdrilWO5QagbXaSPPKRjnIzcDedw=
-github.com/go-mswin/win32 v0.6.0 h1:gapeT3H5/V8eS61WP4r8oqA4tN09qkU1QXmjgOu5VpE=
-github.com/go-mswin/win32 v0.6.0/go.mod h1:JoPSHnB0eccheGPKPdQyj4jPbBfKANYXrYl/l6xEwxs=
+github.com/go-mswin/win32 v0.7.0 h1:f4zB7/7NhRQ9XTsH20pe0ogcFTgpOvq358WHHn2Mi3Y=
+github.com/go-mswin/win32 v0.7.0/go.mod h1:FyPkYOKEmcfiUr+lQLLGcwyN8e7ZpmmdE5T6VD0mWx0=
 github.com/go-opentype/fonts v0.14.0 h1:WHw7k9gkHT1pu9B2yyvd0FWyQqn/4NKFQoKhvMYt3Mo=
 github.com/go-opentype/fonts v0.14.0/go.mod h1:od2QcmdpKo7QCqo6Jb16y4GULk+h2Hhfq6x3xfvn62Q=
 github.com/go-opentype/opentype v0.20.0 h1:5YePvRwcnfseDSdP4oDHp7uBDtPxQd1I3Q2ZbOxFLfs=
@@ -59,6 +59,8 @@ github.com/go-widgets/textinput v0.1.1 h1:3NZD5CJm5XYSWA3YzQ64tXC86gnEQ0UlNPL5qJ
 github.com/go-widgets/textinput v0.1.1/go.mod h1:Y/k3PDtUEMQ/4psCVKdmUStNWa/EsVAMcCKG2lEtQ5c=
 github.com/go-widgets/toolkit v0.400.0 h1:0Yt+vMaMIJ0XT3ZmQuVrRyDNgTbh9kjUiAHuzTTvBLs=
 github.com/go-widgets/toolkit v0.400.0/go.mod h1:N6e9OB1Q38/rs3rDk5IxQtwQRWMBOn2MpjxXHRF74wg=
+github.com/go-widgets/tray v0.17.0 h1:I33aoVUclUHT2nYyCykpTzLHlmpR2LpQeYkjOF5r7VE=
+github.com/go-widgets/tray v0.17.0/go.mod h1:GEE7H8gnttSohq3+lVDH1QFqe7rw6obWT32Vixd7bjY=
 github.com/go-widgets/vcs v0.1.0 h1:1pZQygSsKBWZepAgsTdqh1bwHBjPwaLM4p7bAAONGnk=
 github.com/go-widgets/vcs v0.1.0/go.mod h1:c2SbtsVVLJUJAf/vOeMKkFWZRFyMAeDrY8rfyUyIevs=
 github.com/go-widgets/webcanvas v0.14.1 h1:FKCY96ERrfLGX2D6QZmUGZ32qbwlAPFOMidkuY3E3UM=
@@ -71,6 +73,6 @@ github.com/klauspost/cpuid v1.2.0/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgo
 github.com/ulikunitz/xz v0.5.8/go.mod h1:nbz6k7qbPmH4IRqmfOplQw/tblSgqTqBwxkY0oWt/14=
 golang.org/x/image v0.47.0 h1:za/8gVz++PPZqmZJBNSISICN5Rrj5zixP/8K++fgmqo=
 golang.org/x/image v0.47.0/go.mod h1:IkN5o4A7vq55vXN8FWjjnhg9Rs2GOtffqsSi9mWAKYE=
-golang.org/x/sys v0.49.0 h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=
-golang.org/x/sys v0.49.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
+golang.org/x/sys v0.50.0 h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs=
+golang.org/x/sys v0.50.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
 golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=

@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"runtime"
 
+	"github.com/go-widgets/tray"
 	"github.com/go-widgets/window/internal/win32"
 )
 
@@ -83,6 +84,12 @@ func (b windowsBackend) Alert(o AlertOptions, done func(AlertResult)) error {
 	return win32Err(b.Window.Dialog(win32AlertRequest(o, done)))
 }
 
+// SetMenuBar implements MenuBar. Windows has no application menu to name, so
+// appName is not used.
+func (b windowsBackend) SetMenuBar(_ string, m *tray.Menu) error {
+	return win32Err(b.Window.SetMenuBar(m))
+}
+
 func win32Err(err error) error {
 	if errors.Is(err, win32.ErrClosed) {
 		return ErrClosed
@@ -91,6 +98,7 @@ func win32Err(err error) error {
 }
 
 var (
+	_ MenuBar          = windowsBackend{}
 	_ Visibility       = windowsBackend{}
 	_ Dialogs          = windowsBackend{}
 	_ Backend          = windowsBackend{}
