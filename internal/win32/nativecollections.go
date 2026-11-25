@@ -117,9 +117,7 @@ func treeIndex(entries []treeEntry) map[string]int {
 // treeSelection resolves a descriptor's selection path to an entry index: -1
 // when the path is empty, malformed or names no node.
 func treeSelection(index map[string]int, path string) int {
-	if _, ok := toolkit.ParseNativeTreePath(path); !ok {
-		return -1
-	}
+	// The index holds only well-formed paths, so a malformed one is absent.
 	if i, ok := index[path]; ok {
 		return i
 	}
