@@ -39,10 +39,10 @@ var ErrClosed = errors.New("window: the window is closed")
 //     refuse the focus -- focus-stealing prevention is a desktop's prerogative
 //     -- and Raise does not report that, because nothing tells it.
 //
-// Implemented by the X11, macOS (Cocoa) and Windows (Win32) back-ends. On
+// Implemented by the X11, macOS (Cocoa), Windows (Win32) and GTK4 back-ends. On
 // Wayland, Show and Hide are implemented and Raise answers [ErrNotSupported]:
 // xdg-shell gives a client no request to raise or focus its own window. The
-// wasmbox, Android and GTK back-ends do not implement it; [Show], [Hide] and
+// wasmbox and Android back-ends do not implement it; [Show], [Hide] and
 // [Raise] answer ErrNotSupported for them.
 type Visibility interface {
 	Show() error

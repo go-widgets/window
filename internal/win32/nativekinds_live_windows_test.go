@@ -299,8 +299,6 @@ const (
 	gwlStyle        = -16
 )
 
-var procGetWindowLongPtrW = user32.NewProc("GetWindowLongPtrW")
-
 func getWindowStyle(hwnd uintptr) uint32 {
 	r, _, _ := procGetWindowLongPtrW.Call(hwnd, ^uintptr(15)) // GWL_STYLE (-16)
 	return uint32(r)

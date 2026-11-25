@@ -7,18 +7,39 @@
 package window
 
 import (
+	"errors"
 	"os"
 
 	"github.com/go-widgets/window/internal/gtk"
 )
 
 // A GTK4-hosted backend satisfies the same Backend contract as the from-scratch
-// X11/Wayland ones, and the Repainter capability that lets the application present
-// loop drive it on demand instead of blitting every tick.
+// X11/Wayland ones, the Repainter capability that lets the application present
+// loop drive it on demand instead of blitting every tick, and Visibility.
 var (
-	_ Backend   = (*gtk.Window)(nil)
-	_ Repainter = (*gtk.Window)(nil)
+	_ Backend    = (*gtk.Window)(nil)
+	_ Repainter  = (*gtk.Window)(nil)
+	_ Visibility = gtkBackend{}
+	_ Backend    = gtkBackend{}
+	_ Repainter  = gtkBackend{}
 )
+
+// gtkBackend is the GTK window wearing this package's vocabulary: the back-end
+// lives in an internal package this one imports, so its closed-window error is
+// mapped to [ErrClosed] here. Everything else is promoted unchanged.
+type gtkBackend struct{ *gtk.Window }
+
+// Show, Hide and Raise implement [Visibility] over the GTK window's own.
+func (b gtkBackend) Show() error  { return gtkErr(b.Window.Show()) }
+func (b gtkBackend) Hide() error  { return gtkErr(b.Window.Hide()) }
+func (b gtkBackend) Raise() error { return gtkErr(b.Window.Raise()) }
+
+func gtkErr(err error) error {
+	if errors.Is(err, gtk.ErrClosed) {
+		return ErrClosed
+	}
+	return err
+}
 
 // Open returns a live window backed by this environment's display server. It
 // auto-selects: Wayland when $WAYLAND_DISPLAY is set, X11 otherwise.
@@ -34,10 +55,12 @@ var (
 // at all.
 func Open(cfg Config) (Backend, error) {
 	if os.Getenv("GO_WIDGETS_GTK") != "" {
-		if err := refuseHideOnClose(cfg, "GTK"); err != nil {
+		w, err := gtk.Open(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale)
+		if err != nil {
 			return nil, err
 		}
-		return gtk.Open(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale)
+		w.SetHideOnClose(cfg.HideOnClose)
+		return gtkBackend{w}, nil
 	}
 	return openDisplayServer(cfg)
 }

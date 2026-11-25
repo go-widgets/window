@@ -196,6 +196,25 @@ jobs:
             Write-Error 'TestLiveWin32NativeKinds did not run to a PASS'
             exit 1
           }
+      # A button's Menu and Image on a real host: WM_CONTEXTMENU posted to the
+      # child HWND must reach the parent, build a real HMENU whose items are read
+      # back (GetMenuStringW/GetMenuState), run the newest pick, and the PNG must
+      # land on the button and be freed with it. TrackPopupMenu's modal loop is
+      # answered by the test, not driven by a pointer.
+      - name: Live native menu and image (real HMENU, child HWND)
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+          WINDOW_WIN32_INTEGRATION: "1"
+        run: |
+          go test -count=1 -v -timeout 120s -tags=integration -run TestLiveWin32ContextMenuAndImage ./internal/win32/ *> native-menu.txt
+          $rc = $LASTEXITCODE
+          Get-Content native-menu.txt
+          if ($rc -ne 0) { exit $rc }
+          if (-not (Select-String -Path native-menu.txt -Pattern '^--- PASS: TestLiveWin32ContextMenuAndImage ')) {
+            Write-Error 'TestLiveWin32ContextMenuAndImage did not run to a PASS'
+            exit 1
+          }
       - name: Live display enumeration (no window, no interactive session)
         env:
           CGO_ENABLED: "0"
@@ -617,7 +636,9 @@ jobs:
       # GTK_IM_MODULE=gtk-im-context-simple pins GTK's built-in compose handling, so
       # the result does not depend on an input-method daemon being installed.
       - name: internal/gtk on real GTK4
-        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GTK_IM_MODULE=gtk-im-context-simple go test -count=1 -v ./internal/gtk/
+        # GDK_DEBUG=gl-disable + GSK_RENDERER=cairo: a popover is a surface of its
+        # own, and Xvfb has no GL, so its first frame would abort the process.
+        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GDK_DEBUG=gl-disable GSK_RENDERER=cairo GTK_IM_MODULE=gtk-im-context-simple go test -count=1 -v ./internal/gtk/
 
   # ubuntu-latest ships libgtk-4 4.14; the damaged present needs 4.16+
   # (GdkMemoryTextureBuilder update-texture/update-region). Debian trixie ships

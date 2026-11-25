@@ -48,6 +48,9 @@ type Window struct {
 	dirty   atomic.Bool
 	btnDown bool           // a mouse button is held: OnMotion is a drag, not a move
 	im      gtk4.IMContext // the input method in front of the key controller; 0: none
+
+	hideOnClose atomic.Bool // the user's close hides the window instead of ending Run
+	closing     atomic.Bool // Close was called or Run has returned: the window is going
 }
 
 // Open creates the GTK window (but does not enter the loop; Run does). width and
@@ -108,7 +111,7 @@ func (w *Window) Run(root toolkit.Widget) error {
 	w.root = root
 	w.fr.bind(root)
 	w.loop = gtk4.MainLoopNew()
-	w.win.Connect("close-request", func() { w.loop.Quit() })
+	w.win.OnCloseRequest(w.onCloseRequest)
 	w.installInput() // drawn regions become clickable/scrollable/typeable
 	w.win.Present()
 	w.im.FocusIn()      // the window has the keyboard; a no-op without an input method
@@ -131,6 +134,7 @@ func (w *Window) Run(root toolkit.Widget) error {
 		return true
 	})
 	w.loop.Run()
+	w.closing.Store(true)
 	return nil
 }
 
@@ -144,6 +148,7 @@ func (w *Window) Repaint() { w.dirty.Store(true) }
 
 // Close quits the loop and drops the window.
 func (w *Window) Close() error {
+	w.closing.Store(true) // an explicit Close ends the window even under HideOnClose
 	if w.loop != 0 {
 		w.loop.Quit()
 	}
