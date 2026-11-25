@@ -8,6 +8,7 @@ package win32
 
 import (
 	"bufio"
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,6 +46,22 @@ foreach ($k in $kids) {
 }
 `
 
+// uiaDiag is printed when the client saw no child: the raw tree under the
+// window, its framework and the top-level windows, to tell a provider that was
+// never asked from one that answered nothing.
+const uiaDiag = `
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+$A = [System.Windows.Automation.AutomationElement]
+$cond = New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, 'go-widgets/window demo')
+$w = $A::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+if ($null -eq $w) { 'no window'; exit 0 }
+'framework={0} class={1} pid={2} offscreen={3}' -f $w.Current.FrameworkId, $w.Current.ClassName, $w.Current.ProcessId, $w.Current.IsOffscreen
+$walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+$c = $walker.GetFirstChild($w)
+while ($null -ne $c) { 'raw child: {0} "{1}" {2}' -f $c.Current.ControlType.ProgrammaticName, $c.Current.Name, $c.Current.ClassName; $c = $walker.GetNextSibling($c) }
+'descendants=' + $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition).Count
+`
+
 // TestLiveUIAChildRectanglesReachTheClient is the regression test for
 // go-widgets/window#188. A UI Automation client asking a drawn element for its
 // BoundingRectangle must get the rectangle the provider wrote, not (0,0 0x0).
@@ -67,6 +84,8 @@ func TestLiveUIAChildRectanglesReachTheClient(t *testing.T) {
 		}
 	}
 	demo := exec.Command(exe)
+	var demoOut bytes.Buffer
+	demo.Stdout, demo.Stderr = &demoOut, &demoOut
 	if err := demo.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +122,8 @@ func TestLiveUIAChildRectanglesReachTheClient(t *testing.T) {
 		}
 	}
 	if kids == 0 {
-		t.Fatalf("the client saw no child of the window:\n%s", out)
+		diag := powershell(t, uiaDiag)
+		t.Fatalf("the client saw no child of the window:\n%s\ndiagnostics:\n%s\ndemo output:\n%s", out, diag, demoOut.String())
 	}
 }
 
