@@ -712,7 +712,7 @@ jobs:
         with:
           go-version: 1.27.4
       - name: Install GTK4 runtime + a headless X server
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth xdotool
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb xauth xdotool dbus dbus-x11 at-spi2-core
       # xdotool injects real key events through XTEST for the input-method proof
       # (a dead key, then a vowel, composed by GtkIMContext into a painted field).
       # GTK_IM_MODULE=gtk-im-context-simple pins GTK's built-in compose handling, so
@@ -720,7 +720,16 @@ jobs:
       - name: internal/gtk on real GTK4
         # GDK_DEBUG=gl-disable + GSK_RENDERER=cairo: a popover is a surface of its
         # own, and Xvfb has no GL, so its first frame would abort the process.
-        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GDK_DEBUG=gl-disable GSK_RENDERER=cairo GTK_IM_MODULE=gtk-im-context-simple go test -count=1 -v ./internal/gtk/
+        run: CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GDK_DEBUG=gl-disable GSK_RENDERER=cairo GTK_IM_MODULE=gtk-im-context-simple GTK_REQUIRE_MENUBAR=1 go test -count=1 -v ./internal/gtk/
+      # The application menu bar (GtkPopoverMenuBar over a GMenu): a real Ctrl+S
+      # key event fires the accelerator (TestGTKBackendMenuBar, run above with
+      # GTK_REQUIRE_MENUBAR=1 so a skip is a failure), and here the bar is read the
+      # way a screen reader does, through the AT-SPI tree on the accessibility bus.
+      # WINDOW_ATSPI_LIVE=1 leaves the test no skip path: no display fails it.
+      - name: application menu bar read through AT-SPI
+        run: |
+          CGO_ENABLED=0 xvfb-run -a env GDK_BACKEND=x11 GDK_DEBUG=gl-disable GSK_RENDERER=cairo GTK_A11Y=atspi WINDOW_ATSPI_LIVE=1 \
+            dbus-run-session -- sh -c '/usr/libexec/at-spi-bus-launcher --launch-immediately & sleep 2; go test -count=1 -v -run TestGTKBackendMenuBarATSPI ./internal/gtk/'
       # The public window.Alert/OpenFile/SaveFile over the GTK backend on a real
       # GTK >= 4.10: an alert button pressed, file and save dialogs dismissed, the
       # default alert. GTK_REQUIRE_DIALOGS turns the test's skips into failures.
