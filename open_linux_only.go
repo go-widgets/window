@@ -8,8 +8,10 @@ package window
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
+	"github.com/go-widgets/tray"
 	"github.com/go-widgets/window/internal/gtk"
 )
 
@@ -20,6 +22,7 @@ var (
 	_ Backend    = (*gtk.Window)(nil)
 	_ Repainter  = (*gtk.Window)(nil)
 	_ Visibility = gtkBackend{}
+	_ MenuBar    = gtkBackend{}
 	_ Backend    = gtkBackend{}
 	_ Repainter  = gtkBackend{}
 )
@@ -33,6 +36,16 @@ type gtkBackend struct{ *gtk.Window }
 func (b gtkBackend) Show() error  { return gtkErr(b.Window.Show()) }
 func (b gtkBackend) Hide() error  { return gtkErr(b.Window.Hide()) }
 func (b gtkBackend) Raise() error { return gtkErr(b.Window.Raise()) }
+
+// SetMenuBar implements [MenuBar]: a GtkPopoverMenuBar above the content (see
+// internal/gtk). GTK has no application-name menu, so appName is unused.
+func (b gtkBackend) SetMenuBar(_ string, m *tray.Menu) error {
+	err := b.Window.SetMenuBar(m)
+	if errors.Is(err, gtk.ErrNoMenuBar) {
+		return fmt.Errorf("%w: %v", ErrNotSupported, err)
+	}
+	return gtkErr(err)
+}
 
 func gtkErr(err error) error {
 	if errors.Is(err, gtk.ErrClosed) {

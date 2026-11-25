@@ -29,6 +29,7 @@ import (
 // contract (Run/Close/Size/String).
 type Window struct {
 	win   gtk4.Widget
+	box   gtk4.Widget // win's child: the menu bar (when there is one) above overlay
 	fixed gtk4.Widget
 	// overlay is the window's child: the picture, with fixed above it. Its
 	// allocation is the drawable area, in points.
@@ -51,6 +52,8 @@ type Window struct {
 
 	hideOnClose atomic.Bool // the user's close hides the window instead of ending Run
 	closing     atomic.Bool // Close was called or Run has returned: the window is going
+
+	mb menuBarState // the application menu bar (menubar_linux.go)
 }
 
 // Open creates the GTK window (but does not enter the loop; Run does). width and
@@ -81,11 +84,16 @@ func Open(title string, width, height int, theme *toolkit.Theme, scale float64) 
 	overlay := gtk4.OverlayNew()
 	overlay.SetOverlayChild(pic.Widget())
 	overlay.AddOverlay(fixed)
-	win.SetChild(overlay)
+	// The window's child is a vertical box so SetMenuBar can put a bar above the
+	// overlay; the overlay takes whatever the bar leaves.
+	overlay.SetExpand(true, true)
+	box := gtk4.BoxNew(false)
+	box.Append(overlay)
+	win.SetChild(box)
 
 	pxW, pxH := int(float64(width)*scale), int(float64(height)*scale)
 	w := &Window{
-		win: win, fixed: fixed, overlay: overlay, pic: pic,
+		win: win, box: box, fixed: fixed, overlay: overlay, pic: pic,
 		theme: theme, w: pxW, h: pxH, scale: scale,
 		native: map[string]*liveControl{},
 	}

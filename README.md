@@ -458,8 +458,13 @@ is rebuilt only when `Menu.Signature()` changed (handlers are always current).
 - Windows: the window's menu bar (`CreateMenu`, `SetMenu`); key equivalents are
   shown as accelerator text (`Ctrl+S`) and handled by the window.
   Edit rows show their key but leave it to the focused field.
-- X11, Wayland, GTK, wasmbox, Android: `window.ErrNotSupported` (GTK needs a
-  `GMenuModel` binding that `go-gtk/gtk4` does not have yet).
+- GTK 4 (`GO_WIDGETS_GTK`): a `GtkPopoverMenuBar` over a `GMenu` above the
+  window's content. Key equivalents are window-wide shortcuts (`Ctrl+S`) that
+  take precedence over the content; a check row is a stateful action that
+  follows the host's `Checked`. Edit rows show their key but leave it to the
+  focused field. The bar is hidden for a nil or empty menu.
+- X11, Wayland, wasmbox, Android: `window.ErrNotSupported`. The sovereign X11
+  and Wayland backends have no painted menu bar.
 
 ### Results from other goroutines
 
