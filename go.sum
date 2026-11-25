@@ -25,12 +25,12 @@ github.com/go-icons/iconoir v0.3.0 h1:kHG2sU5IsCvtBS1JICuXgfFo5f8UfwY1m7KYMVy97C
 github.com/go-icons/iconoir v0.3.0/go.mod h1:lPh5OuzVQ+rR4qDPGgAdSRUhnCbHeCAX70HDdwp8/RI=
 github.com/go-images/images v0.3.0 h1:uj0bNC9HTvMZF4HvHf5XNVlXYB6zAr8uAdbieTMzuvE=
 github.com/go-images/images v0.3.0/go.mod h1:ep6TePdcpU6ESk2yHuapG9ybfznNsxgHOFOeRKsinZ8=
-github.com/go-macos/appkit v0.9.0 h1:xjtzOB/8FO2aYRmdOx0ok58E+8X4LeUp0s+eVdafdl4=
-github.com/go-macos/appkit v0.9.0/go.mod h1:uznlBQaTKIgIf+wQfuIXMT+zkeQxZP/4F5vE/ydkVC4=
+github.com/go-macos/appkit v0.10.0 h1:63fF49tfMl/MvH5xAjjahtEoi3ykADwgMp9Fh22D17M=
+github.com/go-macos/appkit v0.10.0/go.mod h1:EoLrMkUybBO4mnp/XiEXrR5+BiaZ8Ns592THdUiw44M=
 github.com/go-macos/metal v0.6.0 h1:17qzYBLWo9D6zfiHC3YqKs6LJivke2MJ0Y1U51311FE=
 github.com/go-macos/metal v0.6.0/go.mod h1:BiclSGJgONDekug12CQtlINic9zMmXF7m/iA7bQn4hM=
-github.com/go-macos/objc v0.12.0 h1:/WmB4C1CQd5RkqBRvnHNljEFtOTvytPA9fkD87xuJVQ=
-github.com/go-macos/objc v0.12.0/go.mod h1:ao+SmTFBrkZdP+488hFTrSFvCtJ36McKKhNNOlcFXrQ=
+github.com/go-macos/objc v0.13.0 h1:c7dvIpoHa94F8LSol0fXuf58nv++vwen9Z89jEfxAWw=
+github.com/go-macos/objc v0.13.0/go.mod h1:ao+SmTFBrkZdP+488hFTrSFvCtJ36McKKhNNOlcFXrQ=
 github.com/go-macos/virtualdisplay v0.5.0 h1:V2TMkAXLUCYqZSfkfIz7YQkoh2+4/bz+ja4hvYoJut8=
 github.com/go-macos/virtualdisplay v0.5.0/go.mod h1:3hgrYzzH17hfjFnsZKq/kg0bIuB3mu2FK60BudhBqRc=
 github.com/go-mswin/d3d11 v0.3.0 h1:97vwif+uFbTBvOicU1acAb+CqfN1yKIeZBGAlTm77fY=

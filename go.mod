@@ -8,9 +8,9 @@ require (
 	github.com/go-freedesktop/x11 v0.3.0
 	github.com/go-gfx/gpu2d v0.11.0
 	github.com/go-gtk/gtk4 v0.14.0
-	github.com/go-macos/appkit v0.9.0
+	github.com/go-macos/appkit v0.10.0
 	github.com/go-macos/metal v0.6.0
-	github.com/go-macos/objc v0.12.0
+	github.com/go-macos/objc v0.13.0
 	github.com/go-macos/virtualdisplay v0.5.0
 	github.com/go-mswin/win32 v0.6.0
 	github.com/go-opentype/opentype v0.20.0
