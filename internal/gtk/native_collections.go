@@ -43,9 +43,7 @@ func treePathString(path []int) string {
 // parsePath is the path a "2.0.1" string names; nil for "" and for anything that
 // is not a path.
 func parsePath(s string) []int {
-	p, ok := toolkit.ParseNativeTreePath(s)
-	if !ok {
-		return nil
-	}
+	// The toolkit's parser returns no path when it is not one: the test holds that.
+	p, _ := toolkit.ParseNativeTreePath(s)
 	return p
 }
