@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-//go:build linux && !android
+//go:build linux && !android && (amd64 || arm64)
 
 package gtk
 
