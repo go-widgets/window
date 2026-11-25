@@ -263,7 +263,9 @@ func (p *provider) propertyValue(id int32, v *variant) uintptr {
 		// Carries the element's centre so Invoke can replay a click; see
 		// PressPoint for why the point rides on the element itself.
 		v.setBSTR(PressPoint(n))
-	case propIsControlElement, propIsContentElement, propIsEnabled:
+	case propIsEnabled:
+		v.setBool(IsEnabled(n))
+	case propIsControlElement, propIsContentElement:
 		// Both control and content must be true or the element is invisible to
 		// the two views a screen reader actually walks.
 		v.setBool(true)

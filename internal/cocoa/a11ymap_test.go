@@ -184,6 +184,9 @@ func TestA11yTreeSig(t *testing.T) {
 		"rectY": func(n *toolkit.A11yNode) { n.Rect.Y++ },
 		"rectW": func(n *toolkit.A11yNode) { n.Rect.W++ },
 		"rectH": func(n *toolkit.A11yNode) { n.Rect.H++ },
+		// A button greying out changes nothing else about the tree; without this
+		// the unchanged-signature gate would never republish it.
+		"disabled": func(n *toolkit.A11yNode) { n.Disabled = true },
 	} {
 		if mut(f) == sig {
 			t.Fatalf("changing %s must change the signature", name)

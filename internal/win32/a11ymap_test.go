@@ -128,6 +128,17 @@ func TestScreenRect(t *testing.T) {
 	}
 }
 
+func TestIsEnabled(t *testing.T) {
+	n := a11yNode(toolkit.RoleButton, "OK", toolkit.Rect{})
+	if !IsEnabled(n) {
+		t.Fatal("an ordinary element must report enabled")
+	}
+	n.Disabled = true
+	if IsEnabled(n) {
+		t.Fatal("a disabled element must report not enabled")
+	}
+}
+
 func TestPressPointRoundTrip(t *testing.T) {
 	n := a11yNode(toolkit.RoleButton, "OK", toolkit.Rect{X: 10, Y: 20, W: 30, H: 40})
 	s := PressPoint(n)

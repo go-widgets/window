@@ -45,7 +45,7 @@ func (r *accRoot) GetChildren() ([]Ref, *dbus.Error) {
 }
 
 func (r *accRoot) GetIndexInParent() (int32, *dbus.Error) { return 0, nil }
-func (r *accRoot) GetState() ([]uint32, *dbus.Error)      { return stateSet(), nil }
+func (r *accRoot) GetState() ([]uint32, *dbus.Error)      { return StateSet(toolkit.A11yNode{}), nil }
 
 func (r *accRoot) GetApplicationBusAddress() (string, *dbus.Error) { return "", nil }
 
@@ -97,7 +97,13 @@ func (c *accChild) GetLocalizedRoleName() (string, *dbus.Error) { return c.GetRo
 func (c *accChild) GetChildAtIndex(int32) (Ref, *dbus.Error) { return nullRef, nil }
 func (c *accChild) GetChildren() ([]Ref, *dbus.Error)        { return nil, nil }
 func (c *accChild) GetIndexInParent() (int32, *dbus.Error)   { return int32(c.idx), nil }
-func (c *accChild) GetState() ([]uint32, *dbus.Error)        { return stateSet(), nil }
+func (c *accChild) GetState() ([]uint32, *dbus.Error) {
+	n, ok := c.node()
+	if !ok {
+		return []uint32{0, 0}, nil // a stale reference has no state at all
+	}
+	return StateSet(n.node), nil
+}
 
 // GetExtents reports where the element is. coordType 0 is screen coordinates
 // and 1 is window-relative; AT-SPI asks for both on the same method, and a
@@ -200,7 +206,7 @@ func (c *accCache) item(i int) (cacheItem, bool) {
 		Interfaces: []string{ifaceAccessible, ifaceComponent, ifaceAction},
 		Name:       Name(n),
 		Role:       Role(n.Role),
-		State:      stateSet(),
+		State:      StateSet(n),
 	}, true
 }
 
@@ -222,7 +228,7 @@ func (c *accCache) GetItems() ([]cacheItem, *dbus.Error) {
 		Interfaces: []string{ifaceAccessible, ifaceApplication},
 		Name:       title,
 		Role:       RoleApplication,
-		State:      stateSet(),
+		State:      StateSet(toolkit.A11yNode{}),
 	})
 	for i := range nodes {
 		if it, ok := c.item(i); ok {
@@ -230,15 +236,4 @@ func (c *accCache) GetItems() ([]cacheItem, *dbus.Error) {
 		}
 	}
 	return out, nil
-}
-
-// stateSet is the state bitset every element reports: enabled, sensitive,
-// showing and visible. An element that omits showing/visible is announced as
-// hidden and skipped by the reader.
-func stateSet() []uint32 {
-	var lo uint32
-	for _, s := range []uint32{StateEnabled, StateSensitive, StateShowing, StateVisible} {
-		lo |= 1 << s
-	}
-	return []uint32{lo, 0}
 }
