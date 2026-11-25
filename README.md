@@ -86,6 +86,16 @@ backend-agnostic. The environment selects the implementation:
 | `js/wasm`, an ordinary page | **browser tab** (`internal/tab`) | a `<canvas>` through [go-widgets/webcanvas](https://github.com/go-widgets/webcanvas): no compositor, no `SharedArrayBuffer`, no cross-origin isolation |
 | other (BSD, …) | stub → `ErrUnsupported` | — |
 
+### Native dialogs on GTK4
+
+The GTK4 backend implements `Dialogs`, so `window.OpenFile`, `window.SaveFile`,
+`window.Alert` and `window.Confirm` show `GtkFileDialog` and `GtkAlertDialog`.
+Those classes are new in GTK 4.10: on an older GTK the calls answer
+`ErrNotSupported` instead of crashing. Cancel and Escape are `ErrCancelled`, paths
+come back as `g_file_get_path` gives them, and the callback runs once on its own
+goroutine. CI drives each dialog on real GTK under Xvfb; portal-backed dialogs
+(Flatpak, a desktop session) are not exercised there.
+
 ### Input methods in painted fields
 
 A focused `Entry` or `TextView` that implements `toolkit.Composer` is driven by
