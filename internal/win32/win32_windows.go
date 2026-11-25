@@ -194,6 +194,8 @@ type Window struct {
 	wantGPU bool
 	gpu     *gpuPath
 	gpuErr  error
+
+	dlg dialogQueue // the Dialogs capability, dialog_windows.go
 }
 
 // Repaint asks the message loop for a frame. Implements the window.Repainter
@@ -499,6 +501,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// Show, Hide or Raise, asked for from outside the message loop.
 		w.onVisibility(VisibilityOp(wParam))
 		return 0
+	case WMAppDialog:
+		w.onDialog()
+		return 0
 	case wmSize:
 		w.onSize(int(loWord(uint32(lParam))), int(hiWord(uint32(lParam))))
 		return 0
@@ -598,6 +603,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// thread allowed to do it, and is why Close only posts.
 		w.closed = true
 		w.gone.Store(true)
+		w.failDialogs()
 		w.stopGPU() // the swap chain goes before its window
 		w.hwnd = 0
 		if active == w {
