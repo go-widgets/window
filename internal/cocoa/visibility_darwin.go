@@ -39,11 +39,11 @@ var (
 // performed through. They are registered with the view's other methods in
 // registerClasses.
 func visibilityMethods() []objc.MethodDef {
-	return []objc.MethodDef{
+	return append([]objc.MethodDef{
 		{Cmd: selShowNow, Fn: viewShowNow},
 		{Cmd: selHideNow, Fn: viewHideNow},
 		{Cmd: selRaiseNow, Fn: viewRaiseNow},
-	}
+	}, dialogMethods()...)
 }
 
 // perform sends sel to the view on the main thread, unless the window has gone.

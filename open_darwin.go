@@ -74,6 +74,51 @@ func (b darwinBackend) Show() error  { return cocoaErr(b.Window.Show()) }
 func (b darwinBackend) Hide() error  { return cocoaErr(b.Window.Hide()) }
 func (b darwinBackend) Raise() error { return cocoaErr(b.Window.Raise()) }
 
+// OpenFile, SaveFile and Alert implement Dialogs over the back-end's own queue.
+func (b darwinBackend) OpenFile(o OpenOptions, done func(OpenResult)) error {
+	return cocoaErr(b.Window.Dialog(cocoa.DialogRequest{
+		Kind: cocoa.DialogOpen, Title: o.Title, Exts: flattenExts(o.Filters),
+		Multiple: o.Multiple, Directories: o.Directories,
+		Done: func(r cocoa.DialogResult) {
+			if r.Cancelled {
+				done(OpenResult{Err: ErrCancelled})
+				return
+			}
+			done(OpenResult{Paths: r.Paths})
+		},
+	}))
+}
+
+func (b darwinBackend) SaveFile(o SaveOptions, done func(SaveResult)) error {
+	return cocoaErr(b.Window.Dialog(cocoa.DialogRequest{
+		Kind: cocoa.DialogSave, Title: o.Title, Name: o.Name, Exts: flattenExts(o.Filters),
+		Done: func(r cocoa.DialogResult) {
+			if r.Cancelled || len(r.Paths) == 0 {
+				done(SaveResult{Err: ErrCancelled})
+				return
+			}
+			done(SaveResult{Path: r.Paths[0]})
+		},
+	}))
+}
+
+func (b darwinBackend) Alert(o AlertOptions, done func(AlertResult)) error {
+	return cocoaErr(b.Window.Dialog(cocoa.DialogRequest{
+		Kind: cocoa.DialogAlert, Message: o.Message, Detail: o.Detail, Buttons: o.Buttons,
+		Done: func(r cocoa.DialogResult) { done(AlertResult{Button: r.Button}) },
+	}))
+}
+
+// flattenExts is every filter's extensions in one list: AppKit's panels take a
+// single set of allowed types, not named groups.
+func flattenExts(fs []Filter) []string {
+	var out []string
+	for _, f := range fs {
+		out = append(out, f.Extensions...)
+	}
+	return out
+}
+
 func cocoaErr(err error) error {
 	if errors.Is(err, cocoa.ErrClosed) {
 		return ErrClosed
@@ -93,4 +138,5 @@ var (
 	_ Placement        = (*cocoa.Window)(nil)
 	_ Backend          = darwinBackend{}
 	_ Visibility       = darwinBackend{}
+	_ Dialogs          = darwinBackend{}
 )
