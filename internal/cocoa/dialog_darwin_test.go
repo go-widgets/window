@@ -24,6 +24,15 @@ func TestDialogQueueIsFIFOAndEmptiesCleanly(t *testing.T) {
 	}
 }
 
+// A selector delivered with nothing queued (a request answered by an earlier
+// delivery) must do nothing rather than run an empty dialog.
+func TestDialogSelectorWithAnEmptyQueueIsANoOp(t *testing.T) {
+	dialogMu.Lock()
+	dialogQueue = nil
+	dialogMu.Unlock()
+	viewDialogNow(0, 0) // would reach objc and a nil Done were the guard gone
+}
+
 func TestDialogOnAClosedOrNilWindowIsRefused(t *testing.T) {
 	var nilWin *Window
 	if err := nilWin.Dialog(DialogRequest{}); err != ErrClosed {
