@@ -59,6 +59,8 @@ type liveControl struct {
 	lastClip  toolkit.Rect
 	lastImage []byte
 	lastOnly  bool
+	// collRev is the revision of the table or tree this control last received.
+	collRev uint64
 }
 
 // sameStrings reports whether two row lists are the same, so a list is only
@@ -204,6 +206,7 @@ func (w *Window) applySpec(lc *liveControl, spec toolkit.NativeControl) {
 			lc.lastNum = spec.Number
 		}
 	}
+	lc.applyCollection(spec)
 	// A caption, for the kinds that HAVE one. It was not pushed at all, on the
 	// reasoning that an NSButton has no stringValue -- true, and beside the
 	// point: it has setTitle:, which appkit now exposes. Until it did, a button
@@ -315,6 +318,8 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ctl, err = appkit.NewDatePicker()
 	case toolkit.NativeColor:
 		ctl, err = appkit.NewColorWell()
+	case toolkit.NativeTable, toolkit.NativeTree, toolkit.NativeTabs:
+		ctl, err = newCollection(spec)
 	default:
 		return nil
 	}
@@ -349,6 +354,11 @@ func (w *Window) makeControl(spec toolkit.NativeControl) *liveControl {
 		ctl.OnChange(func() { lc.reportNumber() })
 	case toolkit.NativePopUp, toolkit.NativeSegmented, toolkit.NativeCombo, toolkit.NativeDate, toolkit.NativeColor:
 		ctl.OnAction(func() { lc.reportText(); lc.activate() })
+	}
+
+	if isCollection(spec.Kind) {
+		lc.initCollection(spec)
+		lc.wireCollection(spec.Kind)
 	}
 
 	lc.applyMenu(spec.Menu)
