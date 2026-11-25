@@ -235,6 +235,24 @@ jobs:
             Write-Error 'TestLiveWin32Dialogs did not run to a PASS'
             exit 1
           }
+      # The menu bar on a real Windows host: GetMenu must find a menu on the window,
+      # GetMenuItemCount and GetMenuString must read its items back, and a
+      # WM_COMMAND must run an item's handler. The step fails if the test did not
+      # run to a PASS.
+      - name: Live menu bar (GetMenu, GetMenuItemCount, GetMenuString)
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+          WINDOW_WIN32_INTEGRATION: "1"
+        run: |
+          go test -count=1 -v -timeout 120s -tags=integration -run TestLiveWin32MenuBar ./internal/win32/ *> menubar.txt
+          $rc = $LASTEXITCODE
+          Get-Content menubar.txt
+          if ($rc -ne 0) { exit $rc }
+          if (-not (Select-String -Path menubar.txt -Pattern '^--- PASS: TestLiveWin32MenuBar ')) {
+            Write-Error 'TestLiveWin32MenuBar did not run to a PASS'
+            exit 1
+          }
       - name: Live display enumeration (no window, no interactive session)
         env:
           CGO_ENABLED: "0"

@@ -445,6 +445,22 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   is bounded to 1 MiB and 1024x1024 before any pixel is allocated. A Win32
   edit field keeps its own Cut/Copy/Paste menu.
 
+### The menu bar: `window.MenuBar`
+
+`window.SetMenuBar(b, appName, menu)` installs the application's menu bar from
+the same `tray.Menu` model a tray icon uses (labels, key equivalents, checkmarks,
+separators, submenus, handlers); `tray.EditMenu()` is the standard Edit menu, so
+copy and paste work in native text fields. Safe from any goroutine, and the menu
+is rebuilt only when `Menu.Signature()` changed (handlers are always current).
+
+- macOS: the menu bar at the top of the screen (`NSApp.mainMenu`), with the
+  standard application menu (About, Hide, Quit) first, named `appName`.
+- Windows: the window's menu bar (`CreateMenu`, `SetMenu`); key equivalents are
+  shown as accelerator text (`Ctrl+S`) and handled by the window.
+  Edit rows show their key but leave it to the focused field.
+- X11, Wayland, GTK, wasmbox, Android: `window.ErrNotSupported` (GTK needs a
+  `GMenuModel` binding that `go-gtk/gtk4` does not have yet).
+
 ### Results from other goroutines
 
 Every backend that has a run loop to wake is a `Repainter`: X11, Wayland, GTK,

@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"runtime"
 
+	"github.com/go-widgets/tray"
 	"github.com/go-widgets/window/internal/cocoa"
 )
 
@@ -121,6 +122,13 @@ func flattenExts(fs []Filter) []string {
 	return out
 }
 
+// SetMenuBar implements MenuBar: the application's main menu, which tray owns
+// (NSApp.mainMenu is per application, not per window), with the standard
+// application menu first.
+func (b darwinBackend) SetMenuBar(appName string, m *tray.Menu) error {
+	return tray.SetMainMenu(appName, m)
+}
+
 func cocoaErr(err error) error {
 	if errors.Is(err, cocoa.ErrClosed) {
 		return ErrClosed
@@ -141,4 +149,5 @@ var (
 	_ Backend          = darwinBackend{}
 	_ Visibility       = darwinBackend{}
 	_ Dialogs          = darwinBackend{}
+	_ MenuBar          = darwinBackend{}
 )

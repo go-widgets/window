@@ -196,6 +196,8 @@ type Window struct {
 	gpuErr  error
 
 	dlg dialogQueue // the Dialogs capability, dialog_windows.go
+	// The menu bar (menubar_windows.go): SetMenuBar's plan and what is built.
+	menu menuState
 }
 
 // Repaint asks the message loop for a frame. Implements the window.Repainter
@@ -504,6 +506,17 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case WMAppDialog:
 		w.onDialog()
 		return 0
+	case WMAppMenu:
+		// SetMenuBar, asked for from outside the message loop.
+		w.onMenuApply()
+		return 0
+	case wmSysKeyDown:
+		// Alt+key: an accelerator of the menu bar, else the default handling
+		// (the menu mnemonics, Alt+F4).
+		if w.onMenuKey(wParam) {
+			return 0
+		}
+		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	case wmSize:
 		w.onSize(int(loWord(uint32(lParam))), int(hiWord(uint32(lParam))))
 		return 0
@@ -531,6 +544,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.dispatch(MapWheel(x, y, delta, DecodeMouseMods(uintptr(loWord(uint32(wParam))))))
 		return 0
 	case wmKeyDown:
+		if w.onMenuKey(wParam) {
+			return 0
+		}
 		w.dispatchAll(MapKeyDown(uint32(wParam), keyMods()))
 		return 0
 	case wmKeyUp:
@@ -557,7 +573,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// A child native control (button/edit/checkbox/combo) notifying its
 		// parent. onCommand returns false for a menu/accelerator command, which
 		// belongs to the default handling.
-		if w.onCommand(wParam, lParam) {
+		if w.onMenuCommand(wParam, lParam) || w.onCommand(wParam, lParam) {
 			return 0
 		}
 		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))

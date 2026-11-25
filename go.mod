@@ -12,16 +12,17 @@ require (
 	github.com/go-macos/metal v0.6.0
 	github.com/go-macos/objc v0.13.0
 	github.com/go-macos/virtualdisplay v0.5.0
-	github.com/go-mswin/win32 v0.6.0
+	github.com/go-mswin/win32 v0.7.0
 	github.com/go-opentype/opentype v0.20.0
 	github.com/go-widgets/android v0.16.0
 	github.com/go-widgets/gpupainter v0.4.0
 	github.com/go-widgets/painter v0.20.0
 	github.com/go-widgets/textinput v0.1.1
 	github.com/go-widgets/toolkit v0.400.0
+	github.com/go-widgets/tray v0.17.0
 	github.com/go-widgets/webcanvas v0.14.1
 	github.com/godbus/dbus/v5 v5.2.4
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
