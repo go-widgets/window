@@ -16,6 +16,9 @@ import (
 	"github.com/go-widgets/window/internal/cocoa"
 )
 
+// newCocoaWindow creates the NSWindow; a variable so a test can make it fail.
+var newCocoaWindow = cocoa.NewWithOptions
+
 // Open returns the native macOS (Cocoa/AppKit) backend: it creates a real
 // NSWindow with a flipped content NSView, ready for Run to present the
 // go-widgets framebuffer and route NSEvent input. The backend is pure-Go
@@ -29,7 +32,7 @@ import (
 func Open(cfg Config) (Backend, error) {
 	runtime.LockOSThread()
 	opts := cocoaOptions(cfg)
-	w, err := cocoa.NewWithOptions(opts)
+	w, err := newCocoaWindow(opts)
 	if err != nil {
 		return nil, err
 	}

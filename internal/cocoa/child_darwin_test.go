@@ -7,6 +7,7 @@
 package cocoa
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/go-macos/objc"
@@ -69,6 +70,53 @@ func TestChildClosedIsIdempotentAndTellsTheOwnerOnce(t *testing.T) {
 	if lookup(objID(3)) != nil {
 		t.Fatal("child still routable")
 	}
+	// A second goodbye must do nothing at all, not merely stay quiet: put the
+	// child back in its parent's list and see it left there.
+	p.children = []*Window{c}
+	c.childClosed()
+	if len(p.children) != 1 {
+		t.Fatal("a second childClosed retired the child again")
+	}
+}
+
+func TestAChildsCloseCallbacksLeaveTheParentRunning(t *testing.T) {
+	old := active
+	defer func() { active = old }()
+	for name, closeIt := range map[string]func(*Window){
+		"windowShouldClose": func(c *Window) {
+			if !windowShouldClose(c.view, 0, 0) {
+				t.Error("a child's close must be allowed")
+			}
+		},
+		"viewCloseNow": func(c *Window) { viewCloseNow(c.view, 0) },
+	} {
+		p, c := fakeWin(1, 2), fakeWin(3, 4)
+		n := 0
+		c.child, c.parent, c.onClose = true, p, func() { n++ }
+		p.children = []*Window{c}
+		register(p)
+		register(c)
+		closeIt(c)
+		if n != 1 || !c.closed || p.closed || p.gone.Load() || len(p.children) != 0 {
+			t.Errorf("%s: onClose %d, child closed %v, parent closed %v, children %d", name, n, c.closed, p.closed, len(p.children))
+		}
+		unregister(p)
+		unregister(c)
+	}
+}
+
+func TestOpenChildReportsAFailedCreation(t *testing.T) {
+	old := makeWindow
+	defer func() { makeWindow = old }()
+	boom := errors.New("no window")
+	makeWindow = func(Options, bool) (*Window, error) { return nil, boom }
+	p := fakeWin(1, 2)
+	if _, err := p.OpenChild(Options{}, nil, nil); err != boom {
+		t.Fatalf("err = %v, want the creation error", err)
+	}
+	if len(p.children) != 0 {
+		t.Fatal("a window that was never made was listed")
+	}
 }
 
 func TestCloseChildrenRetiresEveryChild(t *testing.T) {
@@ -86,6 +134,12 @@ func TestCloseChildrenRetiresEveryChild(t *testing.T) {
 }
 
 func TestOpenChildOfAClosedWindowIsRefused(t *testing.T) {
+	old := makeWindow
+	defer func() { makeWindow = old }()
+	makeWindow = func(Options, bool) (*Window, error) {
+		t.Error("a window was made for a parent that is closed")
+		return nil, errors.New("unreachable")
+	}
 	if _, err := (*Window)(nil).OpenChild(Options{}, nil, nil); err != ErrClosed {
 		t.Fatalf("nil parent: %v", err)
 	}

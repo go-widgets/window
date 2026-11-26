@@ -26,6 +26,10 @@ import (
 // It is read and written on the main thread only, like every AppKit callback.
 var registry = map[objc.ID]*Window{}
 
+// makeWindow is how OpenChild creates the NSWindow; a variable so a test can make
+// the creation fail, which a live AppKit does not do on demand.
+var makeWindow = newWindow
+
 func register(w *Window) {
 	for _, id := range [...]objc.ID{w.win, w.view, w.deleg} {
 		if id != 0 {
@@ -70,7 +74,7 @@ func (w *Window) OpenChild(o Options, root toolkit.Widget, onClose func()) (*Win
 	if w == nil || w.closed {
 		return nil, ErrClosed
 	}
-	c, err := newWindow(o, true)
+	c, err := makeWindow(o, true)
 	if err != nil {
 		return nil, err
 	}

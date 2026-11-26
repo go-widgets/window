@@ -10,30 +10,26 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"log"
 
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/window"
 )
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "childdemo:", err)
-		os.Exit(1)
-	}
-}
-
-func run() error {
 	w, err := window.Open(window.Config{Title: "childdemo: main", Class: "childdemo", Width: 360, Height: 200})
 	if err == window.ErrUnsupported {
 		fmt.Println("childdemo:", err)
-		return nil
+	} else if err != nil {
+		log.Fatal("childdemo: ", err)
+	} else {
+		defer w.Close()
+		log.Print(w.Run(mainScene(w)))
 	}
-	if err != nil {
-		return err
-	}
-	defer w.Close()
+}
 
+// mainScene is the main window: a status line and the "+" button.
+func mainScene(parent window.Backend) toolkit.Widget {
 	status := toolkit.NewLabel("no second window yet")
 	var form window.Child
 	box := toolkit.NewVBox()
@@ -42,18 +38,24 @@ func run() error {
 	box.Append(toolkit.NewButton("+", func() {
 		if form != nil {
 			form.Raise()
-			return
+		} else {
+			open(parent, status, &form)
 		}
-		c, err := window.OpenChild(w, window.Config{Title: "Add server", Width: 320, Height: 160}, formScene(func() { form.Close() }),
-			func() { form = nil; status.Text().Set("second window closed") })
-		if err != nil {
-			status.Text().Set("cannot open: " + err.Error())
-			return
-		}
-		form = c
-		status.Text().Set("second window open")
 	}))
-	return w.Run(box)
+	return box
+}
+
+// open opens the second window and keeps the handle in *form while it lives.
+func open(parent window.Backend, status *toolkit.Label, form *window.Child) {
+	c, err := window.OpenChild(parent, window.Config{Title: "Add server", Width: 320, Height: 160},
+		formScene(func() { (*form).Close() }),
+		func() { *form = nil; status.Text().Set("second window closed") })
+	if err != nil {
+		status.Text().Set("cannot open: " + err.Error())
+	} else {
+		*form = c
+		status.Text().Set("second window open")
+	}
 }
 
 func formScene(done func()) toolkit.Widget {
