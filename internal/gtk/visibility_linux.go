@@ -25,10 +25,17 @@ func (w *Window) SetHideOnClose(v bool) { w.hideOnClose.Store(v) }
 // close (the window was hidden instead) and false to let GTK close the window,
 // which is what ends Run.
 func (w *Window) onCloseRequest() bool {
+	if w.child {
+		// A secondary window going away is its own business: the loop is the
+		// parent's and keeps running.
+		w.childGone()
+		return false
+	}
 	if w.hideOnClose.Load() && !w.closing.Load() {
 		w.win.SetVisible(false)
 		return true
 	}
+	w.closeChildren()
 	w.loop.Quit()
 	return false
 }

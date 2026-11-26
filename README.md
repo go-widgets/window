@@ -406,6 +406,16 @@ own COOP/COEP `cmd/serve`) lives in `test/`, in two tiers:
   displays should know.
 - `window.VisibleScreenSize() (w, h int, ok bool)` — the usable area of the
   primary display, superseded by `Screens` for anything multi-display.
+- `window.OpenChild(parent, cfg, root, onClose) (Child, error)` — the `Windows`
+  capability: open a **secondary top-level window** with its own widget tree on
+  the loop the parent already runs (no second `Run`). Call it from the parent's
+  UI thread, e.g. a "+" button's handler; `root` is bound and its first frame
+  presented before it returns. `Child` has `Close`, `Raise`, `Size` and
+  `String`; `onClose` fires once, on the UI thread, whether the user or `Close`
+  closed it. Closing a child never ends the parent's `Run`; closing the parent
+  closes its children. Implemented by the Cocoa, GTK4 (`GO_WIDGETS_GTK=1`) and
+  Win32 back-ends; X11, Wayland, wasmbox and Android answer
+  `window.ErrNotSupported`. `cmd/childdemo` shows it.
 - `window.Show(b)`, `window.Hide(b)`, `window.Raise(b)` — the `Visibility`
   capability: take an open window off the screen **without closing it** (`Run`
   keeps running and the widget tree keeps its state), put it back, and bring it

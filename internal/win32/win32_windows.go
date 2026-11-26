@@ -198,6 +198,13 @@ type Window struct {
 	dlg dialogQueue // the Dialogs capability, dialog_windows.go
 	// The menu bar (menubar_windows.go): SetMenuBar's plan and what is built.
 	menu menuState
+
+	// Secondary windows (child_windows.go): a child shares its parent's thread
+	// and message loop and never ends it.
+	child    bool
+	parent   *Window
+	children []*Window
+	onClose  func()
 }
 
 // Repaint asks the message loop for a frame. Implements the window.Repainter
@@ -255,6 +262,10 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, native boo
 // through a flip-model swap chain on the window. It starts when Run does, falls
 // back to the CPU path on any failure, and GPU and GPUError say which happened.
 func NewScaledGPU(title string, width, height int, theme *toolkit.Theme, native, gpu bool) (*Window, error) {
+	return newWindow(title, width, height, theme, native, gpu, false)
+}
+
+func newWindow(title string, width, height int, theme *toolkit.Theme, native, gpu, child bool) (*Window, error) {
 	// Per-Monitor-V2 DPI awareness: the window is notified of per-monitor DPI and
 	// its non-client frame scales, so GetDpiForWindow reports the true monitor
 	// DPI and the content stays readable. Best-effort: it also returns false
@@ -306,7 +317,9 @@ func NewScaledGPU(title string, width, height int, theme *toolkit.Theme, native,
 		native:    native,
 		wantGPU:   gpu,
 	}
-	active = w
+	if !child {
+		active = w
+	}
 
 	titlePtr, err := win32.UTF16PtrFromString(title)
 	if err != nil {
@@ -324,6 +337,7 @@ func NewScaledGPU(title string, width, height int, theme *toolkit.Theme, native,
 		return nil, err
 	}
 	w.hwnd = uintptr(hwnd)
+	byHWND[w.hwnd] = w
 
 	// Now the DPI is known: pick a readable logical size (default from the work
 	// area if the caller gave none) and size the physical client to match.
@@ -430,6 +444,16 @@ func (w *Window) sizeAndCenter() {
 // into the widget tree until the window is closed (WM_DESTROY → WM_QUIT). It is
 // the Windows analogue of the X11/Cocoa event loops.
 func (w *Window) Run(root toolkit.Widget) error {
+	w.present(root)
+
+	// The GetMessage/TranslateMessage/DispatchMessage loop lives in win32.Pump;
+	// it returns nil on WM_QUIT (WM_DESTROY -> PostQuitMessage).
+	return win32.Pump()
+}
+
+// present binds root and paints the first frame: Run without the loop, which a
+// secondary window does not own.
+func (w *Window) present(root toolkit.Widget) {
 	w.root = root
 	w.dmg, _ = root.(damageRenderer)
 	if w.dnd == nil {
@@ -459,17 +483,13 @@ func (w *Window) Run(root toolkit.Widget) error {
 	// widget tree) that carries native controls has them embedded before the
 	// first input arrives. Thereafter paintFrame reconciles them every frame.
 	w.syncNative(w.root)
-
-	// The GetMessage/TranslateMessage/DispatchMessage loop lives in win32.Pump;
-	// it returns nil on WM_QUIT (WM_DESTROY -> PostQuitMessage).
-	return win32.Pump()
 }
 
 // wndProc is the window procedure. It routes each message the backend cares about
 // through the OS-independent mapping.go and defers everything else to
 // DefWindowProcW. It runs on the message-loop thread (LockOSThread'd in Open).
 func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
-	w := active
+	w := byHWND[hwnd]
 	if w == nil || w.hwnd != hwnd {
 		return uintptr(win32.DefWindowProc(win32.HWND(hwnd), message, win32.WPARAM(wParam), win32.LPARAM(lParam)))
 	}
@@ -612,6 +632,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.onVisibility(OpHide)
 			return 0
 		}
+		w.closeChildren()
 		win32.DestroyWindow(win32.HWND(hwnd))
 		return 0
 	case wmDestroy:
@@ -621,7 +642,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.gone.Store(true)
 		w.failDialogs()
 		w.stopGPU() // the swap chain goes before its window
+		delete(byHWND, w.hwnd)
 		w.hwnd = 0
+		if w.child {
+			w.childGone()
+			return 0
+		}
+		w.closeChildren()
 		if active == w {
 			active = nil
 		}
