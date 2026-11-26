@@ -109,7 +109,9 @@ func TestOpenChildReportsAFailedCreation(t *testing.T) {
 	old := makeWindow
 	defer func() { makeWindow = old }()
 	boom := errors.New("no window")
-	makeWindow = func(Options, bool) (*Window, error) { return nil, boom }
+	// A window comes back WITH the error, so that ignoring the error is seen as
+	// a wrong answer rather than as a nil dereference.
+	makeWindow = func(Options, bool) (*Window, error) { return fakeWin(7, 8), boom }
 	p := fakeWin(1, 2)
 	if _, err := p.OpenChild(Options{}, nil, nil); err != boom {
 		t.Fatalf("err = %v, want the creation error", err)

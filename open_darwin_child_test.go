@@ -17,7 +17,7 @@ func TestOpenReportsAFailedNSWindow(t *testing.T) {
 	old := newCocoaWindow
 	defer func() { newCocoaWindow = old }()
 	boom := errors.New("no NSWindow")
-	newCocoaWindow = func(cocoa.Options) (*cocoa.Window, error) { return nil, boom }
+	newCocoaWindow = func(cocoa.Options) (*cocoa.Window, error) { return &cocoa.Window{}, boom }
 	if b, err := Open(Config{}); err != boom || b != nil {
 		t.Fatalf("Open = %v, %v; want nil and the creation error", b, err)
 	}
