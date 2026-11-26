@@ -184,6 +184,8 @@ type Window struct {
 	passive bool
 	// hideOnClose: the close button orders the window out instead of ending Run.
 	hideOnClose bool
+	// onScale reports a follow-the-panel re-scale to the owner; see Options.OnScale.
+	onScale func(float64)
 
 	root toolkit.Widget
 	dmg  damageRenderer
@@ -605,6 +607,9 @@ func (w *Window) followBackingChange() {
 	w.updateBacking()
 	if w.follow && w.backing != w.scale && w.win != 0 {
 		w.scale = w.backing
+		if w.onScale != nil {
+			w.onScale(w.scale)
+		}
 		cv := w.win.Send(selContentView)
 		b := objc.Send[nsRect](cv, selBounds)
 		w.resize(int(b.Size.W*w.scale), int(b.Size.H*w.scale), w.scale)
@@ -965,6 +970,7 @@ func newWindow(o Options, child bool) (*Window, error) {
 		passive: o.Passive,
 
 		hideOnClose: o.HideOnClose,
+		onScale:     o.OnScale,
 		wantGPU:     o.GPU,
 	}
 	w.buf = make([]byte, 4*w.w*w.h)

@@ -55,6 +55,12 @@ func cocoaOptions(cfg Config) cocoa.Options {
 		Passive:     cfg.Passive,
 		HideOnClose: cfg.HideOnClose,
 		GPU:         cfg.GPU,
+		// The toolkit has to learn the new density when the window is dragged to a
+		// display of another one, not only at open: it lays out in framebuffer
+		// pixels, and an embedded native control's frame is that layout divided by
+		// the render scale, so a stale metric scale draws the control at the
+		// previous display's size.
+		OnScale: func(s float64) { applyMetricScale(cfg.RenderScale, s) },
 	}
 	if cfg.Screen != nil {
 		s := cfg.Screen.toCocoa()

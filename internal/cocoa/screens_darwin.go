@@ -422,6 +422,14 @@ type Options struct {
 	Passive bool
 	// HideOnClose makes the close button hide the window instead of ending Run.
 	HideOnClose bool
+	// OnScale, when non-nil, is told the new render scale each time a window that
+	// FOLLOWS the panel (RenderScale < 0) is re-scaled by a move between displays
+	// of different density, BEFORE the frame is laid out again. The toolkit lays
+	// out in framebuffer pixels and needs the scale to know what a point is worth
+	// (toolkit.SetMetricScale); without it every metric -- and the frame of every
+	// embedded native control, which is that layout divided by the new scale --
+	// keeps the old density's size.
+	OnScale func(scale float64)
 }
 
 // resolveScreen turns the requested placement into a live screen, or nil when
