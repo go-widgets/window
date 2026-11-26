@@ -229,6 +229,16 @@ type Window struct {
 	gpu     *gpuPath
 	gpuErr  error
 
+	// Secondary windows (child_darwin.go). child marks a window that shares the
+	// main window's run loop; deleg is its delegate, kept so the routing table
+	// can name it; children are the secondary windows this one owns and
+	// onClose is called once when a child goes away.
+	child    bool
+	parent   *Window
+	deleg    objc.ID
+	children []*Window
+	onClose  func()
+
 	closed bool
 	// gone is closed as seen from OTHER goroutines: closed is the main thread's
 	// own, and Show/Hide/Raise ask before they queue anything. Set by both
@@ -340,7 +350,7 @@ func viewAcceptsFirstResponder(_ objc.ID, _ objc.SEL) bool { return true }
 // damaged pixels on screen. The NSRect dirty-rect argument rides in the float
 // registers and is intentionally not declared.
 func viewDrawRect(self objc.ID, _ objc.SEL) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}
@@ -430,7 +440,7 @@ func eventMods(event objc.ID) Mods {
 }
 
 func viewMouseDown(self objc.ID, _ objc.SEL, event objc.ID) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}
@@ -445,7 +455,7 @@ func viewMouseDown(self objc.ID, _ objc.SEL, event objc.ID) {
 // left button it takes no buttonHeld/drag path, because a menu opens on the down
 // and there is no secondary-drag gesture to track.
 func viewRightMouseDown(self objc.ID, _ objc.SEL, event objc.ID) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}
@@ -454,7 +464,7 @@ func viewRightMouseDown(self objc.ID, _ objc.SEL, event objc.ID) {
 }
 
 func viewMouseDragged(self objc.ID, _ objc.SEL, event objc.ID) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}
@@ -463,7 +473,7 @@ func viewMouseDragged(self objc.ID, _ objc.SEL, event objc.ID) {
 }
 
 func viewMouseUp(self objc.ID, _ objc.SEL, event objc.ID) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}
@@ -473,7 +483,7 @@ func viewMouseUp(self objc.ID, _ objc.SEL, event objc.ID) {
 }
 
 func viewMouseMoved(self objc.ID, _ objc.SEL, event objc.ID) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}
@@ -482,7 +492,7 @@ func viewMouseMoved(self objc.ID, _ objc.SEL, event objc.ID) {
 }
 
 func viewScrollWheel(self objc.ID, _ objc.SEL, event objc.ID) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}
@@ -491,7 +501,10 @@ func viewScrollWheel(self objc.ID, _ objc.SEL, event objc.ID) {
 	w.dispatch(MapScroll(x, y, dy, eventMods(event)))
 }
 
-func viewKeyUp(_ objc.ID, _ objc.SEL, event objc.ID) { keyEvent(event, false) }
+func viewKeyUp(self objc.ID, _ objc.SEL, event objc.ID) {
+	route(self)
+	keyEvent(event, false)
+}
 
 func keyEvent(event objc.ID, press bool) {
 	w := active
@@ -509,12 +522,20 @@ func keyEvent(event objc.ID, press bool) {
 //
 // With Options.HideOnClose it orders the window out and answers NO instead: the
 // window is still there for Show or Raise, and Run keeps running until Close.
-func windowShouldClose(_ objc.ID, _ objc.SEL, _ objc.ID) bool {
+func windowShouldClose(self objc.ID, _ objc.SEL, _ objc.ID) bool {
+	route(self)
+	if active != nil && active.child {
+		// A secondary window closing is its own business: the loop belongs to the
+		// main window and keeps running.
+		active.childClosed()
+		return true
+	}
 	if active != nil && active.hideOnClose && !active.closed {
 		active.win.Send(selOrderOut, objc.ID(0))
 		return false
 	}
 	if active != nil {
+		active.closeChildren()
 		active.closed = true
 		active.gone.Store(true)
 	}
@@ -530,8 +551,8 @@ func windowShouldClose(_ objc.ID, _ objc.SEL, _ objc.ID) bool {
 // re-presents the whole surface. At the default render scale of 1 the
 // framebuffer tracks the window's logical point size, so the UI stays readable
 // as the window grows or shrinks.
-func windowDidResize(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	w := active
+func windowDidResize(self objc.ID, _ objc.SEL, _ objc.ID) {
+	w := route(self)
 	if w == nil || w.win == 0 {
 		return
 	}
@@ -547,8 +568,8 @@ func windowDidResize(_ objc.ID, _ objc.SEL, _ objc.ID) {
 // display's up-sampling of that bitmap does — but the recorded backing factor is
 // refreshed (diagnostics) and the surface re-presented so AppKit re-samples the
 // current frame at the new density.
-func viewDidChangeBackingProperties(_ objc.ID, _ objc.SEL) {
-	if w := active; w != nil {
+func viewDidChangeBackingProperties(self objc.ID, _ objc.SEL) {
+	if w := route(self); w != nil {
 		w.followBackingChange()
 	}
 }
@@ -559,16 +580,16 @@ func viewDidChangeBackingProperties(_ objc.ID, _ objc.SEL) {
 // of its own, and AppKit does not always route that view callback on a bare
 // screen move, e.g. an external panel with the lid open), so the NSWindow
 // delegate catches the same event a second way and nothing is missed.
-func windowDidChangeScreen(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	if w := active; w != nil {
+func windowDidChangeScreen(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if w := route(self); w != nil {
 		w.followBackingChange()
 	}
 }
 
 // windowDidChangeBackingProperties is the NSWindow-delegate pendant of the view
 // callback, caught in addition to it for the same belt-and-braces reason.
-func windowDidChangeBackingProperties(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	if w := active; w != nil {
+func windowDidChangeBackingProperties(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if w := route(self); w != nil {
 		w.followBackingChange()
 	}
 }
@@ -672,9 +693,9 @@ func (w *Window) Repaint() {
 }
 
 // viewRepaintNow is the main-thread half of Repaint.
-func viewRepaintNow(_ objc.ID, _ objc.SEL) {
-	if active != nil {
-		active.paintFrame(false)
+func viewRepaintNow(self objc.ID, _ objc.SEL) {
+	if w := route(self); w != nil {
+		w.paintFrame(false)
 	}
 }
 
@@ -686,8 +707,14 @@ func viewRepaintNow(_ objc.ID, _ objc.SEL) {
 // because this process runs one window at a time -- Run blocks on it -- and a
 // method on a registered class has no other way to reach Go state. A window that
 // has not been made active yet cannot be asked this question by AppKit.
-func windowCanBecomeKey(_ objc.ID, _ objc.SEL) bool {
-	return active == nil || !active.passive
+func windowCanBecomeKey(self objc.ID, _ objc.SEL) bool {
+	// Not route(): this is asked by AppKit while a window is being ordered
+	// front, which must not change which window the callbacks think they serve.
+	w := lookup(self)
+	if w == nil {
+		w = active
+	}
+	return w == nil || !w.passive
 }
 
 // selCloseNow is a selector of our own, for the same reason as selRepaintNow:
@@ -721,16 +748,23 @@ const nsAppKitDefined = 15
 // delivered by the NEXT loop, while the next window is active. Acting on
 // whatever is active then closed that window the moment it opened.
 func viewCloseNow(self objc.ID, _ objc.SEL) {
-	w := active
+	w := route(self)
 	if w == nil || w.closed || w.view != self {
 		return
 	}
+	if w.child {
+		w.childClosed()
+		w.win.Send(selClose)
+		return
+	}
+	w.closeChildren()
 	w.closed = true
 	w.gone.Store(true)
 	w.stopGPU()
 	if w.win != 0 {
 		w.win.Send(selClose)
 	}
+	unregister(w)
 	active = nil
 	stopApp()
 }
@@ -771,7 +805,12 @@ func NewScaled(title string, width, height int, theme *toolkit.Theme, renderScal
 
 // NewWithOptions is the real constructor: New and NewScaled are shorthands for
 // it. See Options for what placing a window on a chosen screen involves.
-func NewWithOptions(o Options) (*Window, error) {
+func NewWithOptions(o Options) (*Window, error) { return newWindow(o, false) }
+
+// newWindow builds the window. A child is a secondary window on the loop the
+// main window already runs (see child_darwin.go): it is registered for routing
+// but does not take over as the main window.
+func newWindow(o Options, child bool) (*Window, error) {
 	title, width, height, theme, renderScale := o.Title, o.Width, o.Height, o.Theme, o.RenderScale
 	if err := loadFrameworks(); err != nil {
 		return nil, err
@@ -929,7 +968,12 @@ func NewWithOptions(o Options) (*Window, error) {
 		wantGPU:     o.GPU,
 	}
 	w.buf = make([]byte, 4*w.w*w.h)
-	active = w
+	w.child = child
+	w.deleg = deleg
+	register(w)
+	if !child {
+		active = w
+	}
 	if o.Passive {
 		// The pointer goes straight through to whatever is behind, and to the
 		// display underneath: a picture is not something to click on.

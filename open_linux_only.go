@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/tray"
 	"github.com/go-widgets/window/internal/gtk"
 )
@@ -25,6 +26,8 @@ var (
 	_ MenuBar    = gtkBackend{}
 	_ Backend    = gtkBackend{}
 	_ Repainter  = gtkBackend{}
+	_ Windows    = gtkBackend{}
+	_ Child      = gtkChild{}
 )
 
 // gtkBackend is the GTK window wearing this package's vocabulary: the back-end
@@ -46,6 +49,23 @@ func (b gtkBackend) SetMenuBar(_ string, m *tray.Menu) error {
 	}
 	return gtkErr(err)
 }
+
+// gtkChild is a secondary GTK window wearing this package's vocabulary.
+type gtkChild struct{ *gtk.Window }
+
+// OpenChild implements [Windows]: a second GtkWindow on the loop this one runs.
+// Only the GTK4-hosted back-end has it; the X11 and Wayland back-ends, which
+// own their connection and their loop, do not.
+func (b gtkBackend) OpenChild(cfg Config, root toolkit.Widget, onClose func()) (Child, error) {
+	c, err := b.Window.OpenChild(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale, root, onClose)
+	if err != nil {
+		return nil, gtkErr(err)
+	}
+	return gtkChild{c}, nil
+}
+
+func (c gtkChild) Close() error { return gtkErr(c.Window.Close()) }
+func (c gtkChild) Raise() error { return gtkErr(c.Window.Raise()) }
 
 func gtkErr(err error) error {
 	if errors.Is(err, gtk.ErrClosed) {

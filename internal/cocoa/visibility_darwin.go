@@ -75,7 +75,7 @@ func (w *Window) Raise() error { return w.perform(selRaiseNow) }
 
 // target is the active window, if self is its view and it is still open.
 func target(self objc.ID) *Window {
-	w := active
+	w := route(self)
 	if w == nil || w.closed || w.view != self {
 		return nil
 	}

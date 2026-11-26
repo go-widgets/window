@@ -54,6 +54,14 @@ type Window struct {
 	closing     atomic.Bool // Close was called or Run has returned: the window is going
 
 	mb menuBarState // the application menu bar (menubar_linux.go)
+
+	// Secondary windows (child_linux.go): child marks one that shares its
+	// parent's loop, children are the ones this window owns, onClose is called
+	// once when a child goes away.
+	child    bool
+	parent   *Window
+	children []*Window
+	onClose  func()
 }
 
 // Open creates the GTK window (but does not enter the loop; Run does). width and
@@ -116,9 +124,19 @@ func newFrameBuffer(w, h int) ([]byte, *gtk4.SharedFrame) {
 // Run binds root and drives the GLib main loop until the window is closed. It
 // presents a frame only when one was asked for — see [Window.Repaint].
 func (w *Window) Run(root toolkit.Widget) error {
+	w.loop = gtk4.MainLoopNew()
+	w.present(root)
+	w.loop.Run()
+	w.closing.Store(true)
+	return nil
+}
+
+// present binds root, shows the window and starts the frame clock that draws
+// it. Everything of Run but the loop itself, so a secondary window (OpenChild)
+// can share the main window's loop.
+func (w *Window) present(root toolkit.Widget) {
 	w.root = root
 	w.fr.bind(root)
-	w.loop = gtk4.MainLoopNew()
 	w.win.OnCloseRequest(w.onCloseRequest)
 	w.installInput() // drawn regions become clickable/scrollable/typeable
 	w.win.Present()
@@ -141,9 +159,6 @@ func (w *Window) Run(root toolkit.Widget) error {
 		}
 		return true
 	})
-	w.loop.Run()
-	w.closing.Store(true)
-	return nil
 }
 
 // Repaint asks for a frame from any goroutine. It implements
@@ -156,7 +171,11 @@ func (w *Window) Repaint() { w.dirty.Store(true) }
 
 // Close quits the loop and drops the window.
 func (w *Window) Close() error {
+	if w.child {
+		return w.closeChild()
+	}
 	w.closing.Store(true) // an explicit Close ends the window even under HideOnClose
+	w.closeChildren()
 	if w.loop != 0 {
 		w.loop.Quit()
 	}

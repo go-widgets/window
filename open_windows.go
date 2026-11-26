@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"runtime"
 
+	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/tray"
 	"github.com/go-widgets/window/internal/win32"
 )
@@ -90,6 +91,22 @@ func (b windowsBackend) SetMenuBar(_ string, m *tray.Menu) error {
 	return win32Err(b.Window.SetMenuBar(m))
 }
 
+// windowsChild is a secondary Win32 window wearing this package's vocabulary.
+type windowsChild struct{ *win32.Window }
+
+// OpenChild implements [Windows]: a second HWND on the thread and message loop
+// this one runs. Call it from a handler the loop runs.
+func (b windowsBackend) OpenChild(cfg Config, root toolkit.Widget, onClose func()) (Child, error) {
+	c, err := b.Window.OpenChild(cfg.Title, cfg.Width, cfg.Height, cfg.Theme, cfg.RenderScale == NativeScale, cfg.GPU, root, onClose)
+	if err != nil {
+		return nil, win32Err(err)
+	}
+	return windowsChild{c}, nil
+}
+
+func (c windowsChild) Close() error { return win32Err(c.Window.Close()) }
+func (c windowsChild) Raise() error { return win32Err(c.Window.Raise()) }
+
 func win32Err(err error) error {
 	if errors.Is(err, win32.ErrClosed) {
 		return ErrClosed
@@ -101,6 +118,8 @@ var (
 	_ MenuBar          = windowsBackend{}
 	_ Visibility       = windowsBackend{}
 	_ Dialogs          = windowsBackend{}
+	_ Windows          = windowsBackend{}
+	_ Child            = windowsChild{}
 	_ Backend          = windowsBackend{}
 	_ AppearanceReader = windowsBackend{}
 	_ Clipboard        = (*win32.Window)(nil)

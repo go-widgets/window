@@ -112,7 +112,8 @@ func imeString(obj objc.ID) (string, []imeClause) {
 	return text, clauses
 }
 
-func viewSetMarkedText(_ objc.ID, _ objc.SEL, str objc.ID, sel nsRange, _ nsRange) {
+func viewSetMarkedText(self objc.ID, _ objc.SEL, str objc.ID, sel nsRange, _ nsRange) {
+	route(self)
 	imeStep.touched = true
 	comp, _, ok := imeComposer()
 	if !ok {
@@ -127,10 +128,10 @@ func viewSetMarkedText(_ objc.ID, _ objc.SEL, str objc.ID, sel nsRange, _ nsRang
 	imeRepaint()
 }
 
-func viewInsertText(_ objc.ID, _ objc.SEL, str objc.ID, _ nsRange) {
+func viewInsertText(self objc.ID, _ objc.SEL, str objc.ID, _ nsRange) {
 	imeStep.touched = true
 	text, _ := imeString(str)
-	w := active
+	w := route(self)
 	if w == nil || text == "" {
 		return
 	}
@@ -178,7 +179,8 @@ func imeCommit(w *Window, text string) {
 	}
 }
 
-func viewUnmarkText(_ objc.ID, _ objc.SEL) {
+func viewUnmarkText(self objc.ID, _ objc.SEL) {
+	route(self)
 	comp, _, ok := imeComposer()
 	if !ok {
 		return
@@ -191,19 +193,22 @@ func viewUnmarkText(_ objc.ID, _ objc.SEL) {
 	imeRepaint()
 }
 
-func viewHasMarkedText(_ objc.ID, _ objc.SEL) bool {
+func viewHasMarkedText(self objc.ID, _ objc.SEL) bool {
+	route(self)
 	comp, _, ok := imeComposer()
 	return ok && comp.Preedit().Text != ""
 }
 
-func viewMarkedRange(_ objc.ID, _ objc.SEL) nsRange {
+func viewMarkedRange(self objc.ID, _ objc.SEL) nsRange {
+	route(self)
 	if comp, _, ok := imeComposer(); ok {
 		return markedRangeOf(comp.Preedit())
 	}
 	return nsRange{nsNotFound, 0}
 }
 
-func viewSelectedRange(_ objc.ID, _ objc.SEL) nsRange {
+func viewSelectedRange(self objc.ID, _ objc.SEL) nsRange {
+	route(self)
 	if comp, _, ok := imeComposer(); ok {
 		if p := comp.Preedit(); p.Text != "" && p.Cursor >= 0 {
 			rs := []rune(p.Text)
@@ -227,7 +232,7 @@ func viewDoCommand(_ objc.ID, _ objc.SEL, _ objc.SEL) {}
 // rectangle of the focused field, converted from framebuffer pixels (top-left)
 // through the flipped view and the window to screen points.
 func viewFirstRect(self objc.ID, _ objc.SEL, _ nsRange, _ uintptr) nsRect {
-	w := active
+	w := route(self)
 	if w == nil || w.win == 0 {
 		return nsRect{}
 	}
@@ -250,7 +255,7 @@ func viewFirstRect(self objc.ID, _ objc.SEL, _ nsRange, _ uintptr) nsRect {
 // viewKeyDown feeds a key to the input context when it can be part of a
 // composition, and otherwise straight to the key mapping as before.
 func viewKeyDown(self objc.ID, _ objc.SEL, event objc.ID) {
-	w := active
+	w := route(self)
 	if w == nil {
 		return
 	}

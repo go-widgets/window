@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"runtime"
 
+	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/tray"
 	"github.com/go-widgets/window/internal/cocoa"
 )
@@ -27,6 +28,18 @@ import (
 // should therefore invoke Open+Run from main (as cmd/windowdemo does).
 func Open(cfg Config) (Backend, error) {
 	runtime.LockOSThread()
+	opts := cocoaOptions(cfg)
+	w, err := cocoa.NewWithOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	applyMetricScale(cfg.RenderScale, w.RenderScale())
+	return darwinBackend{w}, nil
+}
+
+// cocoaOptions is cfg in the back-end's own vocabulary, for the main window and
+// for a secondary one alike.
+func cocoaOptions(cfg Config) cocoa.Options {
 	opts := cocoa.Options{
 		Title:       cfg.Title,
 		Width:       cfg.Width,
@@ -44,13 +57,22 @@ func Open(cfg Config) (Backend, error) {
 		s := cfg.Screen.toCocoa()
 		opts.Screen = &s
 	}
-	w, err := cocoa.NewWithOptions(opts)
-	if err != nil {
-		return nil, err
-	}
-	applyMetricScale(cfg.RenderScale, w.RenderScale())
-	return darwinBackend{w}, nil
+	return opts
 }
+
+// darwinChild is a secondary Cocoa window wearing this package's vocabulary.
+type darwinChild struct{ *cocoa.Window }
+
+// OpenChild implements Windows: a second NSWindow on the loop this one runs.
+func (b darwinBackend) OpenChild(cfg Config, root toolkit.Widget, onClose func()) (Child, error) {
+	c, err := b.Window.OpenChild(cocoaOptions(cfg), root, onClose)
+	if err != nil {
+		return nil, cocoaErr(err)
+	}
+	return darwinChild{c}, nil
+}
+
+func (c darwinChild) Raise() error { return cocoaErr(c.Window.Raise()) }
 
 // darwinBackend is the Cocoa window wearing this package's public vocabulary.
 // The back-end lives in an internal package that THIS one imports, so it cannot
@@ -150,4 +172,6 @@ var (
 	_ Visibility       = darwinBackend{}
 	_ Dialogs          = darwinBackend{}
 	_ MenuBar          = darwinBackend{}
+	_ Windows          = darwinBackend{}
+	_ Child            = darwinChild{}
 )
