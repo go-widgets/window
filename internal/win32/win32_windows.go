@@ -163,8 +163,9 @@ type Window struct {
 	// logical one: the caller wants the panel's own pixels and will scale its own
 	// drawing. See NewNative and the DPI model at the top of this file.
 	native     bool
-	physW      int // physical client width  (= w*scale)
-	physH      int // physical client height (= h*scale)
+	onScale    func(float64) // told the render scale after a WM_DPICHANGED; see SetOnScale
+	physW      int           // physical client width  (= w*scale)
+	physH      int           // physical client height (= h*scale)
 	buttonHeld bool
 
 	root   toolkit.Widget
@@ -352,6 +353,21 @@ func newWindow(title string, width, height int, theme *toolkit.Theme, native, gp
 	procShowWindow.Call(w.hwnd, uintptr(swShow))
 	procUpdateWindow.Call(w.hwnd)
 	return w, nil
+}
+
+// SetOnScale registers f to be told the window's render scale each time a
+// monitor change (WM_DPICHANGED) alters it. The toolkit lays out in framebuffer
+// pixels and learns what a point is worth from toolkit.SetMetricScale, which the
+// parent package set once at open; without this a native window dragged to a
+// monitor of another DPI kept laying out for the old one.
+func (w *Window) SetOnScale(f func(float64)) { w.onScale = f }
+
+// reportScale tells the owner the current render scale. Only a native window's
+// scale changes what the toolkit sees (see RenderScale), so only it reports.
+func (w *Window) reportScale() {
+	if w.native && w.onScale != nil {
+		w.onScale(w.RenderScale())
+	}
 }
 
 // RenderScale reports how many framebuffer pixels this window allocates per
@@ -773,6 +789,7 @@ func (w *Window) onDpiChanged(newDPI uint32) {
 	lw, lh := w.w, w.h
 	w.mu.Unlock()
 	w.applySize(lw, lh, scale) // recomputes physW/physH at the new scale
+	w.reportScale()            // before the relayout: the tree must know what a point is worth
 	w.sizeAndCenter()          // resize the physical window/frame to match
 	w.resizeGPU()
 	w.paintFrame(true)

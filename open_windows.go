@@ -44,6 +44,9 @@ func Open(cfg Config) (Backend, error) {
 	}
 	w.SetHideOnClose(cfg.HideOnClose)
 	applyMetricScale(cfg.RenderScale, w.RenderScale())
+	// And again when the window is dragged to a monitor of another DPI: the tree
+	// lays out in the native framebuffer's pixels (see Window.SetOnScale).
+	w.SetOnScale(func(s float64) { applyMetricScale(cfg.RenderScale, s) })
 	return windowsBackend{w}, nil
 }
 

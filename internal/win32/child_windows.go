@@ -32,6 +32,7 @@ func (w *Window) OpenChild(title string, width, height int, theme *toolkit.Theme
 		return nil, err
 	}
 	c.child, c.parent, c.onClose = true, w, onClose
+	c.onScale = w.onScale // the metric scale is the process's, so a child reports to the same owner
 	w.children = append(w.children, c)
 	c.present(root)
 	return c, nil
