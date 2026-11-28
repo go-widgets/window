@@ -107,6 +107,11 @@ func viewRaiseNow(self objc.ID, _ objc.SEL) {
 	if w == nil {
 		return
 	}
+	w.raiseNow()
+}
+
+// raiseNow is Raise on the main thread; the Dock reopen handler shares it.
+func (w *Window) raiseNow() {
 	steps := PlanRaise(objc.Send[bool](w.win, selIsMiniaturized), w.passive)
 	if steps.Deminiaturize {
 		w.win.Send(selDeminiaturize, objc.ID(0))

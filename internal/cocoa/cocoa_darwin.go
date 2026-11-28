@@ -938,6 +938,10 @@ func newWindow(o Options, child bool) (*Window, error) {
 	deleg := objc.ID(dc).Send(selAlloc).Send(selInit)
 	deleg.Send(selRetain)
 	win.Send(selSetDelegate, deleg)
+	if o.HideOnClose {
+		// A Dock click must bring the hidden window back; see reopen_darwin.go.
+		installAppDelegate()
+	}
 
 	backing := float64(objc.Send[float64](win, selBackingScaleFactor))
 	if backing <= 0 {

@@ -32,3 +32,12 @@ func PlanRaise(miniaturized, passive bool) RaiseSteps {
 		MakeKey:       !passive,
 	}
 }
+
+// PlanReopen decides whether a Dock click (-applicationShouldHandleReopen:
+// hasVisibleWindows:) brings the window back: only for a window the user's
+// close button HID (hideOnClose), that is still open, is the main window and
+// while AppKit reports no visible window. With a visible window the click is
+// an ordinary activation and needs nothing from us.
+func PlanReopen(hasVisibleWindows, hideOnClose, closed, child bool) bool {
+	return !hasVisibleWindows && hideOnClose && !closed && !child
+}
