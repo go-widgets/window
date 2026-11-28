@@ -33,14 +33,13 @@ func installAppDelegate() {
 		return
 	}
 	appDelegateOnce.Do(func() {
-		cls, err := objc.RegisterClass("GoWidgetsAppDelegate", objc.GetClass("NSObject"),
+		// A failed registration leaves cls nil, so appDelegateID stays 0 and
+		// nothing is installed: the delegate is simply absent, as before.
+		cls, _ := objc.RegisterClass("GoWidgetsAppDelegate", objc.GetClass("NSObject"),
 			[]objc.MethodDef{{
 				Cmd: objc.RegisterName("applicationShouldHandleReopen:hasVisibleWindows:"),
 				Fn:  appShouldHandleReopen,
 			}})
-		if err != nil {
-			return
-		}
 		appDelegateID = objc.ID(cls).Send(selAlloc).Send(selInit)
 		appDelegateID.Send(selRetain)
 	})

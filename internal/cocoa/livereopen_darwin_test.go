@@ -55,3 +55,23 @@ func TestLiveDockReopenShowsTheHiddenWindow(t *testing.T) {
 	}
 	callOnMain(func() { _ = win.Close(); spin(0.1) })
 }
+
+// A delegate the application installed itself is never replaced.
+func TestLiveAppDelegateKeepsAForeignDelegate(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	var before, after objc.ID
+	callOnMain(func() {
+		app := objc.App()
+		old := app.Send(selDelegate)
+		foreign := objc.ID(objc.GetClass("NSObject")).Send(selAlloc).Send(selInit)
+		app.Send(selSetDelegate, foreign)
+		before = foreign
+		installAppDelegate()
+		after = app.Send(selDelegate)
+		app.Send(selSetDelegate, old)
+	})
+	if before == 0 || after != before {
+		t.Errorf("installAppDelegate replaced a foreign delegate: %v -> %v", before, after)
+	}
+}
