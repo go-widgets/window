@@ -43,7 +43,7 @@ func installAppDelegate() {
 		appDelegateID = objc.ID(cls).Send(selAlloc).Send(selInit)
 		appDelegateID.Send(selRetain)
 	})
-	if appDelegateID != 0 && app.Send(selDelegate) == 0 {
+	if appDelegateID != 0 {
 		app.Send(selSetDelegate, appDelegateID)
 	}
 }
